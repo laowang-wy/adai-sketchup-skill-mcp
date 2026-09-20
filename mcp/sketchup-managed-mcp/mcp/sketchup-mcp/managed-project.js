@@ -33,7 +33,7 @@ function normalizedProfile(value) {
   const omitPhases = Array.isArray(profile.omit_phases) ? [...new Set(profile.omit_phases.map((x)=>String(x).trim().toLowerCase()).filter(Boolean))] : [];
   const optionalPhases = new Set(['roof_profile','archetypes','replication','variants','facade_detail']);
   if (omitPhases.length > 8 || omitPhases.some((name)=>!optionalPhases.has(name))) throw new Error('omit_phases may contain only optional implemented phase names');
-  const repetition = profile.repetition === 'none' ? 'none' : 'present';
+  const repetition = profile.repetition === 'none' ? 'none' : profile.repetition === 'present' ? 'present' : 'unspecified';
   const rationale=String(profile.repetition_reason||'').trim().slice(0,1000);
   if(repetition==='none' && rationale.length<20)throw new Error('Non-repeating route requires source-based repetition_reason (at least 20 characters).');
   return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale};
@@ -52,7 +52,7 @@ function phasePlanFor(mode, profile) {
   // its real instances.  Method selection may omit unrelated optional phases,
   // but it cannot silently erase that task obligation.
   const omitted = new Set(profile?.omit_phases || []);
-  if (profile?.repetition !== 'none') {
+  if (profile?.repetition === 'present') {
     omitted.delete('archetypes');
     omitted.delete('replication');
   }
