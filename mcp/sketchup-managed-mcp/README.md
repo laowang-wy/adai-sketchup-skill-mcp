@@ -1,6 +1,6 @@
-# ADAI SketchUp 0.5.24 恢复候选
+# ADAI SketchUp 0.5.25 恢复候选
 
-当前发行版为 0.5.24，在 0.5.23 基础上合入状态与并发保护、事务恢复、实际读回与证据校验、保存前审计及正式几何适配器修复。版本改动和验证边界见 RELEASE.md。文中历史实机记录不代表 0.5.24 已通过实机建模验收。接入参见 runtime-support/professional-sketchup-modeling/references/HOST-ENABLEMENT.md。
+当前发行版为 0.5.25，在 0.5.23 基础上合入状态与并发保护、事务恢复、实际读回与证据校验、保存前审计及正式几何适配器修复。版本改动和验证边界见 RELEASE.md。文中历史实机记录不代表 0.5.25 已通过实机建模验收。接入参见 runtime-support/professional-sketchup-modeling/references/HOST-ENABLEMENT.md。
 
 ## MCP 功能与接入
 

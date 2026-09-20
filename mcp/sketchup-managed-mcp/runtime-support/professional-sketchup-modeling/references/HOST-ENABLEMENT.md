@@ -1,6 +1,6 @@
 # 按需接入（工具缺失才读）
 
-0.5.24 分为独立 Skill 和 MCP 两个 ZIP。先用宿主资产管理分别导入两个包，并为当前 Agent/专家启用这份 Skill 与 MCP。仅导入 Skill 不会自动注册 MCP 工具，仅解压 MCP 也不会让所有 Agent 自动可见。MCP 的 command 为 node，args 为解压后 launch.cjs 的绝对路径。二者应来自同一发行版本。
+0.5.25 分为独立 Skill 和 MCP 两个 ZIP。先用宿主资产管理分别导入两个包，并为当前 Agent/专家启用这份 Skill 与 MCP。仅导入 Skill 不会自动注册 MCP 工具，仅解压 MCP 也不会让所有 Agent 自动可见。MCP 的 command 为 node，args 为解压后 launch.cjs 的绝对路径。二者应来自同一发行版本。
 如果当前技能列表或工具列表缺失，先核对该 Agent 的资产分配、MCP 启用状态和启动日志，再在宿主重新加载后使用新会话验证。文件已安装、宿主已启用、当前会话已发现工具和 SketchUp 桥接已连接是四个独立状态；不能据一个状态推断其他状态。用户要求本地 SketchUp 时，不因工具暂时缺失就改用 CAD 或网页平台。
 首次在 SketchUp 扩展管理器安装 MCP 包内 `mcp/sketchup-mcp/plugin/su_mcp.rbz`。文件存在不等于插件加载。桥接插件启动后会在 `%APPDATA%\SketchUpLiveMCP\bridge\instances` 登记「PID + 会话 + 可执行文件路径 + 版本」，并用该可执行文件身份匹配绑定。运行后用 ping 核对真实版本和文档。
 同一台机器可能同时有多个 SketchUp：MCP 只向已绑定可执行文件、且由 `runtime-instance.json` 选中的那一个发送请求；`sketchup_runtime(action=instances)` 列出候选，`action=select_instance process_id=...` 显式选择。多实例或选中的进程退出时返回 `AMBIGUOUS_INSTANCES` / `INSTANCE_CHANGED`，必须重新选择，不会自动切到别的进程。

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
-  "version": "0.5.24",
-  "build_id": "0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920",
+  "version": "0.5.25",
+  "build_id": "0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -40,7 +40,7 @@
     {
       "id": "ancient-architecture",
       "sourceVersion": "0.4",
-      "integrationVersion": "0.5.24",
+      "integrationVersion": "0.5.25",
       "entry": "sketchup_ancient_tool",
       "scope": "legacy diagnostic compilers; explicit geometry family supports five formal managed phases with phase-bound registration mappings",
       "version": "0.4.4",
@@ -49,7 +49,7 @@
     {
       "id": "parametric-facade-bay",
       "sourceVersion": "0.1",
-      "integrationVersion": "0.5.24",
+      "integrationVersion": "0.5.25",
       "entry": "sketchup_toolkit",
       "scope": "bounded parametric facade-bay massing; live readback and visual review required",
       "version": "0.1.0",
@@ -64,6 +64,6 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.24-engineering",
-  "engineeringVersion": "0.5.24"
+  "codeBaseline": "0.5.25-engineering",
+  "engineeringVersion": "0.5.25"
 }

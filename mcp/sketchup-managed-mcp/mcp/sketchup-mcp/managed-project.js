@@ -316,7 +316,7 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
     return {...shared,required,forbidden};
   }
   if (phase.name === 'roof_profile') return { ...shared, required: ['Return roof_control_contract with ridge_profile, eave_curve and corner_lift_section; each control has at least three points.', 'Build one body-section roof bay and one corner condition using loft/sweep/shared-boundary mesh.', 'Keep the roof shell connected and visually inspect profile, underside and corner transition before replication.'], forbidden: ['Flat slab plus frustum', 'Only raising four plan-ring corners', 'Copying the unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
-  if (phase.name === 'archetypes') return { ...shared, required: ['Build one visually complete real ComponentInstance for each repeated family.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail inside the archetype.', 'Register the component with register_archetype and at least two source-visible reusable systems with register_visible_detail.'], forbidden: ['Broad arrays', 'Copying an unreviewed prototype through the building', 'Deferring repeatable component detail to facade_detail'] };
+  if (phase.name === 'archetypes') return { ...shared, required: ['Build one visually complete real ComponentInstance for each repeated family.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail inside the archetype.', 'Register the component with register_archetype and at least one source-visible reusable system, with additional systems when the source/task contract requires them with register_visible_detail.'], forbidden: ['Broad arrays', 'Copying an unreviewed prototype through the building', 'Deferring repeatable component detail to facade_detail'] };
   if (phase.name === 'replication') return { ...shared, required: ['Use instantiate_archetype with a previously registered archetype.', 'Create at least two true ComponentInstances for a repeated system.'], forbidden: ['Redrawing repeated floors independently', 'Changing roof/podium/unique levels here'] };
   if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only.', 'Register each important unique entity with register_variant.'], forbidden: ['Generic facade dressing'] };
   if (phase.name === 'facade_detail') return { ...shared, required: ['Build source-visible one-off details that cannot belong to a reusable archetype.', 'Bind each actual detail entity with register_unique_detail.', 'Inspect automatic close-ups.'], forbidden: ['Rebuilding repeated window/balcony systems', 'Generic grid used as a substitute for source evidence'] };
@@ -432,9 +432,30 @@ function taskCard(state, phase, detail=false) {
   }
   return {...card, complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
 }
-function assistanceSummary(state) {
+function assistanceSummary(state, detail=false) {
   const mode = state?.assistance_selection ? normalizeAssistanceMode(state.assistance_mode) || 'guided' : 'guided';
-  return { ...assistanceGuidance(mode), source: state?.assistance_selection?.source || 'default_guided', task_text: state?.task_text || '', provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  const text=String(state?.task_text||'');
+  const summary={ ...assistanceGuidance(mode), source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  if(detail) summary.task_text=text;
+  return summary;
+}
+
+function pendingOperation(state) {
+  const journal=Array.isArray(state?.operation_journal)?state.operation_journal:[];
+  const last=journal.length?journal[journal.length-1]:null;
+  const pending=[...journal].reverse().find(item=>item&&['dispatched','write_in_progress','result_unknown','recovery_required'].includes(item.status));
+  return {pending_operation:pending?{operation_id:pending.operation_id,kind:pending.kind||null,status:pending.status,phase:pending.phase||state?.phase||null}:null,last_operation_id:last?.operation_id||null};
+}
+
+function nextCallForState(state) {
+  const id=state?.project_id, status=state?.status;
+  const op=pendingOperation(state).pending_operation;
+  if(op && ['result_unknown','recovery_required','dispatched','write_in_progress'].includes(op.status)) return {tool:'sketchup_project_operation_receipt',arguments:{project_id:id,operation_id:op.operation_id},required_fields:[]};
+  if(status==='evidence_pending') return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
+  if(status==='review_required'&&state.last_evidence_id) return {tool:'sketchup_project_review',arguments:{project_id:id,evidence_id:state.last_evidence_id},required_fields:['verdict','visual_review_or_quality_review']};
+  if(status==='ready_to_finish') return {tool:'sketchup_project_finish',arguments:{project_id:id},required_fields:[]};
+  if(status==='ready_for_step') return {tool:'sketchup_project_step',arguments:{project_id:id},required_fields:['ruby_file']};
+  return null;
 }
 
 function validateRoofControlContract(state, phase, buildResult) {
@@ -472,12 +493,12 @@ function validatePhaseOutput(state, phase, buildResult) {
 function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const systems = Array.isArray(audit?.visible_detail_systems) ? audit.visible_detail_systems : [];
-  // A deliverable archetype must expose at least two independently
-  // auditable source-visible reusable systems (for example openings and
-  // balcony/rail rhythm). This blocks thin models without asking the agent
-  // to invent objects: a task with no archetype phase uses the short route.
-  if (systems.length < 2 || systems.some((item) => !item || typeof item.id !== 'string' || !item.id.trim())) throw new Error('Managed audit found fewer than two registered visible detail systems; refusing delivery of a bare or thin model.');
-  return systems;
+  const valid = systems.filter((item) => item && typeof item.id === 'string' && item.id.trim());
+  // The required detail set comes from the task/source contract. A single
+  // repeated system is valid when that is all the source requires; missing
+  // source-required systems are rejected by the task-specific audit.
+  if (valid.length < 1) throw new Error('Managed audit found no registered visible detail system required by this task.');
+  return valid;
 }
 
 function validateUniqueDetailAudit(state, audit) {
@@ -676,42 +697,16 @@ class ManagedProjects {
         const operation = (Array.isArray(state.operation_journal) ? state.operation_journal : []).find((item) => ['result_unknown','dispatched'].includes(item.status));
         if (operation || ['recovery_required','step_in_progress','patch_in_progress','write_in_progress'].includes(state.status)) return { project_id: state.project_id, operation: operation || null, status: state.status };
       } catch (error) {
-        // A corrupt/legacy state from another document cannot be trusted as
-        // an operation record, but it must not globally block a different
-        // bound document. If its raw binding is absent or matches this
-        // document, keep the conservative block and surface the integrity
-        // error. Otherwise continue scanning; the old state remains untouched
-        // and can be repaired through its own recovery path.
+        // An integrity failure makes every field in that state untrusted.
+        // Do not use its path, object id, status, or journal to decide that
+        // the current document is unrelated or already safe. The owning
+        // project must be recovered through its signed state/reconciliation
+        // path before another write can proceed.
         if (['STATE_INTEGRITY_CHECK_FAILED','STATE_INTEGRITY_FORMAT_INVALID','STATE_PARSE_FAILED'].includes(error.code)) {
-          try {
-            const raw = JSON.parse(await fs.readFile(this.statePath(entry.name), 'utf8'));
-            const rawBinding = raw?.model_binding || { path: raw?.model_path, object_id: null };
-            const rawKey = this.documentBindingKey(rawBinding);
-            const rawPath = rawBinding?.path ? path.resolve(String(rawBinding.path)).toLowerCase() : '';
-            const wantedPath = binding?.path ? path.resolve(String(binding.path)).toLowerCase() : '';
-            const unresolved = (Array.isArray(raw.operation_journal) ? raw.operation_journal : [])
-              .some((item) => ['result_unknown','dispatched'].includes(item?.status))
-              || ['recovery_required','step_in_progress','patch_in_progress','write_in_progress'].includes(raw.status);
-            // A failed integrity check cannot be cleared by changing the
-            // binding path in the same untrusted JSON.  If that record still
-            // advertises an unresolved write, keep the conservative block and
-            // force its own recovery path.  Only a corrupt record with no
-            // pending operation may be ignored when an independently readable
-            // binding proves it belongs to another document.
-            if (unresolved) throw error;
-            // A persisted file path is independently meaningful even when
-            // the current document is unsaved (wantedPath is empty).  For two
-            // unsaved documents, distinct finite object IDs are the only
-            // comparable identity we accept.  Same-path, unbound, or equal-ID
-            // records remain conservative blockers.
-            const rawObjectId = Number(rawBinding?.object_id);
-            const wantedObjectId = Number(binding?.object_id);
-            const distinctSavedDocument = rawPath && (!wantedPath || (rawKey !== wanted && rawPath !== wantedPath));
-            const distinctUnsavedDocument = !rawPath && !wantedPath
-              && Number.isFinite(rawObjectId) && Number.isFinite(wantedObjectId)
-              && rawObjectId !== wantedObjectId;
-            if (distinctSavedDocument || distinctUnsavedDocument) continue;
-          } catch (_) { /* malformed or unbound state remains blocking */ }
+          const guarded = this.stateError('STATE_RECOVERY_REQUIRED', `Project ${entry.name} has untrusted state; recover its signed state before writing to this document`);
+          guarded.project_id = entry.name;
+          guarded.cause = error.code;
+          throw guarded;
         }
         throw error;
       }
@@ -969,7 +964,7 @@ class ManagedProjects {
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
-    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state), projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, task_card: taskCard(state,phasePlan[0]), next_action: phasePlan[0].hint };
+    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, task_card: taskCard(state,phasePlan[0]), next_action: phasePlan[0].hint };
   }
 
   async captureViewportSet(state, phase, directory, bridge) {
@@ -1807,8 +1802,8 @@ class ManagedProjects {
     if (state.status !== 'ready_to_finish') throw new Error(`Project is ${state.status}; all phases must be reviewed before finish`);
     const currentBinding = await this.assertModelBinding(state, bridge);
     const plannedNames=(state.phase_plan || PHASE_PLANS[state.mode] || PHASES).map(p=>p.name);
-    if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 2)) {
-      throw new Error('Delivery blocked: reusable archetypes do not contain at least two audited source-visible detail systems. Rebuild and review the archetypes step.');
+    if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 1)) {
+      throw new Error('Delivery blocked: reusable archetypes do not contain an audited source-visible detail system required by this task. Rebuild and review the archetypes step.');
     }
     if (plannedNames.includes('facade_detail') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.unique_details) || state.unique_details.length < 1)) {
       throw new Error('Delivery blocked: no audited source-visible one-off detail is registered. Rebuild and review the facade_detail step.');
@@ -1947,7 +1942,8 @@ class ManagedProjects {
     state.output_path = outputPath;
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, quality_review_history: state.quality_reviews || [], geometry_readback: 'unverified' };
+    const history=Array.isArray(state.quality_reviews)?state.quality_reviews:[];
+    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:{count:history.length,last:history.length?history[history.length-1]:null,scope:'current journal entries; superseded reviews remain in the sealed evidence record'}, ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
   }
 
   async recoveryInspect(input, bridge) {
@@ -2160,7 +2156,8 @@ class ManagedProjects {
       reviewSheet = verified.record.files?.review_sheet?.path || '';
       evidencePath = verified.path;
     }
-    return { ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
+    const operations=pendingOperation(state);
+    return { ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,input.detail===true), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
   }
 
   async operationReceipt(input, bridge) {
@@ -2180,4 +2177,4 @@ class ManagedProjects {
   }
 }
 
-module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
+module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };

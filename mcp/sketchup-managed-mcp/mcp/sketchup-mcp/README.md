@@ -1,8 +1,8 @@
 # SketchUp Managed MCP
 
-Current managed-server version: 0.5.24.
+Current managed-server version: 0.5.25.
 
-This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.24 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
+This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.25 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
 
 ## Production API
 
@@ -23,7 +23,7 @@ New projects default to `guided`. The first non-empty task line `ADAI老王，�
 
 ### Object patch boundary
 
-`sketchup_project_patch` is closed in build `0.5.24-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
+`sketchup_project_patch` is closed in build `0.5.25-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
 
 ## Build-file contract
 
@@ -58,7 +58,7 @@ Records are tamper-evident through HMAC signatures. This prevents accidental or 
 ## Quality gates (v0.2.1)
 
 - A massing step has a geometric-complexity ceiling, preventing a whole detailed building from being generated before the massing review.
-- The `archetypes` step must register at least two source-visible reusable systems. The `facade_detail` step registers source-visible one-off geometry with register_unique_detail; repeated balcony/window systems belong in the archetypes.
+- The `archetypes` step must register at least one source-visible reusable system, with additional systems when the source/task contract requires them. The `facade_detail` step registers source-visible one-off geometry with register_unique_detail; repeated balcony/window systems belong in the archetypes.
 - The Ruby-side audit records these systems on the managed phase. Delivery is blocked if the final audited project has no such detail records.
 - Detail review emits lower/middle/upper close-ups automatically; a generic material grid or line pattern is not accepted as a detail system.
 

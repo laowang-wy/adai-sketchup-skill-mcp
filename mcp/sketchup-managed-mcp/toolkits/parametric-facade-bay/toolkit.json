@@ -6,7 +6,7 @@
   "license": "CPAL-1.0",
   "runtime": "node",
   "entry": "entry.cjs",
-  "dependencies": ["SketchUp managed Ruby API >= 0.5.24"],
+  "dependencies": ["SketchUp managed Ruby API >= 0.5.25"],
   "actions": {
     "list": { "effect": "read" },
     "validate": { "effect": "read" },

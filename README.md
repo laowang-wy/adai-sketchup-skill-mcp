@@ -6,8 +6,8 @@
 
 ## 当前版本
 
-- 版本：`0.5.24`
-- 构建：`0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920`
+- 版本：`0.5.25`
+- 构建：`0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。

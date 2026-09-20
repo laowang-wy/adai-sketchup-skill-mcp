@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "integration_version": "0.5.24",
+  "integration_version": "0.5.25",
   "files": {
     "bearing/managed_bearing.rb": "57fdf71b1858e4616edd949b6f8887461b43edcedda8136a7fbee6cfb6062418",
     "bearing/README.md": "89f5e78aea444e9e30307e897b8e044e39f40f6d9c73708666e8408e9cca835b",
     "bearing_tool.py": "889411f736f6f19d55e8313abe40bed40c0c74652c53d5181b147ed01351eaa2",
-    "DISTRIBUTION.md": "317407f7ee5b549fd3cdb7649b568ff23e5f4669658dd8c651834a8fd346371a",
+    "DISTRIBUTION.md": "0c314e29674d748fb2261f0957c302a5cc6935418effc277e90737c54a2968bb",
     "eave/managed_eave.rb": "4487c9fc4bf0d6620bba39103d73eb91134b12a5a0dcdff4e3ab241693436328",
     "eave/README.md": "9302ccd468ffd70bbfea5ae7513a173213ff874b15f343c089e932cd1f844b19",
     "eave_tool.py": "b51adade75835bf2512a92f9d7a0a8b565ea8926e21b1582e7455fc659b21147",
@@ -57,7 +57,7 @@
     "INSTALL.md": "4aaba569d7f3b0781b8d0bf3b317e588b36eaba31bfb4e13806352c520415583",
     "mcp_entry.py": "f05c854ce01ce2aa8ec097ea81d050c4865f40aab2cf468c2dcb5894fcec3d10",
     "NORMALIZATION.json": "4e409e238574ec3365b0cf3d7c63279fe4176ceba8aeeff55b4cf6812ac8188c",
-    "PACKAGE-GUIDE.md": "8909a7b7f20161173eacb2da218dfac1aebdf21205adccbb8e15610e2af372d6",
+    "PACKAGE-GUIDE.md": "fdef18e18de0c4479787c261db1b1881b5cd101db2f2c54a8554fe46c59728eb",
     "prepare_measured_loft.py": "684778b5ad814b271ddff4d14146ee486acbce189a7397958883cc030570597b",
     "prepare_roof_build.py": "1f60776a483abe8056f2a5d9170358fa5ed594746873d0b1e50172f90822c6d4",
     "README.md": "cd7be5316cd0a38be76167135241ccd1cd914acd8b91483a75d023f1bd131dda",

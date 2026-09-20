@@ -27,7 +27,7 @@ def package_entry_parents():
     return {str(PACKAGE.parent / "sketchup-managed-mcp"), str(PACKAGE.parent.parent)}
 
 
-VERSION = "0.5.24"
+VERSION = "0.5.25"
 OWN_SOURCES = ("explicit", "sibling_package", "one_click_layout", "runtime_support_layout", "standard_install_root")
 
 

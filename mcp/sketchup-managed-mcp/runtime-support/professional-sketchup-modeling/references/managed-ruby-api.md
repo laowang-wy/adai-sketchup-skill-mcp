@@ -52,7 +52,7 @@ PipClawManagedProject.register_archetype(
 )
 ```
 
-Register at least two reusable source-visible systems contained by the archetype:
+Register at least one reusable source-visible system contained by the archetype; add further systems when the source/task contract calls for them:
 
 ```ruby
 PipClawManagedProject.register_visible_detail(context['phase_group'], {
@@ -78,7 +78,7 @@ PipClawManagedProject.instantiate_archetype(
 )
 ```
 
-Create at least two true instances. Do not redraw the prototype, copy raw groups or add missing repeatable detail here. If copying exposes a bad prototype in an already accepted `archetypes` phase, the current review API cannot rewind it. Preserve the failed project and begin a separate corrected managed project.
+Create at least two true instances. Do not redraw the prototype, copy raw groups or add missing repeatable detail here. If an accepted prototype is wrong, call `sketchup_project_revise_from(project_id, target_phase, reason)` while the project is in an allowed state; it preserves a checkpoint and invalidates affected downstream phases. If the current operation is `evidence_pending` or `result_unknown`, finish the existing recovery chain first; do not replay the write.
 
 ## Variants — Controlled Differences
 

@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.24',
+  version: '0.5.25',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -88,6 +88,7 @@ const tools = [
         project_id: { type: 'string' },
         assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'Saved per-project assistance preference. auto is compatibility-only and resolves to guided.' },
         task_text: { type: 'string', description: 'Optional original task text. Only an exact first non-empty line command selects autonomous/guided; the remainder is retained.' },
+        detail: { type: 'boolean', description: 'Return the original task text in the response; default false returns only a hash and readable reference.' },
       task_profile: { type: 'object', description: 'Optional bounded task routing hints. Use matching topics/features or explicitly choose roof_route=custom for a legitimate alternative construction. omit_phases is fixed at begin and can remove only irrelevant optional nodes; quality, evidence and transaction gates remain active for every route.', properties: { topics: { type: 'array', maxItems: 20, items: { type: 'string' } }, features: { type: 'array', maxItems: 20, items: { type: 'string' } }, roof_route:{type:'string',enum:['auto','ancient_roof','custom']}, method_family:{type:'string',maxLength:64,pattern:'^[A-Za-z0-9_.-]*$'}, omit_phases:{type:'array',maxItems:8,items:{type:'string',enum:['roof_profile','archetypes','replication','variants','facade_detail']}}, repetition:{type:'string',enum:['present','none']}, repetition_reason:{type:'string',maxLength:1000} }, additionalProperties: false },
       },
       required: ['mode', 'output_directory'],
@@ -130,7 +131,7 @@ const tools = [
     name: 'sketchup_project_finish',
     description: 'Save and audit a fully reviewed managed project, then seal a final signed evidence record.',
     inputSchema: {
-      type: 'object', properties: { project_id: { type: 'string' }, output_path: { type: 'string' } }, required: ['project_id'], additionalProperties: false,
+      type: 'object', properties: { project_id: { type: 'string' }, output_path: { type: 'string' }, detail:{type:'boolean',description:'Include full review history; default false returns current delivery summary and evidence index.'} }, required: ['project_id'], additionalProperties: false,
     },
   },
   {

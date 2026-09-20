@@ -49,7 +49,13 @@ async function recoverInstallTransactions(app,d){
    const stagedExists=fss.existsSync(staged),destExists=fss.existsSync(dest),historyExists=fss.existsSync(historyRoot);
    let destSnapshot=null;if(destExists)try{destSnapshot=await snapshot(dest);}catch(error){throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:String(error.message||error)});}
    const newAtDest=destSnapshot?.fingerprint===pending.fingerprint;
-   if(tx.phase==='prepared' && !newAtDest && !historyExists){if(!destExists)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'prepared activation has neither active nor historical payload'});delete transactions[txId];changed=true;continue;}
+   if(tx.phase==='prepared' && !newAtDest && !historyExists){
+    if(!destExists && tx.old_origin==='bundled'){
+     try{const bundledSnapshot=await snapshot(oldRoot);if(bundledSnapshot.fingerprint===tx.old_fingerprint){delete transactions[txId];changed=true;continue;}}catch(_){/* fall through to fail closed */}
+    }
+    if(!destExists)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'prepared activation has neither active nor historical payload'});
+    delete transactions[txId];changed=true;continue;
+   }
    if((tx.phase==='archived'||(tx.phase==='prepared'&&historyExists&&!newAtDest)) && !newAtDest){
     if(destExists && destSnapshot?.fingerprint!==tx.old_fingerprint)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'active destination is neither old nor candidate payload'});
     if(!destExists){
@@ -86,7 +92,16 @@ async function recoverInstallTransactions(app,d){
  if(changed){d.install_transactions=transactions;await saveRecords(app,d);}
  return d;
 }
-async function records(app){try{const d=JSON.parse(await fs.readFile(path.join(store(app),'registry.json'),'utf8'));if(d.schema_version!==1||!d.packages||typeof d.packages!=='object')throw Error('REGISTRY_INVALID');d.history=d.history&&typeof d.history==='object'?d.history:{};d.pending_updates=d.pending_updates&&typeof d.pending_updates==='object'?d.pending_updates:{};d.install_transactions=d.install_transactions&&typeof d.install_transactions==='object'?d.install_transactions:{};return await recoverInstallTransactions(app,d);}catch(e){if(e.code==='ENOENT')return {schema_version:1,packages:{},history:{},pending_updates:{},install_transactions:{}};throw e;}}
+async function records(app,{recover=true}={}){
+ try{
+  const d=JSON.parse(await fs.readFile(path.join(store(app),'registry.json'),'utf8'));
+  if(d.schema_version!==1||!d.packages||typeof d.packages!=='object')throw Error('REGISTRY_INVALID');
+  d.history=d.history&&typeof d.history==='object'?d.history:{};
+  d.pending_updates=d.pending_updates&&typeof d.pending_updates==='object'?d.pending_updates:{};
+  d.install_transactions=d.install_transactions&&typeof d.install_transactions==='object'?d.install_transactions:{};
+  return recover ? await recoverInstallTransactions(app,d) : d;
+ }catch(e){if(e.code==='ENOENT')return {schema_version:1,packages:{},history:{},pending_updates:{},install_transactions:{}};throw e;}
+}
 async function saveRecords(app,d){await fs.mkdir(store(app),{recursive:true});const tmp=path.join(store(app),'registry-'+crypto.randomUUID()+'.tmp');await fs.writeFile(tmp,JSON.stringify(d,null,2),{flag:'wx'});await fs.rename(tmp,path.join(store(app),'registry.json'));}
 async function bundled(){const found=[],errors=[];for(const e of await fs.readdir(BUNDLED,{withFileTypes:true}))if(e.isDirectory()&&fss.existsSync(path.join(BUNDLED,e.name,'toolkit.json'))) {try{found.push(await snapshot(path.join(BUNDLED,e.name)));}catch(error){errors.push({directory:e.name,error:String(error.message),isolated:true});}}return {packages:found,errors};}
 function skillRoot(){
@@ -175,8 +190,8 @@ async function withPendingToolkitLock(app,updateId,operation){
 async function toolkitTool(input,app){
  if(!input||!['list','inspect','register','update','activate_update','rollback_update','official_status','disable','enable','invoke'].includes(input.action))throw Error('UNKNOWN_TOOLKIT_ACTION');
  if(input.action==='invoke'&&input._toolkit_lock!==true)return withToolkitLock(app,input.toolkit_id,()=>toolkitTool({...input,_toolkit_lock:true},app));
- const discovered=await bundled(),packages=discovered.packages;const reg=await records(app);
- if(input.action==='list')return {ok:true,protocol:'adai-toolkit-1',package_errors:discovered.errors,packages:packages.map(p=>({id:p.manifest.id,version:p.manifest.version,origin:'bundled',manifest:p.manifest,fingerprint:p.fingerprint})).concat(Object.values(reg.packages).map(p=>({id:p.id,version:p.version,origin:'registered',enabled:p.enabled,fingerprint:p.fingerprint,method_family:p.method_family||null}))),pending_updates:Object.values(reg.pending_updates).map(p=>({update_id:p.update_id,id:p.id,version:p.version,fingerprint:p.fingerprint})),policy:'Registration requires explicit code trust; REF content never authorizes execution.'};
+ const discovered=await bundled(),packages=discovered.packages;const readOnly=['list','official_status'].includes(input.action);const reg=await records(app,{recover:!readOnly});
+ if(input.action==='list')return {ok:true,protocol:'adai-toolkit-1',package_errors:discovered.errors,recovery_required:Object.keys(reg.install_transactions).length>0,packages:packages.map(p=>({id:p.manifest.id,version:p.manifest.version,origin:'bundled',manifest:p.manifest,fingerprint:p.fingerprint})).concat(Object.values(reg.packages).map(p=>({id:p.id,version:p.version,origin:'registered',enabled:p.enabled,fingerprint:p.fingerprint,method_family:p.method_family||null}))),pending_updates:Object.values(reg.pending_updates).map(p=>({update_id:p.update_id,id:p.id,version:p.version,fingerprint:p.fingerprint})),policy:'Registration requires explicit code trust; REF content never authorizes execution.'};
  if(input.action==='inspect'||input.action==='register'){
   if(typeof input.path!=='string'||!path.isAbsolute(input.path))throw Error('ABSOLUTE_PACKAGE_PATH_REQUIRED');
   const s=await snapshot(input.path);
@@ -210,6 +225,8 @@ async function toolkitTool(input,app){
   }));
  }
  if(input.action==='official_status'){
+  const pendingTransaction=Object.entries(reg.install_transactions).find(([,tx])=>tx&&tx.id===input.toolkit_id);
+  if(pendingTransaction)return {ok:false,id:input.toolkit_id,recovery_required:true,transaction_id:pendingTransaction[0],next_action:'Inspect the recorded transaction and acquire the toolkit lock before recovery.'};
   const registered=reg.packages[input.toolkit_id];let s;
   if(registered){
    s=await snapshot(path.join(store(app),'packages',input.toolkit_id));
@@ -233,6 +250,7 @@ async function toolkitTool(input,app){
    await fs.mkdir(path.dirname(dest),{recursive:true});
    await fs.mkdir(path.dirname(historyRoot),{recursive:true});
    let archived=false, promoted=false;
+   const beforeRecords=JSON.parse(JSON.stringify(current));
    try {
     current.install_transactions[transactionId]={kind:'activate',phase:'prepared',id:pending.id,pending_id:input.update_id,dest,history_root:historyRoot,old_fingerprint:old.fingerprint,old_origin:old.origin||'registered',old_root:old.root,old_files:old.files||{},old_record:old};await saveRecords(app,current);
     if(old.origin==='bundled') await copyInspected(old.root,historyRoot,old.files); else { await fs.rename(dest,historyRoot); archived=true; }
@@ -247,10 +265,13 @@ async function toolkitTool(input,app){
     // Keep the journal if compensation cannot be proven. A later process can
     // reconcile the recorded phase instead of treating a half-move as clean.
     const restored=(!promoted || fss.existsSync(pending.root)) && (!archived || fss.existsSync(dest));
-    if(restored){
-      current.history[pending.id]=(current.history[pending.id]||[]).filter(item=>path.resolve(String(item.root||''))!==path.resolve(historyRoot));
-      delete current.install_transactions[transactionId];
-    }
+     if(restored){
+       await fs.rm(historyRoot,{recursive:true,force:true}).catch(()=>{});
+       for(const key of Object.keys(current)) delete current[key];
+       Object.assign(current,beforeRecords);
+     } else {
+       current.install_transactions[transactionId]={...(current.install_transactions[transactionId]||{}),phase:'recovery_required',error:String(error.message||error),recovery_required:true};
+     }
     await saveRecords(app,current).catch(()=>{});
     throw error;
    }
@@ -263,6 +284,7 @@ async function toolkitTool(input,app){
    const targetSnapshot=await snapshot(target.root);if(targetSnapshot.fingerprint!==target.fingerprint)throw Object.assign(new Error('HISTORICAL_TOOLKIT_CHANGED'),{code:'HISTORICAL_TOOLKIT_CHANGED'});
    current.install_transactions[transactionId]={kind:'rollback',phase:'prepared',id:active.id,dest,history_root:currentHistory,old_fingerprint:active.fingerprint,old_origin:active.origin||'registered',old_root:active.root,old_files:active.files||{},target_record:target};await saveRecords(app,current);
    let archived=false,promoted=false;
+   const beforeRecords=JSON.parse(JSON.stringify(current));
    try {
     await fs.rename(dest,currentHistory);archived=true;current.install_transactions[transactionId].phase='archived';await saveRecords(app,current);
     await fs.rename(target.root,dest);promoted=true;current.install_transactions[transactionId].phase='promoted';await saveRecords(app,current);
@@ -271,13 +293,12 @@ async function toolkitTool(input,app){
     if(promoted)await fs.rename(dest,target.root).catch(()=>{});
     if(archived&&!fss.existsSync(dest)&&fss.existsSync(currentHistory))await fs.rename(currentHistory,dest).catch(()=>{});
     const restored=(!promoted||fss.existsSync(target.root))&&(!archived||fss.existsSync(dest));
-    if(restored){
-      current.packages[input.toolkit_id]=active;
-      const history=current.history[input.toolkit_id]||[];
-      current.history[input.toolkit_id]=history.filter(item=>path.resolve(String(item.root||''))!==path.resolve(currentHistory));
-      if(!current.history[input.toolkit_id].some(item=>item.fingerprint===target.fingerprint)) current.history[input.toolkit_id].push(target);
-      delete current.install_transactions[transactionId];
-    }
+     if(restored){
+       for(const key of Object.keys(current)) delete current[key];
+       Object.assign(current,beforeRecords);
+     } else {
+       current.install_transactions[transactionId]={...(current.install_transactions[transactionId]||{}),phase:'recovery_required',error:String(error.message||error),recovery_required:true};
+     }
     await saveRecords(app,current).catch(()=>{});
     throw error;
    }

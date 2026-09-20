@@ -3,7 +3,7 @@ name: professional-sketchup-modeling
 description: Use this skill whenever the user asks to create, build, edit, refine, inspect, or deliver a SketchUp/SU model or architecture scene. It provides managed MCP control, source-based geometry, spatial reasoning, visual review, recovery, and editable SKP delivery.
 ---
 
-# ADAI SketchUp 建模（0.5.24）
+# ADAI SketchUp 建模（0.5.25）
 
 依据用户资料创建或修改准确、可编辑的三维模型，持续推进到可核验交付。常规决策依据证据自主完成；关键目标或授权不明确时集中询问。
 

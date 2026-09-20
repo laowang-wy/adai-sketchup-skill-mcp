@@ -1,6 +1,6 @@
-# ADAI SketchUp 0.5.24
+# ADAI SketchUp 0.5.25
 
-Build: `0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920`
+Build: `0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921`
 
 This release contains two independent runtime packages: `professional-sketchup-modeling` (Skill) and `sketchup-managed-mcp` (MCP). Install them separately in PipClaw or Codex; the MCP locates its bundled runtime support from its own package directory.
 
