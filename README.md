@@ -21,6 +21,19 @@
 
 仓库不包含开发测试、工程证据、临时日志、SKP 模型、私钥或本机配置。
 
+## 内置经验包与 GPT6 触发词
+
+当前发行包只内置一个经验包：`adai-ancient-architecture`（古建，随 MCP 提供）。其他 REF 包需要按 [`docs/EXPERIENCE-PACKS.md`](docs/EXPERIENCE-PACKS.md) 单独加载；用户自建包不会被覆盖。
+
+使用 GPT6 建模时，建议把下面任一行放在任务第一条非空行，以减少 Skill 的重复教程和流程提示：
+
+```text
+ADAI老王，开启专家模式
+开启ADAI老王专家模式
+```
+
+这两个触发词只选择 `autonomous` 辅助模式，不放宽权限、保护、质量检查或恢复门禁。使用其他模型时不需要触发词，默认 `guided` 模式即可。
+
 ## 安装
 
 把 `skill/professional-sketchup-modeling` 复制到当前宿主的 Skill 目录：Codex 使用 `$CODEX_HOME/skills/`；PipClaw 使用其 `codex-home/skills/`。把 MCP 目录复制到用户本机的 MCP 目录，并让 PipClaw/Codex 的 MCP 配置指向该目录中的 `launch.cjs`。安装器应在本机生成路径；发行包不写死用户目录、SketchUp 路径、PID 或会话令牌。
