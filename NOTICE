@@ -1,8 +1,14 @@
-ADAI SketchUp Skill + Managed MCP
+ADAI SketchUp Open Base
 Copyright 2026 ADAI contributors
 
-This distribution contains the professional-sketchup-modeling Skill and the sketchup-managed MCP.
-The Skill is provided by ADAI 老王. ADAI names and logos are not granted for third-party branding by CPAL-1.0.
-Private REF packs and third-party assets remain separately licensed unless explicitly stated.
+This product includes software developed for the ADAI SketchUp Open Base project.
+ADAI names and logos are not granted for third-party branding by CPAL-1.0.
+Private REF packs and third-party assets are licensed separately unless explicitly stated otherwise.
 
-License: CPAL-1.0. See LICENSE.
+CPAL-1.0 Exhibit B attribution:
+Copyright 2026 ADAI contributors
+ADAI 老王提供
+建筑建模 Skill 由 ADAI 老王提供
+Attribution URL: https://gitee.com/laowang2026/adai-sketchup-skill-mcp
+Source mirror: https://github.com/laowang-wy/adai-sketchup-skill-mcp
+Attribution is required in Larger Works.

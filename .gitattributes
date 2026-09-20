@@ -1,0 +1,5 @@
+# Preserve runtime bytes: toolkit fingerprints and packaged source hashes are byte-sensitive.
+skill/** -text
+mcp/** -text
+dist/*.zip -text
+*.png -text

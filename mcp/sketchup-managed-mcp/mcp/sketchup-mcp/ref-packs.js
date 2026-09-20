@@ -347,13 +347,14 @@ async function readRegistry(appDataDir) {
 
 async function activeRefUsers(appDataDir, packId) {
  const L=layouts(appDataDir);if(!fsSync.existsSync(L.usage))return [];
+ const {ManagedProjects}=require('./managed-project');
+ const manager=new ManagedProjects({appDataDir,skillRoot:path.resolve(__dirname,'../../../professional-sketchup-modeling')});
  const lines=(await fs.readFile(L.usage,'utf8')).split('\n').filter(Boolean),users=[];
  for(const line of lines){let record;try{record=JSON.parse(line);}catch{continue;}
   const used=Array.isArray(record.packs)&&record.packs.some((item)=>item&&item.id===packId);
   if(!used || !record.project_id)continue;
-  const statePath=path.join(appDataDir,'SketchUpLiveMCP','managed-projects',String(record.project_id),'state.json');
-  try{const state=JSON.parse(await fs.readFile(statePath,'utf8'));if(state.status!=='finished')users.push({project_id:record.project_id,status:state.status||'unknown'});}
-  catch(error){if(error.code==='ENOENT')continue;throw Object.assign(new Error('REF_DEPENDENCY_STATE_UNVERIFIED'),{code:'REF_DEPENDENCY_STATE_UNVERIFIED',project_id:record.project_id});}
+  try{const state=await manager.readStoredStateForCas(String(record.project_id));if(state&&state.status!=='finished')users.push({project_id:record.project_id,status:state.status||'unknown'});}
+  catch(error){if(error.code==='ENOENT')continue;throw Object.assign(new Error('REF_DEPENDENCY_STATE_UNVERIFIED'),{code:'REF_DEPENDENCY_STATE_UNVERIFIED',project_id:record.project_id,cause:error.code||'state_error'});}
  }
  return users;
 }

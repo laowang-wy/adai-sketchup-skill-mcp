@@ -323,12 +323,29 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
   return { ...shared, required: ['Add restrained material/ground/roof closure only after form and visible detail already read correctly.'], forbidden: ['Changing accepted primary massing'] };
 }
 
+function stripRubyComments(source) {
+  return String(source).split(/\r?\n/).map((line) => {
+    let quote = null, escaped = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (quote) {
+        if (escaped) { escaped = false; continue; }
+        if (ch === '\\') { escaped = true; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"') { quote = ch; continue; }
+      if (ch === '#') return line.slice(0, i);
+    }
+    return line;
+  }).join('\n');
+}
 function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}) {
   // Ruby comments are guidance, not executed method calls.  Use a small
   // line-level lexical boundary for phase gates; lifecycle checks remain
   // conservative and the real managed execution/readback contracts still
   // decide whether geometry was actually registered.
-  const executableSource = String(source).split(/\r?\n/).filter((line) => !/^\s*#/.test(line)).join('\n');
+  const executableSource = stripRubyComments(source);
   const forbidden = [
     [/Sketchup\s*\.\s*open_file/i, 'opening another model'],
     [/Sketchup\s*\.\s*quit/i, 'quitting SketchUp'],
@@ -1011,6 +1028,13 @@ class ManagedProjects {
 
   async diagnoseViewport(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
+    // Once evidence is sealed, an extra viewport diagnostic can move the
+    // active camera and invalidate the very evidence the agent is reviewing.
+    // Keep the normal capture -> review path adjacent; recovery recapture has
+    // its own explicit retry tool and remains available.
+    if (state.status === 'review_required' && !state.recovery_recapture_required) {
+      throw this.stateError('REVIEW_CAPTURE_LOCKED', 'Evidence is sealed for review; do not change the SketchUp viewport before review. Use the returned review sheet and evidence views, or submit review first.');
+    }
     // A crashed project may have an unsealed checkpoint open. Diagnostic capture
     // is permitted but never advances status or manufactures phase approval.
     const dir=path.join(state.output_directory,'viewport-diagnostic',Date.now().toString(36));

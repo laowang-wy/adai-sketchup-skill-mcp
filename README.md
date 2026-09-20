@@ -7,7 +7,7 @@
 ## 当前版本
 
 - 版本：`0.5.24`
-- 构建：`0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-isolated-host-20260920`
+- 构建：`0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。
@@ -47,6 +47,8 @@ ADAI老王，开启专家模式
 ## 后续版本更新
 
 后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。保留旧版本目录和校验值，不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
+
+本构建已通过离线回归与独立包冷启动检查；本构建的真实 SketchUp 建模、建筑来源对照和第二台机器验收仍为 `not_run`。
 
 本仓库当前是可分发的工程回归候选；官方签名服务尚未配置，不能把“能安装”表述为官方签名。
 

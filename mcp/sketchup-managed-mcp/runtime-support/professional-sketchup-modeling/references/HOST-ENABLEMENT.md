@@ -4,7 +4,8 @@
 如果当前技能列表或工具列表缺失，先核对该 Agent 的资产分配、MCP 启用状态和启动日志，再在宿主重新加载后使用新会话验证。文件已安装、宿主已启用、当前会话已发现工具和 SketchUp 桥接已连接是四个独立状态；不能据一个状态推断其他状态。用户要求本地 SketchUp 时，不因工具暂时缺失就改用 CAD 或网页平台。
 首次在 SketchUp 扩展管理器安装 MCP 包内 `mcp/sketchup-mcp/plugin/su_mcp.rbz`。文件存在不等于插件加载。桥接插件启动后会在 `%APPDATA%\SketchUpLiveMCP\bridge\instances` 登记「PID + 会话 + 可执行文件路径 + 版本」，并用该可执行文件身份匹配绑定。运行后用 ping 核对真实版本和文档。
 同一台机器可能同时有多个 SketchUp：MCP 只向已绑定可执行文件、且由 `runtime-instance.json` 选中的那一个发送请求；`sketchup_runtime(action=instances)` 列出候选，`action=select_instance process_id=...` 显式选择。多实例或选中的进程退出时返回 `AMBIGUOUS_INSTANCES` / `INSTANCE_CHANGED`，必须重新选择，不会自动切到别的进程。
-开发冒烟测试不得同时起停共享的 SketchUp、改写当前 MCP 包或共用生产 bridge 目录；需要测试时使用独立 MCP 快照、`APPDATA` 和 `SKETCHUP_BRIDGE_DIR`。已绑定到退出文档的项目不要自动换绑，改用新的 `project_id`，先重新 `instances`/`select_instance`。
+开发测试不得起停他人的 SketchUp 或改写正在使用的 MCP；测试使用固定 MCP 副本，插件与 MCP 配置相同的独立 `SKETCHUP_BRIDGE_DIR`，TCP 通道如启用也需独立端口。普通建模不改 SU 的 `APPDATA`，不为隔离重建用户配置。
+多个存活实例可正常选择，不等于桥争抢。已选目标反复消失或登记身份与进程不符时，停止写请求并核对一次，沿用当前项目的状态/回执恢复入口；不要反复启动 SU、新建 project_id 或自动换绑来隐藏未解决的问题。固定快照与独立桥只在确需隔离时配置，不是每阶段操作。
 打开模型用 `sketchup_open_model`：只接受绝对路径的 .skp，当前文档有未保存改动时返回 `UNSAVED_MODEL` 且不改动任何文件；打开后用活动文档路径回读确认，路径不一致返回 `OPEN_MODEL_NOT_CONFIRMED`。
 
 原生 MCP 可用直接调用。原生不可用且有已确认的本包入口时可使用随包客户端：

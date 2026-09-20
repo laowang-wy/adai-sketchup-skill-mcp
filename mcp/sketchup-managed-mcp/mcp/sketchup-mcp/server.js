@@ -439,7 +439,12 @@ async function handleToolCall(name, input = {}, context = {}) {
       return {...asToolContent(r),isError:!r.ok};
     }
     case 'sketchup_runtime': {
-      if(input.action==='instances') return asToolContent({ok:true,instances:await bridgeClient.instances()});
+      if(input.action==='instances') {
+        const rows=await bridgeClient.instances();
+        const instances=rows.map(row=>({process_id:row.process_id,session_id:row.session_id,executable:row.executable,version:row.version||null}));
+        return asToolContent({ok:true,instances,selection_required:rows.length!==1,bridge_directory:bridgeClient.root,
+          next_action:rows.length?'Select the intended PID if selection is needed; multiple live instances alone do not imply bridge contention.':'No live instance is registered; inspect runtime status before any write.'});
+      }
       if(input.action==='select_instance') return asToolContent(await bridgeClient.select(input.process_id));
       const out = await require('./runtime-binding').runtimeBinding(input, APP_DATA_DIR, SKILL_ROOT);
       if (input && input.action === 'startup') startupSatisfied = true;

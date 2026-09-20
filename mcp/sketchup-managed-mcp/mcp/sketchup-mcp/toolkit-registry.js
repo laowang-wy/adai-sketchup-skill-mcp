@@ -30,7 +30,63 @@ async function snapshot(root){
  return {root,manifest,files,fingerprint:hash(JSON.stringify(Object.entries(files).sort())),bytes};
 }
 function store(app){return path.join(app,'SketchUpLiveMCP','toolkits');}
-async function records(app){try{const d=JSON.parse(await fs.readFile(path.join(store(app),'registry.json'),'utf8'));if(d.schema_version!==1||!d.packages||typeof d.packages!=='object')throw Error('REGISTRY_INVALID');d.history=d.history&&typeof d.history==='object'?d.history:{};d.pending_updates=d.pending_updates&&typeof d.pending_updates==='object'?d.pending_updates:{};return d;}catch(e){if(e.code==='ENOENT')return {schema_version:1,packages:{},history:{},pending_updates:{}};throw e;}}
+function safeStorePath(app,value){
+ const root=path.resolve(store(app)),target=path.resolve(String(value||''));
+ if(!within(root,target))throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',reason:'transaction path is outside the toolkit store'});
+ return target;
+}
+async function recoverInstallTransactions(app,d){
+ const transactions=d.install_transactions&&typeof d.install_transactions==='object'?d.install_transactions:{};
+ let changed=false;
+ for(const [txId,tx] of Object.entries(transactions)){
+  if(!tx||!['activate','rollback'].includes(tx.kind))throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId});
+  const dest=safeStorePath(app,tx.dest),historyRoot=safeStorePath(app,tx.history_root);
+  const oldRoot=tx.old_origin==='bundled'?path.resolve(String(tx.old_root||'')):tx.old_root?safeStorePath(app,tx.old_root):null;
+  if(tx.kind==='activate'){
+   const pending=d.pending_updates[tx.pending_id];
+   if(!pending)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'activation transaction lost its pending candidate'});
+   const staged=safeStorePath(app,pending.root);
+   const stagedExists=fss.existsSync(staged),destExists=fss.existsSync(dest),historyExists=fss.existsSync(historyRoot);
+   let destSnapshot=null;if(destExists)try{destSnapshot=await snapshot(dest);}catch(error){throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:String(error.message||error)});}
+   const newAtDest=destSnapshot?.fingerprint===pending.fingerprint;
+   if(tx.phase==='prepared' && !newAtDest && !historyExists){if(!destExists)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'prepared activation has neither active nor historical payload'});delete transactions[txId];changed=true;continue;}
+   if((tx.phase==='archived'||(tx.phase==='prepared'&&historyExists&&!newAtDest)) && !newAtDest){
+    if(destExists && destSnapshot?.fingerprint!==tx.old_fingerprint)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'active destination is neither old nor candidate payload'});
+    if(!destExists){
+     if(tx.old_origin==='bundled'){if(!within(BUNDLED,oldRoot))throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'bundled source is outside the bundled toolkit root'});await copyInspected(oldRoot,dest,tx.old_files||{});}
+     else if(historyExists)await fs.rename(historyRoot,dest);
+     else throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'old payload is missing'});
+    }
+    delete transactions[txId];changed=true;continue;
+   }
+   if(tx.phase==='promoted'||newAtDest){
+    if(!newAtDest || (!historyExists && tx.old_origin!=='bundled'))throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'promoted payload or old history is missing'});
+    if(tx.old_origin==='bundled'&&!historyExists){if(!within(BUNDLED,oldRoot))throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'bundled source is outside the bundled toolkit root'});await copyInspected(oldRoot,historyRoot,tx.old_files||{});}
+    const history=await snapshot(historyRoot);if(history.fingerprint!==tx.old_fingerprint)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'historical payload fingerprint does not match the transaction'});
+    const priorHistory=d.history[tx.id]||[];d.history[tx.id]=priorHistory.some(x=>x.fingerprint===tx.old_fingerprint)?priorHistory:[...priorHistory,{...tx.old_record,root:historyRoot,archived_at:new Date().toISOString()}];
+    d.packages[tx.id]={...pending,root:dest,origin:'registered',enabled:true,activated_at:new Date().toISOString()};
+    delete d.pending_updates[tx.pending_id];delete transactions[txId];changed=true;continue;
+   }
+   throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'unknown activation phase'});
+  }
+  const active=d.packages[tx.id],target=tx.target_record;
+  if(!active||!target)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'rollback records are incomplete'});
+  const destExists=fss.existsSync(dest),historyExists=fss.existsSync(historyRoot);
+  let destSnapshot=null;if(destExists)try{destSnapshot=await snapshot(dest);}catch(error){throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:String(error.message||error)});}
+  if(tx.phase==='prepared'&&!historyExists){if(!destExists)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'prepared rollback has neither active nor historical payload'});delete transactions[txId];changed=true;continue;}
+  if(tx.phase==='archived'&&!destSnapshot){if(historyExists)await fs.rename(historyRoot,dest);else throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'active rollback payload is missing'});delete transactions[txId];changed=true;continue;}
+  if(tx.phase==='promoted' || destSnapshot?.fingerprint===target.fingerprint){
+   if(destSnapshot?.fingerprint!==target.fingerprint||!historyExists)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'rollback payload or history is missing'});
+   const history=await snapshot(historyRoot);if(history.fingerprint!==tx.old_fingerprint)throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'rollback history fingerprint does not match the transaction'});
+   d.history[tx.id]=[...(d.history[tx.id]||[]).filter(x=>x.fingerprint!==target.fingerprint),{...active,root:historyRoot,archived_at:new Date().toISOString()}];
+   d.packages[tx.id]={...target,root:dest,enabled:true,activated_at:new Date().toISOString()};delete transactions[txId];changed=true;continue;
+  }
+  throw Object.assign(new Error('TOOLKIT_INSTALL_RECOVERY_REQUIRED'),{code:'TOOLKIT_INSTALL_RECOVERY_REQUIRED',transaction_id:txId,reason:'unknown rollback phase'});
+ }
+ if(changed){d.install_transactions=transactions;await saveRecords(app,d);}
+ return d;
+}
+async function records(app){try{const d=JSON.parse(await fs.readFile(path.join(store(app),'registry.json'),'utf8'));if(d.schema_version!==1||!d.packages||typeof d.packages!=='object')throw Error('REGISTRY_INVALID');d.history=d.history&&typeof d.history==='object'?d.history:{};d.pending_updates=d.pending_updates&&typeof d.pending_updates==='object'?d.pending_updates:{};d.install_transactions=d.install_transactions&&typeof d.install_transactions==='object'?d.install_transactions:{};return await recoverInstallTransactions(app,d);}catch(e){if(e.code==='ENOENT')return {schema_version:1,packages:{},history:{},pending_updates:{},install_transactions:{}};throw e;}}
 async function saveRecords(app,d){await fs.mkdir(store(app),{recursive:true});const tmp=path.join(store(app),'registry-'+crypto.randomUUID()+'.tmp');await fs.writeFile(tmp,JSON.stringify(d,null,2),{flag:'wx'});await fs.rename(tmp,path.join(store(app),'registry.json'));}
 async function bundled(){const found=[],errors=[];for(const e of await fs.readdir(BUNDLED,{withFileTypes:true}))if(e.isDirectory()&&fss.existsSync(path.join(BUNDLED,e.name,'toolkit.json'))) {try{found.push(await snapshot(path.join(BUNDLED,e.name)));}catch(error){errors.push({directory:e.name,error:String(error.message),isolated:true});}}return {packages:found,errors};}
 function skillRoot(){
@@ -57,6 +113,7 @@ async function requiredCapabilities(manifest){
  if(missing.length) throw Object.assign(new Error(`TOOLKIT_CAPABILITY_UNAVAILABLE: ${missing.join(', ')}`),{code:'TOOLKIT_CAPABILITY_UNAVAILABLE',missing});
 }
 async function copyInspected(source, destination, files){
+ source=await fs.realpath(source);
  await fs.mkdir(destination,{recursive:true});
  for(const rel of Object.keys(files)){const src=path.join(source,rel);if((await fs.lstat(src)).isSymbolicLink()||!within(source,await fs.realpath(src)))throw Error('SOURCE_CHANGED');const target=path.join(destination,rel);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(src,target);}
  for(const metadata of ['official-pack.json','official-pack.sig']){const src=path.join(source,metadata);if(fss.existsSync(src)){const stat=await fs.lstat(src);if(stat.isSymbolicLink()||!stat.isFile()||!within(source,await fs.realpath(src)))throw Error('SOURCE_CHANGED');const target=path.join(destination,metadata);await fs.copyFile(src,target);}}
@@ -90,14 +147,34 @@ async function activeBindings(app, toolkitId, fingerprint){
 }
 async function resolveMethodBinding(app, methodFamily){
  const family=String(methodFamily||'').trim().toLowerCase();if(!family)return null;const discovered=await bundled(),found=discovered.packages,reg=await records(app);
- const registered=Object.values(reg.packages).filter(p=>p.enabled!==false).map(p=>({id:p.id,version:p.version,fingerprint:p.fingerprint,method_family:p.method_family||null,origin:'registered'}));
- const candidate=registered.find(p=>p.method_family===family)||found.map(p=>({id:p.manifest.id,version:p.manifest.version,fingerprint:p.fingerprint,method_family:p.manifest.method_family||null,origin:'bundled'})).find(p=>p.method_family===family);
+ const registered=[];
+ for(const p of Object.values(reg.packages).filter(p=>p.enabled!==false)){
+  if((p.method_family||'').toLowerCase()!==family)continue;
+  const root=path.join(store(app),'packages',p.id);
+  let actual;
+  try{actual=await snapshot(root);}catch(error){throw Object.assign(new Error('TOOLKIT_CHANGED_REVIEW_REQUIRED'),{code:'TOOLKIT_CHANGED_REVIEW_REQUIRED',detail:String(error.message||error),toolkit_id:p.id});}
+  if(actual.fingerprint!==p.fingerprint)throw Object.assign(new Error('TOOLKIT_CHANGED_REVIEW_REQUIRED'),{code:'TOOLKIT_CHANGED_REVIEW_REQUIRED',toolkit_id:p.id,expected_fingerprint:p.fingerprint,actual_fingerprint:actual.fingerprint});
+  registered.push({id:p.id,version:p.version,fingerprint:actual.fingerprint,method_family:family,origin:'registered'});
+ }
+ const candidate=registered[0]||found.map(p=>({id:p.manifest.id,version:p.manifest.version,fingerprint:p.fingerprint,method_family:p.manifest.method_family||null,origin:'bundled'})).find(p=>p.method_family===family);
  return candidate?{id:candidate.id,version:candidate.version,fingerprint:candidate.fingerprint,method_family:family,origin:candidate.origin}:null;
 }
 const queues=new Map();
 function serial(app,fn){const old=queues.get(app)||Promise.resolve();const next=old.catch(()=>{}).then(fn);queues.set(app,next);return next.finally(()=>{if(queues.get(app)===next)queues.delete(app);});}
+async function withToolkitLock(app,toolkitId,operation){
+ const id=String(toolkitId||'').trim();if(!idOK(id))throw Error('INVALID_TOOLKIT_ID');
+ const dir=path.join(store(app),'locks');await fs.mkdir(dir,{recursive:true});const file=path.join(dir,`${id}.lock`);let handle;
+ try{handle=await fs.open(file,'wx',0o600);await handle.writeFile(JSON.stringify({pid:process.pid,toolkit_id:id,acquired_at:new Date().toISOString()}));await handle.sync().catch(()=>{});}
+ catch(error){if(error.code==='EEXIST')throw Object.assign(new Error('TOOLKIT_BUSY: another process is updating or invoking this toolkit; inspect status and retry after it releases the lock'),{code:'TOOLKIT_BUSY',toolkit_id:id});throw error;}
+ try{return await operation();}finally{await handle.close().catch(()=>{});await fs.rm(file,{force:true}).catch(()=>{});}
+}
+async function withPendingToolkitLock(app,updateId,operation){
+ const current=await records(app),pending=current.pending_updates[String(updateId||'')];if(!pending)throw Error('PENDING_UPDATE_NOT_FOUND');
+ return withToolkitLock(app,pending.id,operation);
+}
 async function toolkitTool(input,app){
  if(!input||!['list','inspect','register','update','activate_update','rollback_update','official_status','disable','enable','invoke'].includes(input.action))throw Error('UNKNOWN_TOOLKIT_ACTION');
+ if(input.action==='invoke'&&input._toolkit_lock!==true)return withToolkitLock(app,input.toolkit_id,()=>toolkitTool({...input,_toolkit_lock:true},app));
  const discovered=await bundled(),packages=discovered.packages;const reg=await records(app);
  if(input.action==='list')return {ok:true,protocol:'adai-toolkit-1',package_errors:discovered.errors,packages:packages.map(p=>({id:p.manifest.id,version:p.manifest.version,origin:'bundled',manifest:p.manifest,fingerprint:p.fingerprint})).concat(Object.values(reg.packages).map(p=>({id:p.id,version:p.version,origin:'registered',enabled:p.enabled,fingerprint:p.fingerprint,method_family:p.method_family||null}))),pending_updates:Object.values(reg.pending_updates).map(p=>({update_id:p.update_id,id:p.id,version:p.version,fingerprint:p.fingerprint})),policy:'Registration requires explicit code trust; REF content never authorizes execution.'};
  if(input.action==='inspect'||input.action==='register'){
@@ -118,7 +195,7 @@ async function toolkitTool(input,app){
   if(typeof input.path!=='string'||!path.isAbsolute(input.path))throw Error('ABSOLUTE_PACKAGE_PATH_REQUIRED');
   if(!idOK(input.toolkit_id)||input.trusted_code!==true)throw Error('EXPLICIT_CODE_TRUST_REQUIRED');
   const candidate=await snapshot(input.path);if(candidate.manifest.id!==input.toolkit_id)throw Error('TOOLKIT_ID_MISMATCH');
-  return serial(app,async()=>{
+  return serial(app,async()=>withToolkitLock(app,input.toolkit_id,async()=>{
    const current=await records(app),registered=current.packages[input.toolkit_id];
    const bundledBase=registered?null:packages.find((item)=>item.manifest.id===input.toolkit_id);
    const old=registered|| (bundledBase ? {...bundledBase.manifest, id:bundledBase.manifest.id, version:bundledBase.manifest.version, fingerprint:bundledBase.fingerprint, files:bundledBase.files, root:bundledBase.root, enabled:true, origin:'bundled'} : null);
@@ -130,44 +207,82 @@ async function toolkitTool(input,app){
    current.pending_updates[updateId]={update_id:updateId,id:candidate.manifest.id,version:candidate.manifest.version,fingerprint:candidate.fingerprint,files:candidate.files,method_family:candidate.manifest.method_family||null,root:stage,created_at:new Date().toISOString(),base_fingerprint:old.fingerprint,base_origin:old.origin||'registered'};
    await saveRecords(app,current);
    return {ok:true,status:'staged',update_id:updateId,id:candidate.manifest.id,version:candidate.manifest.version,fingerprint:candidate.fingerprint,previous:{version:old.version,fingerprint:old.fingerprint},official:await officialStatus(stage,copied,app),activated:false};
-  });
+  }));
  }
  if(input.action==='official_status'){
-  let s=packages.find(p=>p.manifest.id===input.toolkit_id);if(!s){const p=reg.packages[input.toolkit_id];if(!p)throw Error('TOOLKIT_NOT_FOUND');s=await snapshot(path.join(store(app),'packages',input.toolkit_id));if(s.fingerprint!==p.fingerprint)return {ok:true,id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint,registered_fingerprint:p.fingerprint,official:{status:'modified_local',reason:'installed toolkit bytes differ from the registered fingerprint; execution remains blocked until an explicit update or rollback',expected_fingerprint:p.fingerprint,actual_fingerprint:s.fingerprint},requires_review:true};}
+  const registered=reg.packages[input.toolkit_id];let s;
+  if(registered){
+   s=await snapshot(path.join(store(app),'packages',input.toolkit_id));
+   if(s.fingerprint!==registered.fingerprint)return {ok:true,id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint,registered_fingerprint:registered.fingerprint,official:{status:'modified_local',reason:'installed toolkit bytes differ from the registered fingerprint; execution remains blocked until an explicit update or rollback',expected_fingerprint:registered.fingerprint,actual_fingerprint:s.fingerprint},requires_review:true};
+  } else { s=packages.find(p=>p.manifest.id===input.toolkit_id);if(!s)throw Error('TOOLKIT_NOT_FOUND'); }
   return {ok:true,id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint,official:await officialStatus(s.root,s,app)};
  }
- if(input.action==='activate_update')return serial(app,async()=>{
+ if(input.action==='activate_update')return serial(app,async()=>withPendingToolkitLock(app,input.update_id,async()=>{
   const current=await records(app),pending=current.pending_updates[input.update_id];if(!pending)throw Error('PENDING_UPDATE_NOT_FOUND');
   const bundledOld=packages.find((item)=>item.manifest.id===pending.id);
-  const old=current.packages[pending.id] || (pending.base_origin==='bundled' && bundledOld ? {...bundledOld.manifest,id:bundledOld.manifest.id,version:bundledOld.manifest.version,fingerprint:bundledOld.fingerprint,files:bundledOld.files,root:bundledOld.root,enabled:true,origin:'bundled'} : null);
+  // A restored bundled payload in packages/ is an installed copy. Its
+  // provenance must not select the immutable bundled-source copy branch.
+  const installed=current.packages[pending.id];
+  const old=installed ? {...installed,origin:'registered'} : (pending.base_origin==='bundled' && bundledOld ? {...bundledOld.manifest,id:bundledOld.manifest.id,version:bundledOld.manifest.version,fingerprint:bundledOld.fingerprint,files:bundledOld.files,root:bundledOld.root,enabled:true,origin:'bundled'} : null);
   if(!old||old.fingerprint!==pending.base_fingerprint)throw Error('UPDATE_BASE_CHANGED');
   const inUse=await activeBindings(app,old.id,old.fingerprint);if(!inUse.known)throw Object.assign(new Error(inUse.error),{code:inUse.error});if(inUse.items.length) {const e=Error('A managed project still depends on the current toolkit version');e.code='PACK_VERSION_IN_USE';e.projects=inUse.items;throw e;}
   const staged=await snapshot(pending.root);if(staged.fingerprint!==pending.fingerprint)throw Error('PENDING_UPDATE_CHANGED');
   const official=await officialStatus(pending.root,staged,app);if(official.status==='invalid')throw Object.assign(new Error('OFFICIAL_PACKAGE_SIGNATURE_INVALID'),{code:'OFFICIAL_PACKAGE_SIGNATURE_INVALID',official});
-  const dest=path.join(store(app),'packages',pending.id),historyRoot=path.join(store(app),'history',pending.id,`${old.version}-${old.fingerprint.slice(0,16)}`);
-  await fs.mkdir(path.dirname(historyRoot),{recursive:true});
-  let archived=false, promoted=false;
-  try {
-   if(old.origin==='bundled') await copyInspected(old.root,historyRoot,old.files); else { await fs.rename(dest,historyRoot); archived=true; }
-   current.history[pending.id]=[...(current.history[pending.id]||[]),{...old,root:historyRoot,archived_at:new Date().toISOString()}];
-   await fs.rename(pending.root,dest);promoted=true;
-   current.packages[pending.id]={...pending,root:dest,origin:'registered',enabled:true,activated_at:new Date().toISOString()};delete current.pending_updates[input.update_id];await saveRecords(app,current);
-  } catch(error) {
-   if(promoted) await fs.rename(dest,pending.root).catch(()=>{});
-   if(archived && !fss.existsSync(dest) && fss.existsSync(historyRoot)) await fs.rename(historyRoot,dest).catch(()=>{});
-   throw error;
-  }
+   // Distinct transactions retain distinct historical payloads.
+   const dest=path.join(store(app),'packages',pending.id),transactionId=crypto.randomUUID(),historyRoot=path.join(store(app),'history',pending.id,`${old.version}-${old.fingerprint.slice(0,16)}-${transactionId.slice(0,8)}`);
+   await fs.mkdir(path.dirname(dest),{recursive:true});
+   await fs.mkdir(path.dirname(historyRoot),{recursive:true});
+   let archived=false, promoted=false;
+   try {
+    current.install_transactions[transactionId]={kind:'activate',phase:'prepared',id:pending.id,pending_id:input.update_id,dest,history_root:historyRoot,old_fingerprint:old.fingerprint,old_origin:old.origin||'registered',old_root:old.root,old_files:old.files||{},old_record:old};await saveRecords(app,current);
+    if(old.origin==='bundled') await copyInspected(old.root,historyRoot,old.files); else { await fs.rename(dest,historyRoot); archived=true; }
+    current.history[pending.id]=[...(current.history[pending.id]||[]),{...old,root:historyRoot,archived_at:new Date().toISOString()}];
+    current.install_transactions[transactionId].phase='archived';await saveRecords(app,current);
+    await fs.rename(pending.root,dest);promoted=true;
+    current.install_transactions[transactionId].phase='promoted';await saveRecords(app,current);
+    current.packages[pending.id]={...pending,root:dest,origin:'registered',enabled:true,activated_at:new Date().toISOString()};delete current.pending_updates[input.update_id];delete current.install_transactions[transactionId];await saveRecords(app,current);
+   } catch(error) {
+    if(promoted) await fs.rename(dest,pending.root).catch(()=>{});
+    if(archived && !fss.existsSync(dest) && fss.existsSync(historyRoot)) await fs.rename(historyRoot,dest).catch(()=>{});
+    // Keep the journal if compensation cannot be proven. A later process can
+    // reconcile the recorded phase instead of treating a half-move as clean.
+    const restored=(!promoted || fss.existsSync(pending.root)) && (!archived || fss.existsSync(dest));
+    if(restored){
+      current.history[pending.id]=(current.history[pending.id]||[]).filter(item=>path.resolve(String(item.root||''))!==path.resolve(historyRoot));
+      delete current.install_transactions[transactionId];
+    }
+    await saveRecords(app,current).catch(()=>{});
+    throw error;
+   }
   return {ok:true,status:'activated',id:pending.id,version:pending.version,fingerprint:pending.fingerprint,previous:{version:old.version,fingerprint:old.fingerprint},official};
- });
- if(input.action==='rollback_update')return serial(app,async()=>{
+ }));
+ if(input.action==='rollback_update')return serial(app,async()=>withToolkitLock(app,input.toolkit_id,async()=>{
   const current=await records(app),active=current.packages[input.toolkit_id];if(!active)throw Error('REGISTERED_TOOLKIT_NOT_FOUND');const target=(current.history[input.toolkit_id]||[]).find(x=>x.fingerprint===input.target_fingerprint);if(!target)throw Error('HISTORICAL_TOOLKIT_VERSION_NOT_FOUND');
   const inUse=await activeBindings(app,active.id,active.fingerprint);if(!inUse.known)throw Object.assign(new Error(inUse.error),{code:inUse.error});if(inUse.items.length){const e=Error('A managed project still depends on the active toolkit version');e.code='PACK_VERSION_IN_USE';e.projects=inUse.items;throw e;}
-  const dest=path.join(store(app),'packages',active.id),currentHistory=path.join(store(app),'history',active.id,`${active.version}-${active.fingerprint.slice(0,16)}-${Date.now()}`);
-  const targetSnapshot=await snapshot(target.root);if(targetSnapshot.fingerprint!==target.fingerprint)throw Object.assign(new Error('HISTORICAL_TOOLKIT_CHANGED'),{code:'HISTORICAL_TOOLKIT_CHANGED'});
-  await fs.rename(dest,currentHistory);await fs.rename(target.root,dest);
-  current.history[input.toolkit_id]=[...(current.history[input.toolkit_id]||[]).filter(x=>x.fingerprint!==target.fingerprint),{...active,root:currentHistory,archived_at:new Date().toISOString()}];current.packages[input.toolkit_id]={...target,root:dest,enabled:true,activated_at:new Date().toISOString()};await saveRecords(app,current);
+   const dest=path.join(store(app),'packages',active.id),currentHistory=path.join(store(app),'history',active.id,`${active.version}-${active.fingerprint.slice(0,16)}-${Date.now()}`),transactionId=crypto.randomUUID();
+   const targetSnapshot=await snapshot(target.root);if(targetSnapshot.fingerprint!==target.fingerprint)throw Object.assign(new Error('HISTORICAL_TOOLKIT_CHANGED'),{code:'HISTORICAL_TOOLKIT_CHANGED'});
+   current.install_transactions[transactionId]={kind:'rollback',phase:'prepared',id:active.id,dest,history_root:currentHistory,old_fingerprint:active.fingerprint,old_origin:active.origin||'registered',old_root:active.root,old_files:active.files||{},target_record:target};await saveRecords(app,current);
+   let archived=false,promoted=false;
+   try {
+    await fs.rename(dest,currentHistory);archived=true;current.install_transactions[transactionId].phase='archived';await saveRecords(app,current);
+    await fs.rename(target.root,dest);promoted=true;current.install_transactions[transactionId].phase='promoted';await saveRecords(app,current);
+    current.history[input.toolkit_id]=[...(current.history[input.toolkit_id]||[]).filter(x=>x.fingerprint!==target.fingerprint),{...active,root:currentHistory,archived_at:new Date().toISOString()}];current.packages[input.toolkit_id]={...target,root:dest,enabled:true,activated_at:new Date().toISOString()};delete current.install_transactions[transactionId];await saveRecords(app,current);
+   } catch(error){
+    if(promoted)await fs.rename(dest,target.root).catch(()=>{});
+    if(archived&&!fss.existsSync(dest)&&fss.existsSync(currentHistory))await fs.rename(currentHistory,dest).catch(()=>{});
+    const restored=(!promoted||fss.existsSync(target.root))&&(!archived||fss.existsSync(dest));
+    if(restored){
+      current.packages[input.toolkit_id]=active;
+      const history=current.history[input.toolkit_id]||[];
+      current.history[input.toolkit_id]=history.filter(item=>path.resolve(String(item.root||''))!==path.resolve(currentHistory));
+      if(!current.history[input.toolkit_id].some(item=>item.fingerprint===target.fingerprint)) current.history[input.toolkit_id].push(target);
+      delete current.install_transactions[transactionId];
+    }
+    await saveRecords(app,current).catch(()=>{});
+    throw error;
+   }
   const restored=await snapshot(dest);return {ok:true,status:'rolled_back',id:active.id,version:target.version,fingerprint:target.fingerprint,previous:{version:active.version,fingerprint:active.fingerprint},official:await officialStatus(dest,restored,app)};
- });
+ }));
  if(!idOK(input.toolkit_id))throw Error('INVALID_TOOLKIT_ID');
  if(['enable','disable'].includes(input.action))return serial(app,async()=>{const current=await records(app),p=current.packages[input.toolkit_id];if(!p)throw Error('REGISTERED_TOOLKIT_NOT_FOUND');p.enabled=input.action==='enable';await saveRecords(app,current);return {ok:true,id:p.id,enabled:p.enabled};});
  let s=null;
@@ -175,7 +290,16 @@ async function toolkitTool(input,app){
  if(record && record.enabled!==false){const root=path.join(store(app),'packages',input.toolkit_id);s=await snapshot(root);if(s.fingerprint!==record.fingerprint)throw Error('TOOLKIT_CHANGED_REVIEW_REQUIRED');}
  if(!s)s=packages.find(p=>p.manifest.id===input.toolkit_id);
  if(!s)throw Error('TOOLKIT_NOT_ENABLED');
- if(input.project_id){if(!/^[A-Za-z][A-Za-z0-9_-]{2,63}$/.test(String(input.project_id)))throw Error('INVALID_PROJECT_ID');const statePath=path.join(app,'SketchUpLiveMCP','managed-projects',String(input.project_id),'state.json');try{const state=JSON.parse(await fs.readFile(statePath,'utf8'));const binding=(state.toolkit_bindings||[]).find(b=>b&&b.id===input.toolkit_id);if(binding&&binding.fingerprint!==s.fingerprint){const historical=(reg.history[input.toolkit_id]||[]).find(x=>x.fingerprint===binding.fingerprint);if(!historical)throw Error('PACK_VERSION_UNAVAILABLE');s=await snapshot(historical.root);if(s.fingerprint!==binding.fingerprint)throw Error('PACK_VERSION_UNAVAILABLE');}}catch(error){if(error.code==='ENOENT'){}else throw error;}}
+ if(input.project_id){
+  if(!/^[A-Za-z][A-Za-z0-9_-]{2,63}$/.test(String(input.project_id)))throw Error('INVALID_PROJECT_ID');
+  const {ManagedProjects}=require('./managed-project');
+  const manager=new ManagedProjects({appDataDir:app,skillRoot:skillRoot()});
+  try{
+   const state=await manager.loadState(String(input.project_id));
+   const binding=(state.toolkit_bindings||[]).find(b=>b&&b.id===input.toolkit_id);
+   if(binding&&binding.fingerprint!==s.fingerprint){const historical=(reg.history[input.toolkit_id]||[]).find(x=>x.fingerprint===binding.fingerprint);if(!historical)throw Error('PACK_VERSION_UNAVAILABLE');s=await snapshot(historical.root);if(s.fingerprint!==binding.fingerprint)throw Error('PACK_VERSION_UNAVAILABLE');}
+  }catch(error){if(error.code!=='ENOENT')throw error;}
+ }
  await requiredCapabilities(s.manifest);
  if(input.project_id){
   const state=await bindProjectToolkit(app,String(input.project_id),{id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint,origin:record?'registered':'bundled'});
