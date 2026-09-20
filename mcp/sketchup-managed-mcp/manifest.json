@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "id": "sketchup-managed",
+  "name": "ADAI SketchUp Managed MCP",
+  "version": "0.5.24",
+  "build_id": "0.5.24-s1-s6-cpal-skill-card-ruby-20260920",
+  "publisher": "ADAI",
+  "license": "CPAL-1.0",
+  "transport": "stdio",
+  "entry": "launch.cjs",
+  "command": "node",
+  "args": [
+    "launch.cjs"
+  ],
+  "platforms": [
+    "win32"
+  ],
+  "supportedSketchUpVersions": [
+    "2018",
+    "2019"
+  ],
+  "runtimeRequirements": [
+    "Node.js >= 18",
+    "Python >= 3.10",
+    "numpy >= 1.24 (source templates)",
+    "Pillow >= 10 (evidence helpers)",
+    "interactive Windows desktop for viewport evidence"
+  ],
+  "realSketchUpAcceptance": "SU2019 19.0.685 / Ruby2.5.1: engineering solids, receipt recovery, stale-audit refusal, translation/review/rollback/recapture/save and reopen/edit executed. Patch production entry closed pending full recovery acceptance. Architecture/source matching, SU2018, second-machine and model comparison remain not_run.",
+  "bundledKnowledgePacks": [
+    {
+      "id": "adai-ancient-architecture",
+      "version": "1.4.0",
+      "author": "老王",
+      "publisher": "ADAI",
+      "installMode": "first-ref-list"
+    }
+  ],
+  "bundledToolkits": [
+    {
+      "id": "ancient-architecture",
+      "sourceVersion": "0.4",
+      "integrationVersion": "0.5.24",
+      "entry": "sketchup_ancient_tool",
+      "scope": "legacy diagnostic compilers; explicit geometry family supports five formal managed phases with phase-bound registration mappings",
+      "version": "0.4.4",
+      "integrationBaseline": "0.5.6"
+    },
+    {
+      "id": "parametric-facade-bay",
+      "sourceVersion": "0.1",
+      "integrationVersion": "0.5.24",
+      "entry": "sketchup_toolkit",
+      "scope": "bounded parametric facade-bay massing; live readback and visual review required",
+      "version": "0.1.0",
+      "productionReady": false
+    }
+  ],
+  "developmentBaseline": "2019",
+  "plannedSketchUpVersions": [
+    "2024",
+    "2025"
+  ],
+  "releaseStatus": "engineering_regression_candidate",
+  "runtime": "node",
+  "entrypoint": "launch.cjs",
+  "codeBaseline": "0.5.24-engineering",
+  "engineeringVersion": "0.5.24"
+}

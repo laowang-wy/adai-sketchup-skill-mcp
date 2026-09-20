@@ -1,0 +1,2 @@
+# Tested with Python 3.10; source template and bearing tools use numpy.
+numpy==2.2.6

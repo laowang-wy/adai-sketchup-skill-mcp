@@ -1,0 +1,31 @@
+# 斗拱放置、旋转与阵列
+
+使用时机：样板要移动、转向或等距排列时
+
+先编译 placement_contract，逐件比对世界坐标真实几何范围；阵列只开放 corridor-straight。
+
+## 规则
+
+- origin_mm 为 XY 几何包围中心与最低 Z，不是自动识别的柱头承托中心。
+- width_mm 是整体 X 宽；Y 和 Z 保持源比例。
+- 阵列从第一个实例沿局部 X 排列，整体再绕 Z 旋转。
+- 数值实例检查不能证明柱头接触、木构承载或结构安全。
+
+## 检查
+
+- 首、中、末实例检查间距、方向与是否共享定义。
+- 已安装构件另查真实承托面与实际缝隙；缺证据记 unverified。
+
+## 拒绝条件
+
+- 把源定义局部巨幅坐标直接当实物尺寸
+- 整体先旋转后沿世界 X 平移导致阵列走错方向
+- 以 AABB 相交当作承托成立
+
+## 证据
+
+- source_templates/compiler.py
+- source_templates/managed_builder.rb
+- validation/bracket-experience-v02/review.json
+
+入口：`source_template_tool.py`

@@ -1,0 +1,13 @@
+{
+  "schema": "ark-template-1",
+  "template": "changkong-layered",
+  "width_mm": 1200,
+  "origin_mm": [
+    25000,
+    15000,
+    1200
+  ],
+  "rotation_deg": 90,
+  "count": 1,
+  "spacing_mm": 0
+}

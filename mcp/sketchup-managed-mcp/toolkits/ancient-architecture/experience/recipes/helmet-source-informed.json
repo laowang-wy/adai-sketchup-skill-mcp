@@ -1,0 +1,20 @@
+{
+  "schema_version": 4,
+  "roof_type": "helmet",
+  "width": 6800,
+  "depth": 5300,
+  "rise": 2255,
+  "thickness": 100,
+  "ridge_length": 0,
+  "corner_lift": 700,
+  "gable_span_ratio": 0.48,
+  "apron_rise_ratio": 0.3,
+  "sides": 4,
+  "slope_segments": 24,
+  "span_segments": 16,
+  "details": "detailed",
+  "tile_width": 400,
+  "tile_length": 600,
+  "tile_overlap": 70,
+  "ridge_width": 180
+}

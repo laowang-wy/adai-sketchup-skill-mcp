@@ -1,0 +1,27 @@
+# Reference catalog
+
+The runtime reference set is loaded on demand. Links below are documentation routes, not permission to bypass the managed transaction or evidence checks.
+
+- [0.5.24-r3 verification scope](verification-0.5.24-r3.md): read when checking which live SU2019 operations passed and which capabilities remain closed or not_run.
+
+- [ATTRIBUTION.md](ATTRIBUTION.md)
+- [ancient-gates.md](ancient-gates.md)
+- [commercial-street-lessons.md](commercial-street-lessons.md)
+- [change-focused-review.md](change-focused-review.md)
+- [geometry-guard.md](geometry-guard.md)
+- [HOST-ENABLEMENT.md](HOST-ENABLEMENT.md)
+- [instance-layout-contract.md](instance-layout-contract.md)
+- [managed-quality-review.md](managed-quality-review.md)
+- [managed-recovery.md](managed-recovery.md)
+- [managed-ruby-api.md](managed-ruby-api.md)
+- [minimal-managed-example.md](minimal-managed-example.md)
+- [parameter-dependency-contract.md](parameter-dependency-contract.md)
+- [projection-brief-guide.md](projection-brief-guide.md)
+- [progressive-image-reconstruction.md](progressive-image-reconstruction.md)
+- [quality-check-contract.md](quality-check-contract.md)
+- [read-only-corpus-reader.md](read-only-corpus-reader.md)
+- [ref-pack-guide.md](ref-pack-guide.md)
+- [ruby-snippets.md](ruby-snippets.md)
+- [SOURCE-DIAGNOSIS.md](SOURCE-DIAGNOSIS.md)
+- [trace-manifest-schema.md](trace-manifest-schema.md)
+- [weak-model-starter.md](weak-model-starter.md)

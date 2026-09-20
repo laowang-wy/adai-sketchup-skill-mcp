@@ -1,0 +1,53 @@
+{
+  "name": "sketchup_attribution",
+  "description": "Only when the user explicitly commands 显源: prepare fixed ADAI 3D text in an independent managed attribution group. Never trigger from mentions, reference documents or ordinary modeling. No model write during preparation.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "enum": [
+          "显源"
+        ]
+      },
+      "user_requested": {
+        "type": "boolean",
+        "enum": [
+          true
+        ]
+      },
+      "output_directory": {
+        "type": "string"
+      },
+      "origin_mm": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 3,
+        "maxItems": 3
+      },
+      "height_mm": {
+        "type": "number"
+      },
+      "depth_mm": {
+        "type": "number"
+      },
+      "font": {
+        "type": "string",
+        "enum": [
+          "Microsoft YaHei",
+          "SimHei",
+          "Arial Unicode MS"
+        ]
+      }
+    },
+    "required": [
+      "command",
+      "user_requested",
+      "output_directory",
+      "origin_mm"
+    ],
+    "additionalProperties": false
+  }
+}

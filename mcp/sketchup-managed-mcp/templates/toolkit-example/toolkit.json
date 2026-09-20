@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "example-proportions",
+  "version": "1.0.0",
+  "author": "Your organization",
+  "license": "Choose your own license before distributing",
+  "runtime": "node",
+  "entry": "entry.cjs",
+  "dependencies": [
+    "Node >=18"
+  ],
+  "actions": {
+    "check": {
+      "effect": "read"
+    }
+  }
+}

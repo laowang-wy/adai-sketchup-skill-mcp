@@ -1,0 +1,55 @@
+{
+  "name": "sketchup_toolkit",
+  "description": "Host-independent optional toolkit registry. Inspect does not execute. Register explicitly trusted local code as a pinned copy. Invoke declared operations offline; compilation does not run SU. REF recommendations never authorize installing code.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "list",
+          "inspect",
+          "register",
+          "enable",
+          "disable",
+          "invoke",
+          "update",
+          "activate_update",
+          "rollback_update",
+          "official_status"
+        ]
+      },
+      "path": {
+        "type": "string"
+      },
+      "trusted_code": {
+        "type": "boolean"
+      },
+      "toolkit_id": {
+        "type": "string"
+      },
+      "operation": {
+        "type": "string"
+      },
+      "arguments": {
+        "type": "object"
+      },
+      "expected_fingerprint": {
+        "type": "string"
+      },
+      "project_id": {
+        "type": "string"
+      },
+      "update_id": {
+        "type": "string"
+      },
+      "target_fingerprint": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

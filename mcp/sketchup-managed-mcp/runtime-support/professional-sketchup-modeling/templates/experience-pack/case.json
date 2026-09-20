@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "case_id": "replace-me",
+  "status": "unverified",
+  "task_type": "new_build",
+  "construction_mode": "guided",
+  "source": {
+    "images": [],
+    "scale_basis": null,
+    "assumptions": []
+  },
+  "method": {
+    "feature": null,
+    "alternatives": [],
+    "chosen": null,
+    "applicable_when": [],
+    "not_applicable_when": [],
+    "parameters": {},
+    "shared_boundaries": []
+  },
+  "comparison": {
+    "reference": [],
+    "rejected": [],
+    "corrected": [],
+    "camera_id": null,
+    "entity_paths": [],
+    "diagnosis": null,
+    "fix": null
+  },
+  "checks": [
+    {
+      "kind": "boundary_gap",
+      "source": "unverified",
+      "tolerance": null,
+      "units": null,
+      "evidence": null,
+      "result": "unverified"
+    }
+  ],
+  "editable_model": {
+    "external_path": null,
+    "sha256": null
+  },
+  "review": {
+    "reviewer": null,
+    "independent": false,
+    "accepted": false,
+    "remaining_defects": []
+  }
+}

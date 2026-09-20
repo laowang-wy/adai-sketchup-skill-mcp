@@ -1,0 +1,327 @@
+{
+  "format": "ark-template-catalog-1",
+  "templates": {
+    "corridor-xieshan": {
+      "network": "source_kits/corridor/network.json",
+      "network_sha256": "a1c31ccc84fa1ba3e966ddda1081f9710418fb125014cfb7bbff44295a7660cf",
+      "root": "G0366",
+      "source_path": [
+        "C0111",
+        "G0366"
+      ],
+      "source_linear": [
+        [
+          0.7679999999999992,
+          -3.3062331405849874e-14,
+          -3.505925571005359e-10
+        ],
+        [
+          3.306233137923521e-14,
+          0.7679999999999992,
+          -5.830146832168483e-14
+        ],
+        [
+          3.505925571005359e-10,
+          5.83014683065918e-14,
+          0.7679999999999992
+        ]
+      ],
+      "kind": "roof_assembly",
+      "default_width_mm": 6000,
+      "status": "readable_source_compile_blocked_nonmanifold",
+      "placement": "world-aligned source orientation; XY bbox center at origin, lowest geometry Z=0",
+      "scale_basis": "requested bounding width; not measured historical size",
+      "evidence_id": "ev_01_mty5uchk_054c35",
+      "evidence": "validation/source-corridor-xieshan-d/result-summary.json",
+      "preview": "validation/source-corridor-xieshan-d/native/roof-perspective.png",
+      "verified": [
+        "107 reusable source definitions",
+        "all retained per-definition triangle counts checked in live SU",
+        "true transformed-vertex dimensions checked within 0.2 mm",
+        "perspective, gable side, underside visually reviewed",
+        "source straight and corner brackets retained in eave ring"
+      ],
+      "unverified": [
+        "restored original material UV",
+        "all member solidity or host contacts",
+        "arbitrary shape variation",
+        "historical correctness",
+        "final SKP delivery"
+      ],
+      "current_compile_support": {
+        "state": "blocked",
+        "code": "SOURCE_NONMANIFOLD_EDGE",
+        "definition": "G0002",
+        "edge": [
+          92,
+          93
+        ],
+        "source_unchanged": true,
+        "alternative": "Use family=roof preset si_shan for a generic shell, or reconstruct declared source parts with family=geometry; neither certifies source fidelity."
+      },
+      "historical_status": "su2019_diagnostic_built_visual_reviewed"
+    },
+    "corridor-straight": {
+      "network": "source_kits/corridor/network.json",
+      "network_sha256": "a1c31ccc84fa1ba3e966ddda1081f9710418fb125014cfb7bbff44295a7660cf",
+      "root": "C0042",
+      "source_path": [
+        "C0111",
+        "G0366",
+        "G0328",
+        "C0042"
+      ],
+      "source_linear": [
+        [
+          -3.3356365481927465e-14,
+          -0.7679999999999992,
+          -3.505925571005359e-10
+        ],
+        [
+          0.7679999999999992,
+          -3.33563654553128e-14,
+          -5.830146832168483e-14
+        ],
+        [
+          5.830146830645757e-14,
+          -3.505925571005359e-10,
+          0.7679999999999992
+        ]
+      ],
+      "kind": "straight_dougong",
+      "default_width_mm": 900,
+      "status": "su2019_diagnostic_standalone_reviewed",
+      "placement": "world-aligned source orientation; XY bbox center at origin, lowest geometry Z=0",
+      "scale_basis": "requested bounding width; not measured historical size",
+      "evidence_id": "ev_01_mty6infv_caaa14",
+      "evidence": "validation/bracket-experience-v02/review.json",
+      "preview": "validation/bracket-experience-v02/close/corridor-straight/bracket-perspective.png",
+      "verified": [
+        "retained source triangles rebuilt in SU2019",
+        "per-instance actual mesh bounds checked within 0.2 mm at specified placement",
+        "shared component definition assertion passed",
+        "Three equally spaced shared instances retain bearing blocks and projecting arms at 30-degree whole-array rotation."
+      ],
+      "unverified": [
+        "historic construction classification",
+        "structural safety or host bearing contact",
+        "arbitrary bracket order or angle changes",
+        "source material UV restoration",
+        "final SKP delivery"
+      ],
+      "tested_preset": {
+        "schema": "ark-template-1",
+        "template": "corridor-straight",
+        "width_mm": 900,
+        "origin_mm": [
+          20000,
+          10000,
+          1200
+        ],
+        "rotation_deg": 30,
+        "count": 3,
+        "spacing_mm": 1200
+      }
+    },
+    "corridor-corner": {
+      "network": "source_kits/corridor/network.json",
+      "network_sha256": "a1c31ccc84fa1ba3e966ddda1081f9710418fb125014cfb7bbff44295a7660cf",
+      "root": "C0044",
+      "source_path": [
+        "C0111",
+        "G0366",
+        "G0328",
+        "C0044"
+      ],
+      "source_linear": [
+        [
+          -0.7142399999999992,
+          3.083543738042268e-14,
+          -3.260521719102614e-10
+        ],
+        [
+          -3.083543735567096e-14,
+          -0.7142399999999992,
+          -5.422036553916694e-14
+        ],
+        [
+          -3.260521719102614e-10,
+          -5.422036552509044e-14,
+          0.7142399999999992
+        ]
+      ],
+      "kind": "corner_dougong",
+      "default_width_mm": 1200,
+      "status": "readable_source_compile_blocked_nonmanifold",
+      "placement": "world-aligned source orientation; XY bbox center at origin, lowest geometry Z=0",
+      "scale_basis": "requested bounding width; not measured historical size",
+      "evidence_id": "ev_01_mty6infv_caaa14",
+      "evidence": "validation/bracket-experience-v02/review.json",
+      "preview": "validation/bracket-experience-v02/close/corridor-corner/bracket-perspective.png",
+      "verified": [
+        "retained source triangles rebuilt in SU2019",
+        "per-instance actual mesh bounds checked within 0.2 mm at specified placement",
+        "shared component definition assertion passed",
+        "Diagonal branch and intersecting arms are present in independent corner definition, rotated 45 degrees."
+      ],
+      "unverified": [
+        "historic construction classification",
+        "structural safety or host bearing contact",
+        "arbitrary bracket order or angle changes",
+        "source material UV restoration",
+        "final SKP delivery"
+      ],
+      "tested_preset": {
+        "schema": "ark-template-1",
+        "template": "corridor-corner",
+        "width_mm": 1200,
+        "origin_mm": [
+          26000,
+          10000,
+          1200
+        ],
+        "rotation_deg": 45,
+        "count": 1,
+        "spacing_mm": 0
+      },
+      "current_compile_support": {
+        "state": "blocked",
+        "code": "SOURCE_NONMANIFOLD_EDGE",
+        "definition": "G0018",
+        "edge": [
+          0,
+          2
+        ],
+        "source_unchanged": true,
+        "alternative": "Use a separately validated corner reconstruction with family=geometry; straight dougong is not an equivalent corner."
+      },
+      "historical_status": "su2019_diagnostic_standalone_reviewed"
+    },
+    "changkong-cross": {
+      "network": "source_kits/changkong/network.json",
+      "network_sha256": "244a4983c8e5d9167b08817df163f62dc3375ec29fef2750b2627fcb8ac66c0e",
+      "root": "C0730",
+      "source_path": [
+        "C0995",
+        "C0730"
+      ],
+      "source_linear": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "kind": "cross_bracket",
+      "default_width_mm": 900,
+      "status": "su2019_diagnostic_standalone_reviewed",
+      "placement": "world-aligned source orientation; XY bbox center at origin, lowest geometry Z=0",
+      "scale_basis": "requested bounding width; not measured historical size",
+      "evidence_id": "ev_01_mty6infv_caaa14",
+      "evidence": "validation/bracket-experience-v02/review.json",
+      "preview": "validation/bracket-experience-v02/close/changkong-cross/bracket-perspective.png",
+      "verified": [
+        "retained source triangles rebuilt in SU2019",
+        "per-instance actual mesh bounds checked within 0.2 mm at specified placement",
+        "shared component definition assertion passed",
+        "Two curved crossing arms, central/base block and five upper pads visible."
+      ],
+      "unverified": [
+        "historic construction classification",
+        "structural safety or host bearing contact",
+        "arbitrary bracket order or angle changes",
+        "source material UV restoration",
+        "final SKP delivery"
+      ],
+      "tested_preset": {
+        "schema": "ark-template-1",
+        "template": "changkong-cross",
+        "width_mm": 900,
+        "origin_mm": [
+          20000,
+          15000,
+          1200
+        ],
+        "rotation_deg": 0,
+        "count": 1,
+        "spacing_mm": 0
+      }
+    },
+    "changkong-layered": {
+      "network": "source_kits/changkong/network.json",
+      "network_sha256": "244a4983c8e5d9167b08817df163f62dc3375ec29fef2750b2627fcb8ac66c0e",
+      "root": "C0732",
+      "source_path": [
+        "C0995",
+        "C0732"
+      ],
+      "source_linear": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "kind": "layered_dougong",
+      "default_width_mm": 1200,
+      "status": "su2019_diagnostic_standalone_reviewed",
+      "placement": "world-aligned source orientation; XY bbox center at origin, lowest geometry Z=0",
+      "scale_basis": "requested bounding width; not measured historical size",
+      "evidence_id": "ev_01_mty6infv_caaa14",
+      "evidence": "validation/bracket-experience-v02/review.json",
+      "preview": "validation/bracket-experience-v02/close/changkong-layered/bracket-perspective.png",
+      "verified": [
+        "retained source triangles rebuilt in SU2019",
+        "per-instance actual mesh bounds checked within 0.2 mm at specified placement",
+        "shared component definition assertion passed",
+        "Staggered curved arm tiers visible; underside shows continued arm paths and separate bearing blocks."
+      ],
+      "unverified": [
+        "historic construction classification",
+        "structural safety or host bearing contact",
+        "arbitrary bracket order or angle changes",
+        "source material UV restoration",
+        "final SKP delivery"
+      ],
+      "tested_preset": {
+        "schema": "ark-template-1",
+        "template": "changkong-layered",
+        "width_mm": 1200,
+        "origin_mm": [
+          25000,
+          15000,
+          1200
+        ],
+        "rotation_deg": 90,
+        "count": 1,
+        "spacing_mm": 0
+      },
+      "bearing_diagnostic": {
+        "status": "sampled_contacts_passed",
+        "evidence": "validation/bearing-v03/review.json",
+        "samples": 36,
+        "scope": "1200mm width example, bottom seat and three top pads; not full structural contact validation"
+      }
+    }
+  }
+}

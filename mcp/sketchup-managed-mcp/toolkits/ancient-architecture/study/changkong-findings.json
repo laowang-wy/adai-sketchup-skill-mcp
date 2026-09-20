@@ -1,0 +1,39 @@
+{
+  "source": "<historical-path:8e254d8621ce>",
+  "sha256": "c3d3020b8bb707b41e156ba55ee727bbd93f0157d6f79cdcea9f8e4d07d762fa",
+  "source_unchanged": true,
+  "observations": [
+    {
+      "id": "C0730",
+      "description": "low cross bracket",
+      "source_faces_expanded": 340,
+      "direct_child_count": 3,
+      "child_definitions": {
+        "C0027": 2,
+        "C0026": 1
+      },
+      "geometry_evidence": "changkong-prototypes/C0730-perspective.png",
+      "network": "../source_kits/changkong/network.json"
+    },
+    {
+      "id": "C0732",
+      "description": "layered projecting bracket",
+      "source_faces_expanded": 1092,
+      "direct_child_count": 8,
+      "child_definitions": {
+        "C0026": 1,
+        "C0027": 4,
+        "C0029": 1,
+        "C0028": 1,
+        "C0033": 1
+      },
+      "geometry_evidence": "changkong-prototypes/C0732-perspective.png",
+      "network": "../source_kits/changkong/network.json"
+    }
+  ],
+  "limitations": [
+    "Derived pictures omit holes/materials; complete reusable network is separate",
+    "Local model dimensions include source scaling; do not use as real building measurement",
+    "No historic classification or structural adequacy inferred"
+  ]
+}

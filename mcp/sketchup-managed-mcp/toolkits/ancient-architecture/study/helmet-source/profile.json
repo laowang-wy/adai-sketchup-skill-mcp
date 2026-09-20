@@ -1,0 +1,58 @@
+{
+  "schema": "photo-informed-profile-1",
+  "source": "HNAU2024 + local front/side images",
+  "measurement_status": "inferred normalized stations, NOT measured XYZ",
+  "axis": "t=0 mid-eave, t=1 crown; z normalized to rise",
+  "stations": [
+    [
+      0,
+      0
+    ],
+    [
+      0.12,
+      0.015
+    ],
+    [
+      0.28,
+      0.095
+    ],
+    [
+      0.45,
+      0.31
+    ],
+    [
+      0.62,
+      0.62
+    ],
+    [
+      0.78,
+      0.85
+    ],
+    [
+      0.9,
+      0.965
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "interpolation": "monotone C1 cubic Hermite, weighted harmonic internal tangents; endpoint slope 0",
+  "corner_decay_power": 4,
+  "inferred_corner_lift_ratio": 0.31042128603104213,
+  "finial": {
+    "source_bead_count": 6,
+    "inferred_radii_by_width": [
+      0.026,
+      0.024,
+      0.022,
+      0.019,
+      0.016,
+      0.012
+    ],
+    "height_by_front_width": 0.22058823529411764,
+    "detail_scope": "six plain rounded beads, plinth and tip; no decorative relief"
+  },
+  "published_plan_ratio": 1.2830188679245282,
+  "height_datum_caution": "4.51m text datum ambiguous; 2255mm half-scale candidate is not a surveyed rise"
+}

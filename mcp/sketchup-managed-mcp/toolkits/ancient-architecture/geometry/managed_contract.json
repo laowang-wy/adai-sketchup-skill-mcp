@@ -1,0 +1,30 @@
+{
+  "generated_from": "mcp/sketchup-mcp/contracts/managed-contract.json",
+  "contract_version": 2,
+  "geometry_adapter": {
+    "phases": [
+      "massing",
+      "roof_profile",
+      "archetypes",
+      "primary_corrections",
+      "facade_detail"
+    ],
+    "adapter_version": "0.2.0",
+    "registration_requirements": {
+      "massing": [
+        "projection_subjects"
+      ],
+      "roof_profile": [
+        "roof_control_contract"
+      ],
+      "archetypes": [
+        "archetypes",
+        "visible_detail_systems"
+      ],
+      "primary_corrections": [
+        "correction_targets"
+      ]
+    },
+    "verification": "Formal wrapper records source mappings and phase registrations; live SketchUp execution and visual review remain required."
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "curved-profiles",
+  "title": "连续曲坡与共享边界",
+  "trigger": "屋面呈帐篷形、断肩或剖面变化不连续时",
+  "action": "先核对剖面站点、轴向与共享边界。王府样本给出多站剖面，通用歇山修正版通过共享连续剖面改善肩部。",
+  "rules": [
+    "检查端点、中点及肩部切向变化。",
+    "坡面、脊线、檐线相关参数使用同一来源。",
+    "源双坡放样工具不包含四坡、歇山翼角或盔顶拓扑。"
+  ],
+  "checks": [
+    "正视和侧视检查曲坡轮廓。",
+    "改变跨度/升高后，重查肩部、瓦面、脊件依赖。"
+  ],
+  "reject_when": [
+    "8 点环带向中心汇聚造成帐篷顶",
+    "轴向读错而提取到恒定高度",
+    "将闭合测试当作形似证明"
+  ],
+  "evidence": [
+    "study/findings.md"
+  ],
+  "entrypoint": "prepare_measured_loft.py",
+  "historical_evidence_not_shipped": [
+    "validation/xieshan-defect.json"
+  ],
+  "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks."
+}

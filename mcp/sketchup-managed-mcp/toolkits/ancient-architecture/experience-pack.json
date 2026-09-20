@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "id": "adai-ancient-experience",
+  "version": "0.4.1",
+  "author": "老王",
+  "publisher": "ADAI",
+  "license": "See DISTRIBUTION.md; source assets retain their own terms",
+  "ref": "ref-pack/REF.md",
+  "toolkit": "toolkit.json",
+  "units": "mm",
+  "dependencies": [
+    "Python >=3.10",
+    "numpy >=1.24"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "sketchup": {
+    "development_baseline": "2019",
+    "integration_live_tested": []
+  },
+  "generators": [
+    {
+      "id": "roof.si_shan",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/xieshan-details-v04/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "roof.wu_dian",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "roof.zan_jian",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "roof.juan_peng",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "roof.helmet",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/helmet-source-v04/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "roof.xie_ding",
+      "operation": "compile",
+      "family": "roof",
+      "parameter_contract": "v4/contract.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "source.corridor-xieshan",
+      "operation": "compile",
+      "family": "source",
+      "parameter_contract": "source_templates/compiler.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/source-corridor-xieshan-d/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "source.corridor-straight",
+      "operation": "compile",
+      "family": "source",
+      "parameter_contract": "source_templates/compiler.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/bracket-experience-v02/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "source.corridor-corner",
+      "operation": "compile",
+      "family": "source",
+      "parameter_contract": "source_templates/compiler.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/bracket-experience-v02/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "source.changkong-cross",
+      "operation": "compile",
+      "family": "source",
+      "parameter_contract": "source_templates/compiler.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/bracket-experience-v02/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "source.changkong-layered",
+      "operation": "compile",
+      "family": "source",
+      "parameter_contract": "source_templates/compiler.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/bracket-experience-v02/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "bearing.changkong-layered",
+      "operation": "compile",
+      "family": "bearing",
+      "parameter_contract": "bearing_tool.py",
+      "validation": {
+        "offline": "passed",
+        "live": "historical_bounded",
+        "visual": "unverified",
+        "scope": "Only recorded sample parameters; integration live acceptance and full supported-range visual checks pending",
+        "evidence": [
+          "validation/bearing-v03/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "eave.changkong-layered",
+      "operation": "compile",
+      "family": "eave",
+      "parameter_contract": "eave_tool.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "A-run 135 contact samples; current B-run smoothing live receipt incomplete. Width 900-1800 mm; fixed column 1800 and beam 180 mm. No full collision or structural acceptance.",
+        "evidence": [
+          "validation/eave-v04/review.json",
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "measured.g0916",
+      "operation": "compile",
+      "family": "measured",
+      "parameter_contract": "prepare_measured_loft.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Measured double-slope section only; current integrated live acceptance pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    },
+    {
+      "id": "measured.g1031",
+      "operation": "compile",
+      "family": "measured",
+      "parameter_contract": "prepare_measured_loft.py",
+      "validation": {
+        "offline": "passed",
+        "live": "unverified",
+        "visual": "unverified",
+        "scope": "Measured double-slope section only; current integrated live acceptance pending",
+        "evidence": [
+          "validation/integration-0.5.1.json"
+        ]
+      }
+    }
+  ],
+  "production_ready": false,
+  "distribution_profile": "runtime"
+}

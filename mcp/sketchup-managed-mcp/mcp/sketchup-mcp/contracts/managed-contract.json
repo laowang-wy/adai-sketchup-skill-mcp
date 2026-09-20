@@ -1,0 +1,214 @@
+{
+  "contract_version": 2,
+  "persisted_state_schema_version": 1,
+  "migration_enabled": false,
+  "mode_plans": {
+    "single_image": [
+      {
+        "name": "massing",
+        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+      },
+      {
+        "name": "archetypes",
+        "hint": "Build each representative reusable component as a visually complete source-matched kit, including its repeatable window, balcony, railing, frame and shadow detail. Register the component and its reusable detail systems. Do not distribute it yet."
+      },
+      {
+        "name": "replication",
+        "hint": "Instance only the accepted archetypes into the repeated level system. Keep first/last/transition levels out of the array."
+      },
+      {
+        "name": "variants",
+        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+      },
+      {
+        "name": "facade_detail",
+        "hint": "Add source-visible one-off details that do not belong inside reusable archetypes: entrance, canopy, crown, podium interface, corner closure, transfer joint or other unique termination. Do not rebuild repeated facade systems here."
+      },
+      {
+        "name": "finish",
+        "hint": "Add restrained materials, roof/ground closure and subordinate context. Do not use landscaping or a flattering camera to hide an unresolved building."
+      }
+    ],
+    "freeform": [
+      {
+        "name": "massing",
+        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+      },
+      {
+        "name": "archetypes",
+        "hint": "Build each representative reusable component as a visually complete source-matched kit, including its repeatable window, balcony, railing, frame and shadow detail. Register the component and its reusable detail systems. Do not distribute it yet."
+      },
+      {
+        "name": "replication",
+        "hint": "Instance only the accepted archetypes into the repeated level system. Keep first/last/transition levels out of the array."
+      },
+      {
+        "name": "variants",
+        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+      },
+      {
+        "name": "facade_detail",
+        "hint": "Add source-visible one-off details that do not belong inside reusable archetypes: entrance, canopy, crown, podium interface, corner closure, transfer joint or other unique termination. Do not rebuild repeated facade systems here."
+      },
+      {
+        "name": "finish",
+        "hint": "Add restrained materials, roof/ground closure and subordinate context. Do not use landscaping or a flattering camera to hide an unresolved building."
+      }
+    ],
+    "test": [
+      {
+        "name": "massing",
+        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+      },
+      {
+        "name": "archetypes",
+        "hint": "Build each representative reusable component as a visually complete source-matched kit, including its repeatable window, balcony, railing, frame and shadow detail. Register the component and its reusable detail systems. Do not distribute it yet."
+      },
+      {
+        "name": "replication",
+        "hint": "Instance only the accepted archetypes into the repeated level system. Keep first/last/transition levels out of the array."
+      },
+      {
+        "name": "variants",
+        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+      },
+      {
+        "name": "facade_detail",
+        "hint": "Add source-visible one-off details that do not belong inside reusable archetypes: entrance, canopy, crown, podium interface, corner closure, transfer joint or other unique termination. Do not rebuild repeated facade systems here."
+      },
+      {
+        "name": "finish",
+        "hint": "Add restrained materials, roof/ground closure and subordinate context. Do not use landscaping or a flattering camera to hide an unresolved building."
+      }
+    ],
+    "cad": [
+      {
+        "name": "source_alignment",
+        "hint": "Build source-aligned low-detail geometry only; preserve count, XY, footprint, rotation and host relationships."
+      },
+      {
+        "name": "archetypes",
+        "hint": "Build visually complete reusable level/component prototypes, including their repeatable source-visible detail, without broad replication."
+      },
+      {
+        "name": "replication",
+        "hint": "Instance validated reusable definitions while preserving source transforms and footprints."
+      },
+      {
+        "name": "variants",
+        "hint": "Build source-specific termination, roof, podium and one-off variants."
+      },
+      {
+        "name": "facade_detail",
+        "hint": "Build and register source-visible one-off details and closures that cannot be represented by the reusable component system."
+      },
+      {
+        "name": "finish",
+        "hint": "Add finish detail and materials without changing validated source alignment."
+      }
+    ],
+    "refinement": [
+      {
+        "name": "correction_scope",
+        "hint": "Apply only the named high-impact correction scope; do not rebuild unrelated accepted geometry."
+      },
+      {
+        "name": "primary_corrections",
+        "hint": "Correct host contacts, dimensions, hierarchy and major form defects."
+      },
+      {
+        "name": "component_cleanup",
+        "hint": "Repair reusable definitions, unique variants and termination conditions."
+      },
+      {
+        "name": "finish",
+        "hint": "Complete restrained finish corrections and delivery evidence."
+      }
+    ],
+    "attribution": [
+      {
+        "name": "attribution",
+        "hint": "Create only the explicitly requested ADAI attribution text; inspect literal text, Chinese glyphs, extrusion and placement before review."
+      }
+    ]
+  },
+  "conditional_phases": [
+    "roof_profile"
+  ],
+  "geometry_adapter": {
+    "phases": [
+      "massing",
+      "roof_profile",
+      "archetypes",
+      "primary_corrections",
+      "facade_detail"
+    ],
+    "adapter_version": "0.2.0",
+    "registration_requirements": {
+      "massing": ["projection_subjects"],
+      "roof_profile": ["roof_control_contract"],
+      "archetypes": ["archetypes", "visible_detail_systems"],
+      "primary_corrections": ["correction_targets"]
+    },
+    "verification": "Formal wrapper records source mappings and phase registrations; live SketchUp execution and visual review remain required."
+  },
+  "states": {
+    "step_in_progress": {
+      "implemented": true,
+      "next_actions": ["status", "operation_receipt", "recover:reconcile"]
+    },
+    "patch_in_progress": {
+      "implemented": true,
+      "next_actions": ["status", "operation_receipt", "recover:inspect"]
+    },
+    "write_in_progress": {
+      "implemented": true,
+      "next_actions": ["status", "operation_receipt", "recover:inspect"]
+    },
+    "ready_for_step": {
+      "implemented": true
+    },
+    "evidence_pending": {
+      "implemented": true
+    },
+    "review_required": {
+      "implemented": true
+    },
+    "ready_to_finish": {
+      "implemented": true
+    },
+    "recovery_required": {
+      "implemented": true
+    },
+    "finished": {
+      "implemented": true
+    },
+    "executing": {
+      "implemented": false
+    },
+    "result_unknown": {
+      "implemented": false
+    },
+    "validation_failed": {
+      "implemented": false
+    },
+    "rollback_unconfirmed": {
+      "implemented": false
+    }
+  },
+  "planned_errors": [
+    "RESULT_UNKNOWN",
+    "OPERATION_ID_CONFLICT",
+    "ROLLBACK_UNCONFIRMED"
+  ],
+  "feature_flags": {
+    "instance_translation_patch": {
+      "enabled": false,
+      "scope": "internal engineering: unique managed instance translation only",
+      "verification": "SU2019 apply/review/rollback/recapture/save passed; unknown-result patch recovery and full shared-path acceptance incomplete"
+    },
+    "object_patch_v2": false,
+    "custom_plan_v2": false,
+    "adaptive_evidence_v2": false
+  }
+}

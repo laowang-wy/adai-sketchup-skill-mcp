@@ -1,0 +1,56 @@
+{
+  "date": "2026-09-12",
+  "sources": [
+    {
+      "id": "HNAU2024",
+      "url": "http<historical-path:8503c7e759fc>",
+      "publisher": "湖南农业大学水利与土木工程学院",
+      "date": "2024-09-22",
+      "observed_claims": [
+        "rectangular helmet plan",
+        "four raised curved corner ribs",
+        "six glazed beads forming finial"
+      ],
+      "published_dimensions_m": {
+        "front_corner_span": 13.6,
+        "side_corner_span": 10.6,
+        "stated_board_to_eave_height": 4.51,
+        "finial_height": 3.0
+      },
+      "measurement_status": "published description, not independent survey; height datum not fully defined"
+    },
+    {
+      "id": "YY2011",
+      "url": "http<historical-path:95324a008929>",
+      "publisher": "岳阳市旅游局",
+      "date": "2011-09-21",
+      "used_claims": [
+        "main building helmet roof; timber frame"
+      ],
+      "not_used": [
+        "conflicting orientation and column counts in different summaries"
+      ]
+    }
+  ],
+  "images": {
+    "hunau-roof-close.webp": {
+      "url": "http<historical-path:919f1e90f8d3>",
+      "role": "close-view shape and curved ridge observation",
+      "sha256": "0e0823d8fc9fb5bec01bc2ceced6dc6635adbddfcb5b43258957114fd0527c92"
+    },
+    "front.jpg": {
+      "role": "existing local front perspective; cropped/occluded, no orthographic scale",
+      "sha256": "316e8a890fcb84bd21a631f81086adbac32d678c01389f58613f1403e34f928a"
+    },
+    "side.jpg": {
+      "role": "existing local oblique view; crown partly outside image",
+      "sha256": "73ed0aa969a737544292daf4df081b66de4690463cfb5f105d880eaebf7fd188"
+    }
+  },
+  "inference_boundary": [
+    "No source SKP positively identified as Yueyang helmet in the selected local directories.",
+    "Published dimensions constrain approximate proportions, not freeform profile stations.",
+    "Curve station heights and corner lift are explicitly photo-informed inferred parameters, not measured.",
+    "Finial six-bead count comes from text; exact bead diameters and ornament relief remain simplified."
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "helmet-provenance",
+  "title": "盔顶来源约束、连续剖面与六珠宝顶",
+  "trigger": "生成带来源约束的盔顶候选",
+  "entrypoint": "roof_tool.py",
+  "action": "复用 experience/recipes/helmet-source-informed.json；先读 study/helmet-source/profile.json 和 sources.json。",
+  "rules": [
+    "照片观察、公开尺寸与推定曲线分开记录。",
+    "八个归一化站点使用单调 C1 插值；四脊共享母线。",
+    "六珠数量有文字来源；珠径、剖面和翼角参数明确推定。",
+    "近照裁切，尚无已确认的当地盔顶源SKP。",
+    "冠顶邻近宝顶的小片露壳区尚未补特殊裁瓦，验收范围为来源深化与可重复候选。"
+  ],
+  "checks": [
+    "检查站点、端点、连续性与单调性，检查四脊六珠。",
+    "看SU正面、侧面和整体，不以面数认可风格。",
+    "修改 profile.json 必须重审来源并更新哈希。"
+  ],
+  "reject_when": [
+    "把原文4.51m模糊基准当作实测檐脊高",
+    "将不明类型SKP充当盔顶来源",
+    "将推定候选宣传为精确复原"
+  ],
+  "evidence": [
+    "study/helmet-source/sources.json",
+    "study/helmet-source/profile.json",
+    "v4/helmet_profile.py"
+  ],
+  "developer_archive_references": [
+    "validation/details-v04-tests.txt"
+  ],
+  "historical_evidence_not_shipped": [
+    "validation/helmet-source-v04/review.json",
+    "validation/helmet-source-v04/live-build-result.json",
+    "validation/DEVELOPMENT-ARCHIVE.json"
+  ],
+  "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks."
+}

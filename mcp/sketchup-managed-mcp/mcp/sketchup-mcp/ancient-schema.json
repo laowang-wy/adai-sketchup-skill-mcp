@@ -1,0 +1,65 @@
+{
+  "name": "sketchup_ancient_tool",
+  "description": "AncientArchitectureExperience 0.4: 12 bounded cards, 7 recipes, six roofs, source templates, bearing and eave diagnostics. Offline compile only; managed execution and real review remain required. family=geometry compiles explicit semantic parts through the shared guarded core for an exact project and phase; source fidelity still requires review. Runtime adapter 0.4.4 exposes all roof preset IDs and resolves recipe validation/compilation to source or roof.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "list",
+          "read",
+          "check",
+          "preset",
+          "validate",
+          "compile"
+        ]
+      },
+      "family": {
+        "type": "string",
+        "enum": [
+          "source",
+          "roof",
+          "bearing",
+          "eave",
+          "recipe",
+          "measured",
+          "geometry"
+        ]
+      },
+      "card_id": {
+        "type": "string"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 256,
+        "maximum": 12000
+      },
+      "preset_id": {
+        "type": "string"
+      },
+      "parameters": {
+        "type": "object"
+      },
+      "output_directory": {
+        "type": "string"
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "json",
+          "markdown"
+        ],
+        "description": "read only; markdown returns the complete upstream 0.4 card with path and SHA256; default json is the adapted runtime card."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "ancient-architecture",
+  "version": "0.4.4",
+  "author": "老王 / ADAI",
+  "license": "See DISTRIBUTION.md and upstream asset terms",
+  "runtime": "python",
+  "entry": "mcp_entry.py",
+  "method_family": "ancient_roof",
+  "dependencies": [
+    "Python >=3.10",
+    "numpy >=1.24"
+  ],
+  "actions": {
+    "list": {
+      "effect": "read"
+    },
+    "read": {
+      "effect": "read"
+    },
+    "check": {
+      "effect": "read"
+    },
+    "preset": {
+      "effect": "read"
+    },
+    "validate": {
+      "effect": "read"
+    },
+    "compile": {
+      "effect": "compile"
+    }
+  },
+  "requires_capabilities": [],
+  "produces": "legacy diagnostic managed Ruby or explicit phase-bound geometry; always requires live review",
+  "production_ready": false
+}

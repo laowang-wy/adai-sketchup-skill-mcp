@@ -1,0 +1,8 @@
+{
+  "files": {
+    "attribution_cli.py": "9c23f7e2b3327833d16bdfc8faeeeeea5cc28e57e4fc9735e9e66174b83eed94",
+    "attribution_core.py": "cf27e9f49c02e0bcb32ae92bf5372afc7475c723ae28f41aeb2e56b7319ddd5b",
+    "attribution_entry.py": "2ace9bad19046d924c94c4cb381ea1ce3225b6d2000608d5324d3ac94950f740"
+  },
+  "protection": "official distribution integrity only; editable source can replace this manifest"
+}

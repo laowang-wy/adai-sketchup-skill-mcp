@@ -1,0 +1,30 @@
+{
+  "source_version": "0.4",
+  "integration_version": "0.5.1",
+  "redacted_files": [
+    "source_kits/changkong/network.json",
+    "source_kits/corridor/network.json",
+    "study/changkong-findings.json",
+    "study/helmet-source/sources.json",
+    "validation/source-files-final-hashes.json",
+    "validation/bracket-experience-v02/result-summary.json",
+    "validation/bracket-experience-v02/suite-manifest.json",
+    "validation/eave-v04/native-export.json",
+    "validation/eave-v04/step.json",
+    "validation/helmet-source-v04/native-export.json",
+    "validation/helmet-source-v04/step.json",
+    "validation/source-corridor-xieshan-d/result-summary.json",
+    "validation/xieshan-details-v04/close-export.json",
+    "validation/xieshan-details-v04/native-export.json",
+    "validation/xieshan-details-v04/step.json"
+  ],
+  "changes": [
+    "SKILL.md renamed PACKAGE-GUIDE.md and frontmatter removed",
+    "SDK path requires explicit environment setting",
+    "temporary extraction root resolved before containment check",
+    "bounded MCP adapter and generic experience metadata added",
+    "historical path redaction; network content hashes updated"
+  ],
+  "source_geometry_algorithms_modified": false,
+  "integrated_live_run": "not_run"
+}

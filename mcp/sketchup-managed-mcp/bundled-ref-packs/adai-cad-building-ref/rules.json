@@ -1,0 +1,1 @@
+{"schema_version":1,"rules":[{"id":"cad.preflight","stages":["massing"],"method":"preflight-before-geometry","applicability":"ASCII DXF source is available"},{"id":"cad.alignment-provenance","stages":["facade_detail","finish"],"method":"source-id-hash-unit-view-tolerance","applicability":"CAD/SU comparison is requested"}]}

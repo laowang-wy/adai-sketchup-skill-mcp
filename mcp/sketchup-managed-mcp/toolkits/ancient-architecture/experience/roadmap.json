@@ -1,0 +1,23 @@
+{
+  "current_release": "0.4",
+  "requested_scope": [
+    "xieshan-detail",
+    "eave-full",
+    "helmet-source"
+  ],
+  "completed_this_release": [
+    "two plain gable closures, six capped overlap ridge junctions and four fixed-stock clipped wing tile domains",
+    "source-bracket eave assembly with rafters, 25mm sheathing, 50mm roof substrate and 135 live contact points",
+    "source provenance, eight inferred meridian stations, four curved ribs and six-bead finial candidate"
+  ],
+  "finalization_status": "user_accepted_basic_result_packaging",
+  "out_of_scope": [
+    "whole Yueyang Tower SKP assembly and photographic reconstruction",
+    "survey-certified helmet profile",
+    "carved ridge beasts and ornate historical gable panels",
+    "full structural timber frame and arbitrary turn-corner eave assembly",
+    "complete historical crown tile finish on helmet"
+  ],
+  "limitations_recorded": true,
+  "display_polish_receipt": "eave B verification timeout; preceding A geometry/contact evidence retained"
+}

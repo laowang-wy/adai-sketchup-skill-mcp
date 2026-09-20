@@ -1,0 +1,29 @@
+{
+  "id": "dougong-families",
+  "title": "斗拱构件与正身/转角区别",
+  "trigger": "需要斗拱样板或檐下重复构件时",
+  "action": "先选择有来源的家族。corridor-straight 与 corridor-corner 是不同拓扑；changkong-cross 与 changkong-layered 是另一个模型的中性描述。",
+  "rules": [
+    "不要仅旋转正身件来制造转角。",
+    "不要只重复斗块或沿 Z 堆相同横臂来假装多层出跳。",
+    "改变层数、斜向角度和宿主结构仍需另行研究，当前合同拒绝这些字段。"
+  ],
+  "checks": [
+    "查看正面、侧面、底部承托及转角斜向支路。",
+    "同类重复件保留共享定义；局部变体先独立定义。"
+  ],
+  "reject_when": [
+    "凭通用组件名称认定历史制式",
+    "以颜色或面数代替构件关系"
+  ],
+  "evidence": [
+    "study/changkong-findings.json",
+    "study/user-corridor-findings.md",
+    "source_templates/catalog.json"
+  ],
+  "entrypoint": "source_template_tool.py",
+  "historical_evidence_not_shipped": [
+    "validation/bracket-experience-v02/review.json"
+  ],
+  "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks."
+}

@@ -1,0 +1,79 @@
+{
+  "version": "0.4",
+  "date": "2026-09-12",
+  "scope": "local-source modeling practice; not historical construction standard",
+  "cards": [
+    {
+      "id": "roof-routing",
+      "title": "屋顶类型与路线选择",
+      "trigger": "需要新建或修改古建屋顶时",
+      "path": "experience/cards/roof-routing.json"
+    },
+    {
+      "id": "xieshan-source",
+      "title": "源歇山：正身、山面和翼角",
+      "trigger": "用户要求廊架古建中央楼阁式歇山",
+      "path": "experience/cards/xieshan-source.json"
+    },
+    {
+      "id": "dougong-families",
+      "title": "斗拱构件与正身/转角区别",
+      "trigger": "需要斗拱样板或檐下重复构件时",
+      "path": "experience/cards/dougong-families.json"
+    },
+    {
+      "id": "placement-array",
+      "title": "斗拱放置、旋转与阵列",
+      "trigger": "样板要移动、转向或等距排列时",
+      "path": "experience/cards/placement-array.json"
+    },
+    {
+      "id": "curved-profiles",
+      "title": "连续曲坡与共享边界",
+      "trigger": "屋面呈帐篷形、断肩或剖面变化不连续时",
+      "path": "experience/cards/curved-profiles.json"
+    },
+    {
+      "id": "detail-sequence",
+      "title": "古建细节的制作顺序",
+      "trigger": "从屋壳深化到可近看的檐口时",
+      "path": "experience/cards/detail-sequence.json"
+    },
+    {
+      "id": "skp-transfer",
+      "title": "源 SKP 层级与几何保真",
+      "trigger": "读取素材库并内化成可编辑工具时",
+      "path": "experience/cards/skp-transfer.json"
+    },
+    {
+      "id": "su-recovery",
+      "title": "SU 小面精度、取证与失败恢复",
+      "trigger": "导入报索引、丢面、尺寸或超时错误时",
+      "path": "experience/cards/su-recovery.json"
+    },
+    {
+      "id": "bearing-contacts",
+      "title": "柱头—斗拱—檐梁实际承托面",
+      "trigger": "将独立斗拱放到柱头或连接檐梁时",
+      "path": "experience/cards/bearing-contacts.json"
+    },
+    {
+      "id": "xieshan-closures",
+      "title": "歇山封山、脊交汇和翼角切瓦",
+      "trigger": "通用歇山需要补齐山面和翼角收口",
+      "path": "experience/cards/xieshan-closures.json"
+    },
+    {
+      "id": "full-eave",
+      "title": "柱斗拱梁—椽—望板—屋面连接样段",
+      "trigger": "将已测承托面扩展为完整檐口层次",
+      "path": "experience/cards/full-eave.json"
+    },
+    {
+      "id": "helmet-provenance",
+      "title": "盔顶来源约束、连续剖面与六珠宝顶",
+      "trigger": "生成带来源约束的盔顶候选",
+      "path": "experience/cards/helmet-provenance.json"
+    }
+  ]
+}

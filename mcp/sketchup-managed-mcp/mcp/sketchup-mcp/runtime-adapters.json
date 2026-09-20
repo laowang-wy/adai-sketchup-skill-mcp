@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "development_baseline": "2019",
+  "versions": {
+    "2018": {
+      "adapter": "legacy-ruby",
+      "status": "declared_baseline_pending_target_validation"
+    },
+    "2019": {
+      "adapter": "legacy-ruby",
+      "status": "historical_sample_validation_only"
+    },
+    "2024": {
+      "adapter": null,
+      "status": "planned_not_implemented"
+    },
+    "2025": {
+      "adapter": null,
+      "status": "planned_not_implemented"
+    }
+  },
+  "required_probes": [
+    "bridge",
+    "geometry_readback",
+    "capture",
+    "save",
+    "reopen"
+  ],
+  "live_acceptance": "not_run_for_this_release",
+  "unknown_version_policy": "adaptation_required"
+}

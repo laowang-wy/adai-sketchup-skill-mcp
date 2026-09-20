@@ -1,0 +1,157 @@
+{
+  "name": "sketchup_ref",
+  "description": "Offline REF packs; text/image guidance by default. Compiled provider executes only after explicitly trusted import. Hash is not publisher authentication.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "list",
+          "import",
+          "inspect",
+          "enable",
+          "disable",
+          "remove",
+          "match",
+          "read",
+          "draft",
+          "draft_review",
+          "draft_publish",
+          "validate",
+          "record",
+          "usage"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "pack_id": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "section_id": {
+        "type": "string"
+      },
+      "section": {
+        "type": "string"
+      },
+      "asset": {
+        "type": "string"
+      },
+      "query": {
+        "type": "string"
+      },
+      "project_id": {
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "project",
+          "company",
+          "shared"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "symptom": {
+        "type": "string"
+      },
+      "fix": {
+        "type": "string"
+      },
+      "cause": {
+        "type": "string"
+      },
+      "evidence": {
+        "type": "string"
+      },
+      "checks": {
+        "type": "string"
+      },
+      "not_applicable": {
+        "type": "string"
+      },
+      "note": {
+        "type": "string"
+      },
+      "pack_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "topics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "stages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "enable": {
+        "type": "boolean"
+      },
+      "overwrite": {
+        "type": "boolean"
+      },
+      "confirm": {
+        "type": "boolean"
+      },
+      "include_disabled": {
+        "type": "boolean"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "packs": {
+        "type": "array"
+      },
+      "trusted_provider": {
+        "type": "boolean"
+      },
+      "draft_path": {
+        "type": "string"
+      },
+      "target_pack_id": {
+        "type": "string"
+      },
+      "version": {
+        "type": "string"
+      },
+      "verified_by": {
+        "type": "string"
+      },
+      "operation_id": {
+        "type": "string"
+      },
+      "confirmation_summary": {
+        "type": "string"
+      },
+      "expected_fingerprint": {
+        "type": "string",
+        "description": "Optional exact content_sha256 from earlier match; refuse guidance if version/content changed."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

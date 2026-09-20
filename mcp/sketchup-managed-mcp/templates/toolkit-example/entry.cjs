@@ -1,0 +1,2 @@
+'use strict';
+let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',x=>raw+=x);process.stdin.on('end',()=>{try{const p=JSON.parse(raw);if(p.action!=='check'||!Number.isFinite(p.width)||!Number.isFinite(p.height)||p.width<=0||p.height<=0)throw Error('positive width/height required');console.log(JSON.stringify({ok:true,result:{ratio:p.width/p.height,scope:'arithmetic only; no SU or aesthetic verification'}}));}catch(e){console.log(JSON.stringify({ok:false,error:e.message}));process.exitCode=2;}});

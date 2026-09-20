@@ -1,0 +1,13 @@
+{
+  "schema": "ark-template-1",
+  "template": "corridor-straight",
+  "width_mm": 900,
+  "origin_mm": [
+    20000,
+    10000,
+    1200
+  ],
+  "rotation_deg": 30,
+  "count": 3,
+  "spacing_mm": 1200
+}

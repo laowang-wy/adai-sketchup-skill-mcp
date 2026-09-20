@@ -1,0 +1,35 @@
+{
+  "project_id": "RecipeExample",
+  "phase": "massing",
+  "source_evidence": "Engineering example: 12 m by 9 m shell with 3.2 m rise; replace with the actual user source and measured assumptions",
+  "task_contract": {"mode": "freeform", "plan_version": "recipe-example-1"},
+  "projection_subjects": [{"id": "roof", "semantic_id": "roof_shell", "role": "focal_building"}],
+  "roof_control_contract": {
+    "ridge_profile": [[-2250,0,3200],[0,0,3200],[2250,0,3200]],
+    "eave_curve": [[-6000,-4500,450],[0,-4500,0],[6000,-4500,450]],
+    "corner_lift_section": [[0,0,3200],[4000,-3000,1000],[6000,-4500,450]],
+    "construction": "shared_boundary_mesh",
+    "open_corridor_preserved": true,
+    "prototype_kinds": ["body", "corner"]
+  },
+  "roof_recipe": {
+    "schema_version": 4,
+    "roof_type": "wu_dian",
+    "width": 12000.0,
+    "depth": 9000.0,
+    "rise": 3200.0,
+    "thickness": 150.0,
+    "ridge_length": 4500.0,
+    "corner_lift": 450.0,
+    "gable_span_ratio": 0.48,
+    "apron_rise_ratio": 0.3,
+    "sides": 4,
+    "slope_segments": 24,
+    "span_segments": 16,
+    "details": "shell",
+    "tile_width": 220.0,
+    "tile_length": 360.0,
+    "tile_overlap": 70.0,
+    "ridge_width": 180.0
+  }
+}

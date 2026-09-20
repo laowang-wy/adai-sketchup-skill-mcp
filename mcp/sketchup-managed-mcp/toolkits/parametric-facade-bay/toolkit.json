@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "parametric-facade-bay",
+  "version": "0.1.0",
+  "author": "ADAI 老王",
+  "license": "CPAL-1.0",
+  "runtime": "node",
+  "entry": "entry.cjs",
+  "dependencies": ["SketchUp managed Ruby API >= 0.5.24"],
+  "actions": {
+    "list": { "effect": "read" },
+    "validate": { "effect": "read" },
+    "compile": { "effect": "compile" }
+  },
+  "requires_capabilities": ["PipClawManagedProject.register_projection_subject"],
+  "method_family": "parametric_facade_bay",
+  "produces": "editable parametric facade-bay massing Ruby plus measured input manifest; live review remains required",
+  "production_ready": false
+}

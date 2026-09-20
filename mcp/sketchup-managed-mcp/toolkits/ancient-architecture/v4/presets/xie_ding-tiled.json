@@ -1,0 +1,20 @@
+{
+  "schema_version": 4,
+  "roof_type": "xie_ding",
+  "width": 6000.0,
+  "depth": 4500.0,
+  "rise": 1600.0,
+  "thickness": 100.0,
+  "ridge_length": 2250,
+  "corner_lift": 220,
+  "gable_span_ratio": 0.48,
+  "apron_rise_ratio": 0.3,
+  "sides": 4,
+  "slope_segments": 24,
+  "span_segments": 16,
+  "details": "tiled",
+  "tile_width": 260.0,
+  "tile_length": 420.0,
+  "tile_overlap": 70.0,
+  "ridge_width": 180.0
+}

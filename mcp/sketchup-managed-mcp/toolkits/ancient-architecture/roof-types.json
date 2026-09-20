@@ -1,0 +1,121 @@
+{
+  "schema_version": 4,
+  "tool_version": "0.4.2",
+  "entrypoint": "roof_tool.py",
+  "units": "mm",
+  "dimensions": "outer eave envelope, not wall footprint; rise above upper mid-eave Z=0",
+  "roof_types": {
+    "si_shan": {
+      "label": "歇山",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": true,
+      "status": "generic_detailed_sample_verified",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "whole-roof view; not ornament or historical layout acceptance",
+      "current_kernel_su_verified": true,
+      "correction_record": "validation/xieshan-details-v04/review.json",
+      "current_visual_scope": "gable infill, six plain overlap joints and fixed-stock wing cut tiles; not historical ornament",
+      "managed_evidence": "ev_01_mtyafbn3_69ac71",
+      "detailed_su_verified": true
+    },
+    "wu_dian": {
+      "label": "庑殿",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": true,
+      "status": "generic_parametric_shell",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "whole-roof view; not ornament or historical layout acceptance"
+    },
+    "zan_jian": {
+      "label": "攒尖",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": true,
+      "status": "generic_parametric_shell",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "whole-roof view; not ornament or historical layout acceptance"
+    },
+    "juan_peng": {
+      "label": "卷棚",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": true,
+      "status": "generic_parametric_shell",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "whole-roof view; not ornament or historical layout acceptance"
+    },
+    "helmet": {
+      "label": "盔顶候选",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": false,
+      "status": "source_informed_candidate_verified",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "772 tile instances; bare crown shell zone remains below finial, not full tile finishing acceptance",
+      "full_tiling_managed_evidence": "ev_01_mtyavl87_83496d",
+      "current_kernel_su_verified": true,
+      "source_profile": "study/helmet-source/profile.json",
+      "source_measurement": "published text and inferred stations; no measured helmet SKP",
+      "detailed_su_verified": true,
+      "managed_evidence": "ev_01_mtyavl87_83496d",
+      "correction_record": "validation/helmet-source-v04/review.json",
+      "current_visual_scope": "fixed inferred meridian, four curved ribs and six plain beads; not surveyed fidelity or complete crown tiling"
+    },
+    "xie_ding": {
+      "label": "简化四坡",
+      "executable": true,
+      "shell_su_verified": true,
+      "historical_fidelity_verified": false,
+      "full_tiling_su_verified": false,
+      "status": "generic_parametric_shell",
+      "full_tiling_geometry_executed": true,
+      "full_tiling_visual_scope": "whole-roof view; not ornament or historical layout acceptance",
+      "full_tiling_managed_evidence": "incomplete_after_timeout; late geometry result and native view available"
+    }
+  },
+  "detail_levels": {
+    "shell": "closed editable roof envelope",
+    "ridge": "capped curved ridge sections; junction fittings require detailed",
+    "tile_sample": "5 columns x 4 overlapping courses; reusable pan/cover prototypes",
+    "tiled": "surface-sampled full patch tiles, tapered toward narrowing boundaries; 5000 instance hard cap",
+    "detailed": "si_shan: gable closure, six overlap ridge joints, fixed-stock clipped four-wing tiles; helmet: source-informed profile and six-bead finial"
+  },
+  "unimplemented": [
+    "historically certified tile layout for all roof types",
+    "drip/round eave decorative end pieces",
+    "ridge beasts and carved relief",
+    "full structural frame, turn-corner eave and arbitrary dougong attachment",
+    "survey-certified Yueyang photo fidelity"
+  ],
+  "validation": {
+    "shell_evidence": "ev_01_mty1mjj1_9c0ca6",
+    "tiled_evidence": "ev_01_mty1y6ib_6ac16d",
+    "tests": "validation/v4-tests.txt",
+    "parameter_cases": "validation/v4-parameter-regression.json",
+    "tile_cases": "validation/v4-tile-regression.json",
+    "additional_tiled_evidence": {
+      "si_shan": "ev_01_mty2agdg_367b8d",
+      "zan_jian_juan_peng": "ev_01_mty2d6zq_60c86c",
+      "helmet_xie_ding": "validation/v4-helmet-simple-tiled/late-geometry-result.json"
+    }
+  },
+  "legacy": "schema 1/3 rejected by current public compiler; archived interfaces are not defaults",
+  "operational_limits": {
+    "one_tiled_roof_per_build": true,
+    "max_expanded_faces": 230000,
+    "use_manifest_recommended_timeout": true,
+    "on_timeout": "no replay; inspect late response and live project state"
+  },
+  "external_tools": {
+    "dougong_and_source_roof": "source_template_tool.py",
+    "bearing_pads": "bearing_tool.py",
+    "full_eave_diagnostic": "eave_tool.py"
+  }
+}

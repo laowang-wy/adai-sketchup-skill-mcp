@@ -1,0 +1,20 @@
+{
+  "schema_version": 4,
+  "roof_type": "juan_peng",
+  "width": 12000.0,
+  "depth": 9000.0,
+  "rise": 3200.0,
+  "thickness": 150.0,
+  "ridge_length": 0,
+  "corner_lift": 0,
+  "gable_span_ratio": 0.48,
+  "apron_rise_ratio": 0.3,
+  "sides": 4,
+  "slope_segments": 24,
+  "span_segments": 16,
+  "details": "shell",
+  "tile_width": 220.0,
+  "tile_length": 360.0,
+  "tile_overlap": 70.0,
+  "ridge_width": 180.0
+}

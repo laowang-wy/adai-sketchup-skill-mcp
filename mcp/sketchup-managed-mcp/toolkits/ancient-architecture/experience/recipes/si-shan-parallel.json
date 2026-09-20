@@ -1,0 +1,20 @@
+{
+  "schema_version": 4,
+  "roof_type": "si_shan",
+  "width": 5000,
+  "depth": 3800,
+  "rise": 1400,
+  "thickness": 90,
+  "ridge_length": 3400,
+  "corner_lift": 120,
+  "gable_span_ratio": 0.6,
+  "apron_rise_ratio": 0.22,
+  "sides": 4,
+  "slope_segments": 24,
+  "span_segments": 16,
+  "details": "tiled",
+  "tile_width": 350,
+  "tile_length": 550,
+  "tile_overlap": 70,
+  "ridge_width": 180.0
+}

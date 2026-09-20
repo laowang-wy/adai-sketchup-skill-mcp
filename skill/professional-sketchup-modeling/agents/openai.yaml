@@ -1,0 +1,6 @@
+interface:
+  display_name: "ADAI SketchUp 建模"
+  short_description: "通过受管 MCP 创建、修改和审查可编辑 SketchUp 模型"
+  default_prompt: "Use $professional-sketchup-modeling to build or revise this editable SketchUp model."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,162 @@
+{
+  "version": "base-0.3.0",
+  "scope": "procedural_guidance_not_automatic_geometry_or_visual_acceptance",
+  "review_record_fields": [
+    "entity_or_view",
+    "source_constraint",
+    "observation_or_measurement",
+    "evidence_path",
+    "pass_fail_or_unknown",
+    "next_action",
+    "expected",
+    "measured",
+    "units",
+    "affected_dependencies",
+    "suggested_next_inspection"
+  ],
+  "phases": {
+    "massing": {
+      "decisions": [
+        "Read source evidence, use current managed phase massing.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "roof_profile": {
+      "decisions": [
+        "Derive one roof prototype from a shared ridge profile, body section, eave curve and corner-lift section before tier replication.",
+        "Use loft, sweep or a shared-boundary mesh; read only the relevant ancient-roof REF sections when needed."
+      ],
+      "evidence_checks": [
+        "Inspect the body section, corner transition, underside and shared seams in fixed views before accepting replication."
+      ],
+      "reject_if": [
+        "The roof is a flat slab, a single frustum, or only raises plan-ring corner points.",
+        "Body and corner prototypes do not share declared control geometry or contain visible open seams."
+      ]
+    },
+    "archetypes": {
+      "decisions": [
+        "Read source evidence, use current managed phase archetypes.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "replication": {
+      "decisions": [
+        "Read source evidence, use current managed phase replication.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "variants": {
+      "decisions": [
+        "Read source evidence, use current managed phase variants.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "facade_detail": {
+      "decisions": [
+        "Read source evidence, use current managed phase facade_detail.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "finish": {
+      "decisions": [
+        "Read source evidence, use current managed phase finish.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "source_alignment": {
+      "decisions": [
+        "Read source evidence, use current managed phase source_alignment.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "correction_scope": {
+      "decisions": [
+        "Read source evidence, use current managed phase correction_scope.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "primary_corrections": {
+      "decisions": [
+        "Read source evidence, use current managed phase primary_corrections.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    },
+    "component_cleanup": {
+      "decisions": [
+        "Read source evidence, use current managed phase component_cleanup.",
+        "Load relevant REF sections by task and stage."
+      ],
+      "evidence_checks": [
+        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+      ],
+      "reject_if": [
+        "Known source mismatch or unresolved user defect.",
+        "Claiming quality from file existence or component counts."
+      ]
+    }
+  }
+}
