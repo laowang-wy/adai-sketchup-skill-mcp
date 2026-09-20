@@ -2,7 +2,7 @@
 
 The runtime reference set is loaded on demand. Links below are documentation routes, not permission to bypass the managed transaction or evidence checks.
 
-- [0.5.24-r3 verification scope](verification-0.5.24-r3.md): read when checking which live SU2019 operations passed and which capabilities remain closed or not_run.
+- [RELEASE.md](../RELEASE.md): package version, supported hosts and install scope.
 
 - [ATTRIBUTION.md](ATTRIBUTION.md)
 - [ancient-gates.md](ancient-gates.md)
