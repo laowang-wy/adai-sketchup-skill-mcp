@@ -3,9 +3,31 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {execFile} = require('node:child_process');
+const {promisify} = require('node:util');
 const {setTimeout: delay} = require('node:timers/promises');
 const normalize = value => path.resolve(value).toLowerCase();
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const execFileAsync = promisify(execFile);
+async function processImages() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const {stdout} = await execFileAsync('tasklist.exe', ['/FO', 'CSV', '/NH'], {windowsHide:true, maxBuffer:4 * 1024 * 1024});
+    const images = new Map();
+    for (const line of String(stdout).split(/\r?\n/)) {
+      const match = line.match(/^"([^"]+)","(\d+)"/);
+      if (match) images.set(Number(match[2]), String(match[1]).toLowerCase());
+    }
+    return images;
+  } catch { return null; }
+}
+function requiresSketchUpImage(executable) {
+  return process.platform === 'win32' && path.basename(String(executable)).toLowerCase() === 'sketchup.exe';
+}
+function processImageMatches(record, images) {
+  if (!requiresSketchUpImage(record.executable)) return true;
+  return Boolean(images && images.get(record.process_id) === 'sketchup.exe');
+}
 async function readJson(file) { return JSON.parse((await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '')); }
 class BridgeClient {
   constructor(appData, env = process.env) {
@@ -24,13 +46,14 @@ class BridgeClient {
     const dir = path.join(this.root, 'instances');
     let files;
     try { files = await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+    const images = await processImages();
     const result = [];
     for (const file of files.filter(f => /^\d+\.json$/.test(f))) {
       try {
         const record = await readJson(path.join(dir, file));
         if (record.protocol === 'sketchup-file-bridge/v3' && Number.isSafeInteger(record.process_id) &&
             record.process_id > 0 && file === `${record.process_id}.json` && /^[a-f0-9]{32}$/.test(record.session_id) &&
-            path.isAbsolute(record.executable) && alive(record.process_id)) result.push(record);
+            path.isAbsolute(record.executable) && alive(record.process_id) && processImageMatches(record, images)) result.push(record);
       } catch { /* Ignore incomplete or stale registrations, never execute them. */ }
     }
     return result;
@@ -134,4 +157,4 @@ class BridgeClient {
   }
   async health() { return {protocol:'sketchup-file-bridge/v3',directory:this.root,instances:await this.instances(),selected:this.pinned,token_configured:await this.token().then(()=>true,()=>false)}; }
 }
-module.exports = {BridgeClient};
+module.exports = {BridgeClient, __test:{processImageMatches, requiresSketchUpImage}};

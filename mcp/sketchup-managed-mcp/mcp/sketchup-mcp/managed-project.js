@@ -43,7 +43,7 @@ function ancientRoofRoute(profile) {
   if (profile?.roof_route === 'ancient_roof') return true;
   if (profile?.method_family && !['ancient_roof','chinese_ancient_roof'].includes(profile.method_family)) return false;
   const words=[...(profile?.topics||[]),...(profile?.features||[])].join(' ');
-  return /(古建|楼阁|庙|殿|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
+  return /(古建|楼阁|塔|庙|殿|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
 }
 function phasePlanFor(mode, profile) {
   const standard=PHASE_PLANS[mode] || PHASES;
@@ -455,9 +455,11 @@ function validatePhaseOutput(state, phase, buildResult) {
 function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const systems = Array.isArray(audit?.visible_detail_systems) ? audit.visible_detail_systems : [];
-  // A legitimate task may contain one source-visible reusable detail system;
-  // do not invent a second family merely to satisfy a historical count gate.
-  if (systems.length < 1 || systems.some((item) => !item || typeof item.id !== 'string' || !item.id.trim())) throw new Error('Managed audit found no registered visible detail system; refusing delivery of a bare model.');
+  // A deliverable archetype must expose at least two independently
+  // auditable source-visible reusable systems (for example openings and
+  // balcony/rail rhythm). This blocks thin models without asking the agent
+  // to invent objects: a task with no archetype phase uses the short route.
+  if (systems.length < 2 || systems.some((item) => !item || typeof item.id !== 'string' || !item.id.trim())) throw new Error('Managed audit found fewer than two registered visible detail systems; refusing delivery of a bare or thin model.');
   return systems;
 }
 
@@ -1781,8 +1783,8 @@ class ManagedProjects {
     if (state.status !== 'ready_to_finish') throw new Error(`Project is ${state.status}; all phases must be reviewed before finish`);
     const currentBinding = await this.assertModelBinding(state, bridge);
     const plannedNames=(state.phase_plan || PHASE_PLANS[state.mode] || PHASES).map(p=>p.name);
-    if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 1)) {
-      throw new Error('Delivery blocked: reusable archetypes do not contain an audited source-visible detail system. Rebuild and review the archetypes step.');
+    if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 2)) {
+      throw new Error('Delivery blocked: reusable archetypes do not contain at least two audited source-visible detail systems. Rebuild and review the archetypes step.');
     }
     if (plannedNames.includes('facade_detail') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.unique_details) || state.unique_details.length < 1)) {
       throw new Error('Delivery blocked: no audited source-visible one-off detail is registered. Rebuild and review the facade_detail step.');

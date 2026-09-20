@@ -1,2 +1,2 @@
-4234aa3a4975f97f627bc919d001d2fc82653de3f116fc5065fcbc0914cf3e5f  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip
-6b4e383637547ca5743e992a9b5db66e477976974c689388b213d12eff58f298  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip
+a81e9c04e8900a08144b90e7f1fac03371bab83fd33e77ce1d120526c65a36b9  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-20260920.zip
+caeb274801093c15d220127258a4e45aa39458b1b279753b0a39c5a0c45973f5  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-20260920.zip

@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.24",
-  "build_id": "0.5.24-s1-s6-cpal-skill-card-ruby-20260920",
+  "build_id": "0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-20260920",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
