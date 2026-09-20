@@ -680,7 +680,18 @@ class ManagedProjects {
             // pending operation may be ignored when an independently readable
             // binding proves it belongs to another document.
             if (unresolved) throw error;
-            if (rawPath && wantedPath && rawKey !== wanted && rawPath !== wantedPath) continue;
+            // A persisted file path is independently meaningful even when
+            // the current document is unsaved (wantedPath is empty).  For two
+            // unsaved documents, distinct finite object IDs are the only
+            // comparable identity we accept.  Same-path, unbound, or equal-ID
+            // records remain conservative blockers.
+            const rawObjectId = Number(rawBinding?.object_id);
+            const wantedObjectId = Number(binding?.object_id);
+            const distinctSavedDocument = rawPath && (!wantedPath || (rawKey !== wanted && rawPath !== wantedPath));
+            const distinctUnsavedDocument = !rawPath && !wantedPath
+              && Number.isFinite(rawObjectId) && Number.isFinite(wantedObjectId)
+              && rawObjectId !== wantedObjectId;
+            if (distinctSavedDocument || distinctUnsavedDocument) continue;
           } catch (_) { /* malformed or unbound state remains blocking */ }
         }
         throw error;

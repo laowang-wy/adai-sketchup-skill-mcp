@@ -1,2 +1,2 @@
-04e5a363f6304980c27283c2632786094cdac68072330c73c53cfbeee6d894e7  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip
-38b36f6218963aa22602047f7abc8b971159300f9b72d4247fcbc1fd196c9b03  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip
+4234aa3a4975f97f627bc919d001d2fc82653de3f116fc5065fcbc0914cf3e5f  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip
+6b4e383637547ca5743e992a9b5db66e477976974c689388b213d12eff58f298  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-20260920.zip

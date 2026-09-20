@@ -22,6 +22,7 @@ Ruby 只承担当前阶段的实体构造：先建立所属 group/definition，�
 ## 执行与复核
 
 按 MCP 当前阶段执行 `begin → step → 实际看图 → review → 下一阶段 → ready_to_finish → finish`；普通新建六阶段，古建按条件保留 `roof_profile`，局部修改沿用原路线。每步只说明改什么、依据和预期视图变化，然后执行。
+一次只做当前阶段；例如 `MASSING` 只做主形与空间，不提前做瓦片、斗拱、门窗或装饰。Ruby 先写入文件，再把路径作为 `ruby_file` 调用 `sketchup_project_step`；不在聊天输出完整 Ruby，不一次编写整栋全阶段脚本。当前阶段脚本较长时分段写入同一完整入口，确认完整后再提交，不用多次 step 绕过审查。没有成功的 step 返回、实际查看的证据图及接受本阶段的 review 结果，不得宣称阶段完成或推进；输出截断时先查执行状态，不重放未知写入。
 主形、空间关系和连接通过后，先做完整开间或转角样板，局部和接缝通过才复制；检查首、中、末、对侧和转角。用户认可的主形和参数锁定，一轮只改一个问题及其最小范围；镜像用同一母型和中轴，保留回退点。
 每轮实际看参考图及 geometry-whole-perspective/front/side/plan/underside 五视图，最多抓三个主要缺陷并比较是否改善。连续两轮无改善就回查形制、比例、拓扑、坐标或接口，改变方法而非原样重试；关键主形错误不能用细节掩盖。
 保留真实读回、结构检查、对象保护和证据归属。工具成功、造型合格、视觉通过和交付完成分别判断；未知结果先查状态，不原样重放，`evidence_pending` 只 `retry_evidence`。读取源码只为修输入和阶段脚本，不修改引擎、门槛、签名或状态。
@@ -32,3 +33,4 @@ REF 按当前问题定向 list/match/read，冲突时选定包并记录版本；
 只有 `finish` 返回 `finished`、实际 SKP 存在且最终证据已检查，才报告交付；说明文件、主要证据、假设、缺陷和未验证项，未重开则明确注明。`sketchup_project_patch` 正式入口关闭，直接调用应返回 `PATCH_NOT_RELEASED`。详细契约按需读取[几何守卫](references/geometry-guard.md)、[审查](references/managed-quality-review.md)和[恢复](references/managed-recovery.md)。
 
 本次动作后只简短汇报实际执行、观察、阻碍和下一步，不制作运行时表单。
+
