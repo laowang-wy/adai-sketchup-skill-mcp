@@ -1,0 +1,22 @@
+# Local credentials and host configuration
+.env
+.env.*
+*.token
+*.pem
+*.key
+
+# Development-only outputs
+engineering/
+tests/
+coverage/
+*.log
+*.skp
+*.tmp
+__pycache__/
+*.py[cod]
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
