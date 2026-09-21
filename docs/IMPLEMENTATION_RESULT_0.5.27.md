@@ -12,7 +12,7 @@
 - Skill ZIP: `dist/professional-sketchup-modeling-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`
   - SHA256 `522a65338be801f438cfb1c863489c112e897bab2feb73b5b1dbf0cba2684be4`
 - MCP ZIP: `dist/sketchup-managed-mcp-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`
-  - SHA256 `302e1fbd7ebc4bae863e5aa93bb564376c8f19a6b870aae4c1c1de966a84d12a`
+  - SHA256 `e25a56694929db2bb2ebdc88fc97553f276da6b5c16e3b45315eaf9118cd4021`
 
 ## 验证
 
@@ -25,3 +25,4 @@
 - 真实 SketchUp/SU2019 建模、来源图对照、重开编辑和第二台机器验收：`not_run`。
 - autonomous 跨多个原阶段类别的完整真实工作单元、工具包组合和视觉合并审核：`not_run`；本版只接通 bounded work-unit 连续受管写入与证据合并记录，未放开裸写或绕过阶段保护。
 - 官方签名/远程发布服务：`not_run`。
+
