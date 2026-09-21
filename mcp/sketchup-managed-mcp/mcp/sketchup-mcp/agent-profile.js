@@ -38,8 +38,8 @@ function resolveAssistanceMode(input = {}, env = process.env) {
 
 function assistanceGuidance(mode) {
   return mode === 'autonomous'
-    ? { mode: 'autonomous', summary: '专家模式：减少重复方法教程，保留完整约束、失败原因和完整指导入口。', full_guidance: 'references/managed-ruby-api.md' }
-    : { mode: 'guided', summary: '引导模式：提供参数帮助、方法推荐和针对性纠错。', parameter_help: '先确认输入单位、来源尺度和目标阶段；缺少尺寸时保留假设记录。', method_help: '可选已验证生成器或受管自定义 Ruby；先建立最小合法几何，再检查真实读回与截图。', full_guidance: 'references/managed-ruby-api.md' };
+    ? { mode: 'autonomous', strategy: 'autonomous_work_units', summary: '专家模式：按共同建筑底座自主选择工具、构造组合和审核时机；事务、读回、证据与交付门禁不变。', shared_foundation: 'references/shared-architectural-foundation.md', operation_guidance: 'references/expert-operation.md', full_guidance: 'references/managed-ruby-api.md' }
+    : { mode: 'guided', strategy: 'guided_steps', summary: '引导模式：按共同建筑底座提供当前步骤、参数帮助、方法推荐和针对性纠错。', shared_foundation: 'references/shared-architectural-foundation.md', operation_guidance: 'references/guided-operation.md', parameter_help: '先确认输入单位、来源尺度和目标阶段；缺少尺寸时保留假设记录。', method_help: '可选已验证生成器或受管自定义 Ruby；先建立最小合法几何，再检查真实读回与截图。', full_guidance: 'references/managed-ruby-api.md' };
 }
 
 function assistanceForError(mode, error) {

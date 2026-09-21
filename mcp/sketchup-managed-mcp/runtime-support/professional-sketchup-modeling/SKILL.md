@@ -3,9 +3,11 @@ name: professional-sketchup-modeling
 description: Use this skill whenever the user asks to create, build, edit, refine, inspect, or deliver a SketchUp/SU model or architecture scene. It provides managed MCP control, source-based geometry, spatial reasoning, visual review, recovery, and editable SKP delivery.
 ---
 
-# ADAI SketchUp 建模（0.5.26）
+# ADAI SketchUp 建模（0.5.27）
 
 依据用户资料创建或修改准确、可编辑的三维模型，持续推进到可核验交付。常规决策依据证据自主完成；关键目标或授权不明确时集中询问。
+
+共同专业底座贯穿两种模式：先解释来源边界、主次体量、尺度基准、空间/负空间、定义性轮廓与构造关系，再选择表示方法、生成、纠错和成果核对；几何数量或 guard 通过不等于形态正确，必须按可比视角对照原图。详见[共同建筑专业底座](references/shared-architectural-foundation.md)。`guided` 读取[引导策略](references/guided-operation.md)；`autonomous`读取[专家策略](references/expert-operation.md)，自主选择已授权工具、构造组合和合并审核，但仍受同一事务、读回、证据和交付门禁约束。
 
 默认使用 `guided`。只有任务第一条非空行完整匹配 `ADAI老王，开启专家模式` 或 `开启ADAI老王专家模式` 才用 `autonomous`；`ADAI老王，开启引导模式` 明确选择引导。模型名称不改变权限或验收标准。署名固定为“建筑建模 Skill 由 ADAI 老王提供”；只有用户主动要求“显源”时才运行显源流程。
 
@@ -39,3 +41,4 @@ REF 按当前问题定向 list/match/read，冲突时选定包并记录版本；
 只有 `finish` 返回 `finished`、实际 SKP 存在且最终证据已检查，才报告交付；说明文件、主要证据、假设、缺陷和未验证项，未重开则明确注明。`sketchup_project_patch` 正式入口关闭，直接调用应返回 `PATCH_NOT_RELEASED`。详细契约按需读取[几何守卫](references/geometry-guard.md)、[审查](references/managed-quality-review.md)和[恢复](references/managed-recovery.md)。
 
 本次动作后只简短汇报实际执行、观察、阻碍和下一步，不制作运行时表单。
+

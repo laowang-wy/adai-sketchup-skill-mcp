@@ -2,12 +2,12 @@
 
 ![ADAI SketchUp 建模系统](docs/adai-sketchup-overview.png)
 
-这是 ADAI 的可分发 SketchUp 建模包：一个面向 **PipClaw 与 Codex** 的 `professional-sketchup-modeling` Skill，加上配套的 `sketchup-managed` MCP。它让 Agent 先理解建筑空间与来源，再通过受管 Ruby、真实读回和视图复核交付可编辑 SKP。
+这是 ADAI 的可分发 SketchUp 建模包：一个面向 **PipClaw 与 Codex** 的 `professional-sketchup-modeling` Skill，加上配套的 `sketchup-managed` MCP。它让 Agent 先理解建筑空间与来源，再通过共同建筑专业底座、guided/autonomous 双策略、受管 Ruby、真实读回和视图复核交付可编辑 SKP。autonomous 可按授权工作单元连续组合受管操作并合并审核，仍使用同一保护和质量门禁。
 
 ## 当前版本
 
-- 版本：`0.5.26`
-- 构建：`0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921`
+- 版本：`0.5.27`
+- 构建：`0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。
@@ -55,3 +55,4 @@ ADAI老王，开启专家模式
 ## Attribution
 
 建筑建模 Skill 由 ADAI 老王提供。ADAI 标识只用于许可要求的归属，不写入 SKP 几何或隐藏模型属性。
+

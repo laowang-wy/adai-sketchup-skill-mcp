@@ -1,4 +1,4 @@
-# ADAI SketchUp 0.5.26
+# ADAI SketchUp 0.5.27
 
 本版本分别提供 professional-sketchup-modeling Skill 和 sketchup-managed-mcp 两个独立安装包。MCP 内含同版本 Skill 运行支持，独立解压即可定位其脚本；Agent 侧仍须单独启用 Skill 和 MCP。
 
@@ -16,3 +16,4 @@ Skill ZIP 导入宿主 Skill/专家能力管理并分配给当前 Agent；MCP ZI
 ## 验证边界
 完成的验证为离线契约/行为回归、JSON/Python/Node 检查、ZIP 完整性、干净目录解压及空 APPDATA 下 MCP 初始化、工具发现、startup 和经验包检查。精确结果在安装 ZIP 外的验证报告中。
 本版本没有完成真实 SketchUp 全流程建模、重开编辑、新机器及模型对照验收。历史 SketchUp 记录不自动继承为本版本验收。状态迁移、完整操作日志及后续工程任务仍未全部完成。
+

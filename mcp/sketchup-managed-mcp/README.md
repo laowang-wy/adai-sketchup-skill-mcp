@@ -1,6 +1,6 @@
-# ADAI SketchUp 0.5.26 恢复候选
+# ADAI SketchUp 0.5.27 恢复候选
 
-当前发行版为 0.5.26，在 0.5.23 基础上合入状态与并发保护、事务恢复、实际读回与证据校验、保存前审计及正式几何适配器修复。版本改动和验证边界见 RELEASE.md。文中历史实机记录不代表 0.5.26 已通过实机建模验收。接入参见 runtime-support/professional-sketchup-modeling/references/HOST-ENABLEMENT.md。
+当前发行版为 0.5.27，在 0.5.23 基础上合入状态与并发保护、事务恢复、实际读回与证据校验、保存前审计及正式几何适配器修复。版本改动和验证边界见 RELEASE.md。文中历史实机记录不代表 0.5.27 已通过实机建模验收。接入参见 runtime-support/professional-sketchup-modeling/references/HOST-ENABLEMENT.md。
 
 ## MCP 功能与接入
 
@@ -39,3 +39,4 @@ REF仅是知识，工具资产是可执行代码，两者在本MCP内分开。�
 sketchup_toolkit提供显式信任注册及固定指纹调用。见docs/TOOLKIT-PROTOCOL.md、templates/toolkit-example。许可政策见docs/LICENSING-POLICY-DRAFT.md（未生效）。此版是候选版，不具备竞品硬封禁，也未完成新版SU适配。
 
 公共geometry阶段适配、当前源缺陷及验证边界见 [几何守卫](runtime-support/professional-sketchup-modeling/references/geometry-guard.md)。古建工具0.4.4、几何核心0.1.1。
+

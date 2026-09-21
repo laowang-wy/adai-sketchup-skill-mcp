@@ -123,6 +123,7 @@ a runnable example using ordinary face extrusion, including a finish readback.
 - Use `.mm` on numeric values only.
 - SketchUp `BoundingBox#width`, `#height`, and `#depth` are X, Y, and Z spans. For architecture report them as width=X, plan depth=Y, and building height=Z. Never label `bounds.height` as vertical height.
 - Normalize face orientation before `pushpull`; verify resulting bounds.
+- For a prism or extrusion, normalize and prune one canonical polygon ring before creating any side faces or caps. Triangulation, collinear-point removal and index remapping must use that same ring; never build side walls from the original ring and caps from a reduced ring. A closed solid must report `boundary_edges=0` in the actual guard readback.
 - Before writing geometry helpers, read [entity lifetime and isolated construction](ruby-snippets.md#entity-lifetime). Create the empty owning group first; do not rely on an old Face or `all_connected` to collect results after topology changes.
 - Keep definition geometry local and apply parent transforms once.
 - Preserve host contact; inspect first/middle/last instances.

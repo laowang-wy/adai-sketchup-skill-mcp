@@ -340,6 +340,13 @@ function stripRubyComments(source) {
     return line;
   }).join('\n');
 }
+function normalizedWorkUnit(value, mode) {
+  if (value === undefined || value === null || value === '') return null;
+  if (mode !== 'autonomous') throw new Error('WORK_UNIT_AUTONOMOUS_ONLY');
+  const id = String(value).trim();
+  if (!/^[A-Za-z][A-Za-z0-9_-]{2,63}$/.test(id)) throw new Error('work_unit_id must start with a letter and contain 3-64 letters, digits, underscores or hyphens');
+  return { id, strategy: 'autonomous_work_unit' };
+}
 function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}) {
   // Ruby comments are guidance, not executed method calls.  Use a small
   // line-level lexical boundary for phase gates; lifecycle checks remain
@@ -430,13 +437,13 @@ function taskCard(state, phase, detail=false) {
       delete card.method.decisions;
     }
   }
-  return {...card, complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
+  return {...card, work_unit: state.work_unit || null, shared_foundation: 'references/shared-architectural-foundation.md', complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
 }
 function assistanceSummary(state, detail=false) {
   const mode = state?.assistance_selection ? normalizeAssistanceMode(state.assistance_mode) || 'guided' : 'guided';
   const text=String(state?.task_text||'');
   const profile=state?.task_profile||{};const brief=state?.projection_brief||{};
-  const summary={ ...assistanceGuidance(mode), source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  const summary={ ...assistanceGuidance(mode), work_unit: state?.work_unit || null, source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
   if(detail) summary.task_text=text;
   return summary;
 }
@@ -964,12 +971,13 @@ class ManagedProjects {
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
     if (assistance.command_required) throw this.stateError('ASSISTANCE_COMMAND_REQUIRED', 'autonomous requires an exact first non-empty task line: ADAI老王，开启专家模式 or 开启ADAI老王专家模式');
+    const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode);
     const response = await bridge('run_ruby', { code: this.rubyCall('begin_project', [projectId]), file: this.helperPath });
     parseManagedResult(response);
     const modelBinding = await this.modelIdentity(bridge);
     const phasePlan = phasePlanFor(mode, taskProfile);
     const state = {
-      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
+      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
       model_path: modelBinding.path || ping.model_path || '', model_binding: modelBinding,
       toolkit_bindings: toolkitBinding ? [toolkitBinding] : [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1182,7 +1190,15 @@ class ManagedProjects {
 
   async _stepUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
-    if (state.status !== 'ready_for_step') throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
+    const continueWorkUnit = state.status === 'review_required' && state.mode === 'autonomous' && state.work_unit && input.continue_work_unit === true;
+    if (state.status !== 'ready_for_step' && !continueWorkUnit) throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
+    if (continueWorkUnit && state.last_evidence_id) {
+      state.pending_unit_reviews = [...new Set([...(state.pending_unit_reviews || []), state.last_evidence_id])].slice(-16);
+      state.status = 'ready_for_step';
+      await this.saveState(state);
+    }
+    if (state.work_unit && input.work_unit_id && String(input.work_unit_id) !== state.work_unit.id) throw new Error('WORK_UNIT_MISMATCH');
+    if (state.work_unit && !input.work_unit_id) input.work_unit_id = state.work_unit.id;
     await this.assertModelBinding(state, bridge);
     const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
     const phase = phasePlan[state.step_index];
@@ -1204,7 +1220,7 @@ class ManagedProjects {
     }
     validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile);
     const scriptHash = await hashFile(scriptPath);
-    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: state.step_index, dispatched_at: new Date().toISOString(), status: 'dispatched' };
+    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: state.step_index, work_unit_id: state.work_unit?.id || null, dispatched_at: new Date().toISOString(), status: 'dispatched' };
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
@@ -1304,7 +1320,7 @@ class ManagedProjects {
       delete state.pending_evidence;
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
+      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
     } catch (error) {
       if (error.capturePending && state.pending_evidence) {
         state.status='evidence_pending';state.evidence_error=error.message;
@@ -1510,6 +1526,7 @@ class ManagedProjects {
     if (state.recovery_recapture_required) {
       return { ok: true, project_id: state.project_id, status: state.status, recapture_required: true, next_action: 'Call sketchup_project_retry_evidence, then inspect and review its new evidence_id.' };
     }
+    if (state.work_unit && input.work_unit_id && String(input.work_unit_id) !== state.work_unit.id) throw new Error('WORK_UNIT_MISMATCH');
     const currentModel = await this.assertModelBinding(state, bridge);
     if (input.evidence_id !== state.last_evidence_id) throw new Error('Only the latest evidence can advance or revise the project');
     const sealedEvidence = await this.verifyEvidence(state, input.evidence_id, currentModel);
@@ -1601,7 +1618,8 @@ class ManagedProjects {
       await this.saveState(state);
       return { ok: true, project_id: state.project_id, status: state.status, task_card: taskCard(state, phase), next_action: `Rebuild ${phase.name}. ${phase.hint}` };
     }
-    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: [...(state.pending_unit_reviews || []), input.evidence_id], work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+    delete state.pending_unit_reviews;
     delete state.complexity_warning;
     state.step_index += 1;
     state.updated_at = new Date().toISOString();
@@ -2204,4 +2222,4 @@ class ManagedProjects {
   }
 }
 
-module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualityReviewSummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
+module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, normalizedWorkUnit, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualityReviewSummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };

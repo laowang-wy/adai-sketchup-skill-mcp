@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.26',
+  version: '0.5.27',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -88,6 +88,7 @@ const tools = [
         project_id: { type: 'string' },
         assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'Saved per-project assistance preference. auto is compatibility-only and resolves to guided.' },
         task_text: { type: 'string', description: 'Optional original task text. Only an exact first non-empty line command selects autonomous/guided; the remainder is retained.' },
+        work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$', description: 'Optional autonomous work-unit label. It groups related managed operations without bypassing phase, evidence, or transaction guards.' },
         detail: { type: 'boolean', description: 'Return the original task text in the response; default false returns only a hash and readable reference.' },
       task_profile: { type: 'object', description: 'Optional bounded task routing hints. Use matching topics/features or explicitly choose roof_route=custom for a legitimate alternative construction. omit_phases is fixed at begin and can remove only irrelevant optional nodes; quality, evidence and transaction gates remain active for every route.', properties: { topics: { type: 'array', maxItems: 20, items: { type: 'string' } }, features: { type: 'array', maxItems: 20, items: { type: 'string' } }, roof_route:{type:'string',enum:['auto','ancient_roof','custom']}, method_family:{type:'string',maxLength:64,pattern:'^[A-Za-z0-9_.-]*$'}, omit_phases:{type:'array',maxItems:8,items:{type:'string',enum:['roof_profile','archetypes','replication','variants','facade_detail']}}, repetition:{type:'string',enum:['present','none']}, repetition_reason:{type:'string',maxLength:1000} }, additionalProperties: false },
       },
@@ -100,7 +101,7 @@ const tools = [
     description: 'Execute exactly one managed modeling step from a Ruby file. The MCP isolates the write, runs one transaction, generates signed evidence and blocks further geometry until review.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
+      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
       required: ['project_id', 'ruby_file'],
       additionalProperties: false,
     },
@@ -110,7 +111,7 @@ const tools = [
     description: 'Accept or revise the latest automatically generated evidence. The agent makes the visual judgment; the MCP verifies evidence integrity and advances or rolls back.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, evidence_id: { type: 'string' }, verdict: { type: 'string', enum: ['continue', 'revise'] }, note: { type: 'string' },
+      properties: { project_id: { type: 'string' }, evidence_id: { type: 'string' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, verdict: { type: 'string', enum: ['continue', 'revise'] }, note: { type: 'string' },
         visual_review: {type:'object',description:'Optional shorthand when this evidence seals machine inputs. The engine assembles and reruns checks from immutable attachments. Never combine with quality_review; visual judgment remains yours.',properties:{state:{type:'string',enum:['pass','fail','unverified']},observations:{type:'string'},inspected_views:{type:'array',items:{type:'string'}}},required:['state','observations','inspected_views'],additionalProperties:false},
         quality_review: { type: 'object', description: 'Full compatible review input; use this or visual_review for production continue. Schema version 1 binds project_id, phase, evidence_id and visual; checks account for geometry and dependencies with absolute input_path or explicit unverified/not_applicable reason. See managed-quality-review.md.', properties: { schema_version: {type:'integer',enum:[1]}, project_id:{type:'string'}, phase:{type:'string'}, evidence_id:{type:'string'}, visual:{type:'object'}, checks:{type:'array'} }, required:['schema_version','project_id','phase','evidence_id','visual','checks'] } },
       required: ['project_id', 'evidence_id', 'verdict'],
@@ -758,3 +759,4 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (error) => {
   console.error(error);
 });
+

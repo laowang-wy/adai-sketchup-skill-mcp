@@ -1,8 +1,8 @@
 # SketchUp Managed MCP
 
-Current managed-server version: 0.5.26.
+Current managed-server version: 0.5.27.
 
-This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.26 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
+This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.27 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
 
 ## Production API
 
@@ -23,7 +23,7 @@ New projects default to `guided`. The first non-empty task line `ADAI老王，�
 
 ### Object patch boundary
 
-`sketchup_project_patch` is closed in build `0.5.26-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
+`sketchup_project_patch` is closed in build `0.5.27-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
 
 ## Build-file contract
 
@@ -119,3 +119,4 @@ Machine-local `capture_backend: "window_print"` is active. Legacy `desktop_viewp
 ## Instance readback transport correction (2026-09-07)
 
 `sketchup_read_instance_layout` now returns decoded readback JSON directly, with `transport.complete`, `transport.bytes` and SHA256, rather than the bridge's truncated `result_inspect`. It uses the existing captured stdout channel with a per-call frame marker. No bridge extension change or SketchUp restart is required. Missing, damaged or oversized (32 MiB JSON) transport fails explicitly. Traversal `truncated` and reasons remain separate and are never cleared. The checksum establishes transport integrity only, not signed geometry or visual acceptance. Existing server processes need normal reload; do not interrupt active modeling. Offline regressions: SKILL scripts/test_instance_transport.cjs and test_instance_readback_server.cjs; live SU round-trip remains unverified.
+

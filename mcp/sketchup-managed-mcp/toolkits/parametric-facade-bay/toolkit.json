@@ -6,7 +6,7 @@
   "license": "CPAL-1.0",
   "runtime": "node",
   "entry": "entry.cjs",
-  "dependencies": ["SketchUp managed Ruby API >= 0.5.26"],
+  "dependencies": ["SketchUp managed Ruby API >= 0.5.27"],
   "actions": {
     "list": { "effect": "read" },
     "validate": { "effect": "read" },
@@ -17,3 +17,4 @@
   "produces": "editable parametric facade-bay massing Ruby plus measured input manifest; live review remains required",
   "production_ready": false
 }
+
