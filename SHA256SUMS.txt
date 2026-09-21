@@ -1,8 +1,8 @@
 86ccc1fec818830698c1c5533770eed5888dee2360dd02a6002fdbe51acbf38e  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920.zip
 e774473b4c70da677a5760e721336af80cae5dd1c870c251cfc1c93cc6354f02  dist/professional-sketchup-modeling-0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-isolated-host-20260920.zip
 c0363a509c59ce88b087858f137773f584f2a323b6b3ace08f2f024f40ed0fed  dist/professional-sketchup-modeling-0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
-07741f71f3ed479648014730781a1d071573d78814392632abb0c453843601a5  dist/professional-sketchup-modeling-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
+b24d36e5872ee06a8f608c341667fd30434f4a313264970c0217479b05a2d084  dist/professional-sketchup-modeling-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
 ecc8f4626324bfd4883b1ecb6ac0173fd2ac726f731ae7c9d24f28ff2271dd95  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920.zip
 77312fb362fe8447eb657b85f2c174787e434a17db7d9bf5b66032062ae83c07  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-isolated-host-20260920.zip
 7873bff3b1e4881c018b8467714a4cd55d54518f90d3edf106b4bda62fb9ee39  dist/sketchup-managed-mcp-0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
-0fb1b65833b80f25a9a3fab6ecfa10d35345012437edbf4c0e1f7c8a9b29309f  dist/sketchup-managed-mcp-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
+ab3d9fe03e99fb9e1bcdd9828c1e315e153bb56defbe86bca37e09fb60b5a06f  dist/sketchup-managed-mcp-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
