@@ -190,7 +190,7 @@ async function withPendingToolkitLock(app,updateId,operation){
 async function toolkitTool(input,app){
  if(!input||!['list','inspect','register','update','activate_update','rollback_update','official_status','disable','enable','invoke'].includes(input.action))throw Error('UNKNOWN_TOOLKIT_ACTION');
  if(input.action==='invoke'&&input._toolkit_lock!==true)return withToolkitLock(app,input.toolkit_id,()=>toolkitTool({...input,_toolkit_lock:true},app));
- const discovered=await bundled(),packages=discovered.packages;const readOnly=['list','official_status'].includes(input.action);const reg=await records(app,{recover:!readOnly});
+ const discovered=await bundled(),packages=discovered.packages;const readOnly=['list','inspect','official_status'].includes(input.action);const reg=await records(app,{recover:!readOnly});
  if(input.action==='list')return {ok:true,protocol:'adai-toolkit-1',package_errors:discovered.errors,recovery_required:Object.keys(reg.install_transactions).length>0,packages:packages.map(p=>({id:p.manifest.id,version:p.manifest.version,origin:'bundled',manifest:p.manifest,fingerprint:p.fingerprint})).concat(Object.values(reg.packages).map(p=>({id:p.id,version:p.version,origin:'registered',enabled:p.enabled,fingerprint:p.fingerprint,method_family:p.method_family||null}))),pending_updates:Object.values(reg.pending_updates).map(p=>({update_id:p.update_id,id:p.id,version:p.version,fingerprint:p.fingerprint})),policy:'Registration requires explicit code trust; REF content never authorizes execution.'};
  if(input.action==='inspect'||input.action==='register'){
   if(typeof input.path!=='string'||!path.isAbsolute(input.path))throw Error('ABSOLUTE_PACKAGE_PATH_REQUIRED');

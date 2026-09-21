@@ -1,6 +1,6 @@
 # 版本与能力
 
-开发基线2019。本 build 在 SU2019 19.0.685 / Ruby2.5.1 上执行了工程实体与审查、恢复、保存、重开编辑测试；详细范围见内嵌 Skill 的 references/verification-0.5.25-r3.md。SU2018、新机器、建筑来源质量和模型对照仍为 not_run。2024/2025记录为planned_not_implemented；更高或未知版本返回adaptation_required。
+开发基线2019。本 build 在 SU2019 19.0.685 / Ruby2.5.1 上执行了工程实体与审查、恢复、保存、重开编辑测试；详细范围见内嵌 Skill 的 references/verification-0.5.26-r3.md。SU2018、新机器、建筑来源质量和模型对照仍为 not_run。2024/2025记录为planned_not_implemented；更高或未知版本返回adaptation_required。
 
 runtime capabilities读取版本适配目录，status检查用户明确提供的lnk或SketchUp.exe，不搜索猜版本。支持目录不是通过证明。新版本需逐项回归：进程与桥接、Ruby生成与读回、原生/回退截图、保存及重开、源解析SDK。
 

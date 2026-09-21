@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.25',
+  version: '0.5.26',
   build_id: require('../../manifest.json').build_id,
 };
 

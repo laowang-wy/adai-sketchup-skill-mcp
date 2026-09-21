@@ -1,8 +1,8 @@
 # SketchUp Managed MCP
 
-Current managed-server version: 0.5.25.
+Current managed-server version: 0.5.26.
 
-This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.25 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
+This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.26 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
 
 ## Production API
 
@@ -23,7 +23,7 @@ New projects default to `guided`. The first non-empty task line `ADAI老王，�
 
 ### Object patch boundary
 
-`sketchup_project_patch` is closed in build `0.5.25-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
+`sketchup_project_patch` is closed in build `0.5.26-r3-su2019-20260919`: it is absent from production discovery and direct calls return `PATCH_NOT_RELEASED`. Internal engineering tests exercised unique-instance translation, protected-target refusal, review, rollback, recapture and save in SU2019. Recovery of unknown patch results, all shared ancestry paths and dependency-aware protection remain incomplete; these internal positive tests do not enable production use.
 
 ## Build-file contract
 

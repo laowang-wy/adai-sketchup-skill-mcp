@@ -1,4 +1,4 @@
-# ADAI SketchUp 0.5.25
+# ADAI SketchUp 0.5.26
 
 本版本分别提供 professional-sketchup-modeling Skill 和 sketchup-managed-mcp 两个独立安装包。MCP 内含同版本 Skill 运行支持，独立解压即可定位其脚本；Agent 侧仍须单独启用 Skill 和 MCP。
 

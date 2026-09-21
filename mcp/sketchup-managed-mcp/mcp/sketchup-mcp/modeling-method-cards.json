@@ -17,8 +17,8 @@
   "phases": {
     "massing": {
       "decisions": [
-        "Read source evidence, use current managed phase massing.",
-        "Load relevant REF sections by task and stage."
+        "Identify the measured subject, source dimension basis and key unknowns before building the major form.",
+        "Check mass, level, major voids and interfaces first; load only relevant REF sections by task and stage."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -43,8 +43,8 @@
     },
     "archetypes": {
       "decisions": [
-        "Read source evidence, use current managed phase archetypes.",
-        "Load relevant REF sections by task and stage."
+        "Complete the source-required reusable component, its host relationship and critical end conditions before copying.",
+        "State the method boundary and load only relevant REF sections by task and stage."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -56,8 +56,8 @@
     },
     "replication": {
       "decisions": [
-        "Read source evidence, use current managed phase replication.",
-        "Load relevant REF sections by task and stage."
+        "Use true instances with complete parent transforms; inspect first, middle, last and corner placements.",
+        "If the accepted prototype is wrong, use revise_from instead of redrawing every occurrence."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."

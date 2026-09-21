@@ -435,7 +435,8 @@ function taskCard(state, phase, detail=false) {
 function assistanceSummary(state, detail=false) {
   const mode = state?.assistance_selection ? normalizeAssistanceMode(state.assistance_mode) || 'guided' : 'guided';
   const text=String(state?.task_text||'');
-  const summary={ ...assistanceGuidance(mode), source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  const profile=state?.task_profile||{};const brief=state?.projection_brief||{};
+  const summary={ ...assistanceGuidance(mode), source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
   if(detail) summary.task_text=text;
   return summary;
 }
@@ -451,11 +452,23 @@ function nextCallForState(state) {
   const id=state?.project_id, status=state?.status;
   const op=pendingOperation(state).pending_operation;
   if(op && ['result_unknown','recovery_required','dispatched','write_in_progress'].includes(op.status)) return {tool:'sketchup_project_operation_receipt',arguments:{project_id:id,operation_id:op.operation_id},required_fields:[]};
+  if(state?.recovery_recapture_required) return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
   if(status==='evidence_pending') return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
   if(status==='review_required'&&state.last_evidence_id) return {tool:'sketchup_project_review',arguments:{project_id:id,evidence_id:state.last_evidence_id},required_fields:['verdict','visual_review_or_quality_review']};
   if(status==='ready_to_finish') return {tool:'sketchup_project_finish',arguments:{project_id:id},required_fields:[]};
+  if(status==='finished') return {tool:'sketchup_project_status',arguments:{project_id:id,detail:true},required_fields:[]};
   if(status==='ready_for_step') return {tool:'sketchup_project_step',arguments:{project_id:id},required_fields:['ruby_file']};
   return null;
+}
+
+function qualityReviewSummary(state) {
+  const plan=(state?.phase_plan||PHASE_PLANS[state?.mode]||PHASES).map(p=>p.name);
+  const history=Array.isArray(state?.quality_reviews)?state.quality_reviews:[];
+  const latest=new Map(history.map(item=>[item.phase,item]));
+  const phases=plan.map(phase=>{const item=latest.get(phase);return {phase,state:item?.state||'unreviewed',evidence_id:item?.evidence_id||null,checks:(item?.checks||[]).map(c=>({kind:c.kind,state:c.state}))};});
+  const unverified=[];for(const row of phases)for(const check of row.checks)if(['unverified','not_applicable','unsupported'].includes(check.state))unverified.push({phase:row.phase,kind:check.kind,state:check.state});
+  const unresolved=[];for(const key of ['validation_failed','structure_error','recovery_recapture_required'])if(state?.[key])unresolved.push({kind:key,value:key==='recovery_recapture_required'?true:state[key]});
+  return {reviewed_phases:phases.filter(p=>p.state!=='unreviewed').length,total_phases:plan.length,phases,unverified,unresolved};
 }
 
 function validateRoofControlContract(state, phase, buildResult) {
@@ -1940,14 +1953,22 @@ class ManagedProjects {
     state.status = 'finished';
     delete state.pending_delivery;
     state.output_path = outputPath;
+    state.final_evidence_id = evidenceId;
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
     const history=Array.isArray(state.quality_reviews)?state.quality_reviews:[];
-    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:{count:history.length,last:history.length?history[history.length-1]:null,scope:'current journal entries; superseded reviews remain in the sealed evidence record'}, ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
+    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:qualityReviewSummary(state), ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
   }
 
   async recoveryInspect(input, bridge) {
-    const state = await this.loadState(safeId(input.project_id));
+    let state;
+    try {
+      state = await this.loadState(safeId(input.project_id));
+    } catch (error) {
+      const code=String(error.code||'');
+      if (!['STATE_INTEGRITY_CHECK_FAILED','STATE_INTEGRITY_FORMAT_INVALID','STATE_PARSE_FAILED','STATE_RECOVERY_REQUIRED'].includes(code)) throw error;
+      return {ok:false,project_id:safeId(input.project_id),status:'recovery_required',trusted_state:false,recovery_error:{code,message:'Stored project state is not trusted; no path, status or journal field from the damaged file was used.'},operation_id:error.operation_id||null,allowed_actions:['inspect'],can_retry_write:false,next_action:'Preserve the model and obtain an independent operation receipt or checkpoint; do not edit the state file or replay geometry.'};
+    }
     let currentModel = null;
     let modelError = null;
     try { currentModel = await this.modelIdentity(bridge); } catch (error) { modelError = String(error.message || error); }
@@ -2157,7 +2178,7 @@ class ManagedProjects {
       evidencePath = verified.path;
     }
     const operations=pendingOperation(state);
-    return { ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,input.detail===true), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
+    return { ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,input.detail===true), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished; call status(detail=true) for the sealed delivery index.' : 'Unknown state: inspect the project journal before any write.' };
   }
 
   async operationReceipt(input, bridge) {
@@ -2177,4 +2198,4 @@ class ManagedProjects {
   }
 }
 
-module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
+module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualityReviewSummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
