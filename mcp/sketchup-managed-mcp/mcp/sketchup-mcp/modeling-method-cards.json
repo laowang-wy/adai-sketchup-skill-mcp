@@ -83,14 +83,15 @@
     "facade_detail": {
       "decisions": [
         "Read source evidence, use current managed phase facade_detail.",
-        "Load relevant REF sections by task and stage."
+        "Load relevant REF sections by task and stage.",
+        "Separate accepted massing from source-visible skin grammar: opaque/open ratio, band rhythm, recess/projection, corners, base and crown. Repair the wrong skin system before materials or decoration."
       ],
       "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
+        "Inspect actual returned views against the same source views; compare skin relationships as well as geometry/dependencies. Record unknowns honestly."
       ],
       "reject_if": [
         "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
+        "Claiming quality from file existence, component counts, or a generic curtain-wall/grid substitute when the source skin grammar is different."
       ]
     },
     "finish": {

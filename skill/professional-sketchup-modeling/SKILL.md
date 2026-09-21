@@ -17,7 +17,7 @@ description: Use this skill whenever the user asks to create, build, edit, refin
 
 ## 观察与构造
 
-实际打开来源，区分事实、推导、假设和未知；先判定形制与结构依据，再动手。 中式古建、楼阁/塔或图片重建遇到对应问题时，按需读[古建规则](references/chinese-ancient-architecture-rules.md)、[塔类图片建模](references/chinese-tower-image-modeling.md)、[方法手册](references/modeling-method-playbook.md)和[单图分阶段模板](references/image-to-su-staged-template.md)；不为普通任务加载整套资料。用已知构件、重复模数或图注推导关键比例，透视像素不能直接当尺寸。先平面边界、剖面、体量、开敞空间、表面连接和上下承接，再做构件与细节；不同层屋盖不默认缩放同一模型，控制线不代替实体，通用模板不代替用户资料。
+实际打开来源，区分事实、推导、假设和未知；先判定形制与结构依据，再动手。中式古建、楼阁/塔或图片重建遇到对应问题时，按需读[古建规则](references/chinese-ancient-architecture-rules.md)、[塔类图片建模](references/chinese-tower-image-modeling.md)、[方法手册](references/modeling-method-playbook.md)和[单图分阶段模板](references/image-to-su-staged-template.md)；现代建筑或表皮重建在体量通过后读[来源图表皮复核](references/facade-skin-review.md)。不为普通任务加载整套资料。用已知构件、重复模数或图注推导关键比例，透视像素不能直接当尺寸。先平面边界、剖面、体量、开敞空间、表面连接和上下承接，再做构件与细节；不同层屋盖不默认缩放同一模型，控制线不代替实体，通用模板不代替用户资料。
 写 Ruby 前读[受管 API](references/managed-ruby-api.md)和[最小示例](references/minimal-managed-example.md)，使用 `PipClawManagedBuild.build(entities,context)`，只写获准阶段；不在脚本中保存文件、切换文档或篡改状态。
 
 Ruby 只承担当前阶段的实体构造：先建立所属 group/definition，再用真实面、曲线和变换生成主形；尺寸统一用 `.mm`，法向和闭合性在读回中核对。脚本返回简短结果和必要 `geometry_readback`，不以名称、计数或注释代替实体；已编译的 `ruby_file` 直接交给 `step`，不搬运或重写生成物。没有匹配配方时可用自定义受管 Ruby，但仍必须经过同一事务、读回、视图复核和 finish 门禁。可运行样例见[受管 Ruby 示例](references/examples/ruby/representative-and-batch.rb)。
