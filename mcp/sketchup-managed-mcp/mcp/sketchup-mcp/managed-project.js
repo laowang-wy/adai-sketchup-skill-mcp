@@ -456,7 +456,7 @@ function nextCallForState(state) {
   if(status==='evidence_pending') return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
   if(status==='review_required'&&state.last_evidence_id) return {tool:'sketchup_project_review',arguments:{project_id:id,evidence_id:state.last_evidence_id},required_fields:['verdict','visual_review_or_quality_review']};
   if(status==='ready_to_finish') return {tool:'sketchup_project_finish',arguments:{project_id:id},required_fields:[]};
-  if(status==='finished') return {tool:'sketchup_project_status',arguments:{project_id:id,detail:true},required_fields:[]};
+  if(status==='finished') return null;
   if(status==='ready_for_step') return {tool:'sketchup_project_step',arguments:{project_id:id},required_fields:['ruby_file']};
   return null;
 }
@@ -1304,7 +1304,7 @@ class ManagedProjects {
       delete state.pending_evidence;
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
+      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
     } catch (error) {
       if (error.capturePending && state.pending_evidence) {
         state.status='evidence_pending';state.evidence_error=error.message;
@@ -1954,6 +1954,7 @@ class ManagedProjects {
     delete state.pending_delivery;
     state.output_path = outputPath;
     state.final_evidence_id = evidenceId;
+    state.final_evidence_path = saved.path;
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
     const history=Array.isArray(state.quality_reviews)?state.quality_reviews:[];
@@ -2177,8 +2178,13 @@ class ManagedProjects {
       reviewSheet = verified.record.files?.review_sheet?.path || '';
       evidencePath = verified.path;
     }
-    const operations=pendingOperation(state);
-    return { ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,input.detail===true), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished; call status(detail=true) for the sealed delivery index.' : 'Unknown state: inspect the project journal before any write.' };
+    const operations=pendingOperation(state);const includeTask=input.detail===true&&(!input.section||input.section==='task');
+    const response={ ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,includeTask), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: state.status==='finished'?(state.final_evidence_path||''):evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；先处理取证错误，禁止重放建模。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
+    if(input.section==='delivery') return {ok:true,project_id:state.project_id,status:state.status,output_path:response.output_path,final_evidence_id:response.final_evidence_id,evidence_path:response.evidence_path,review_sheet:response.review_sheet,quality:qualityReviewSummary(state),unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved,next_call:response.next_call};
+    if(input.section==='quality') return {ok:true,project_id:state.project_id,status:state.status,quality:qualityReviewSummary(state),validation_failed:response.validation_failed,unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved};
+    if(input.section==='constraints') return {ok:true,project_id:state.project_id,status:state.status,assistance:{active_constraints:response.assistance.active_constraints,task_text_ref:response.assistance.task_text_ref}};
+    if(input.section==='task') return {ok:true,project_id:state.project_id,status:state.status,assistance:assistanceSummary(state,true)};
+    return response;
   }
 
   async operationReceipt(input, bridge) {

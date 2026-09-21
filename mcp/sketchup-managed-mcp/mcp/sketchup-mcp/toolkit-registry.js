@@ -184,7 +184,10 @@ async function withToolkitLock(app,toolkitId,operation){
  try{return await operation();}finally{await handle.close().catch(()=>{});await fs.rm(file,{force:true}).catch(()=>{});}
 }
 async function withPendingToolkitLock(app,updateId,operation){
- const current=await records(app),pending=current.pending_updates[String(updateId||'')];if(!pending)throw Error('PENDING_UPDATE_NOT_FOUND');
+ // Passively discover the pending record first, then acquire the toolkit lock
+ // before any recovery-capable read.  This prevents recovery from moving
+ // transaction files while another activation/rollback is racing.
+ const observed=await records(app,{recover:false}),pending=observed.pending_updates[String(updateId||'')];if(!pending)throw Error('PENDING_UPDATE_NOT_FOUND');
  return withToolkitLock(app,pending.id,operation);
 }
 async function toolkitTool(input,app){

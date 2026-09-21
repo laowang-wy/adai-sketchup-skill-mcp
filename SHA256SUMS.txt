@@ -5,4 +5,4 @@ c0363a509c59ce88b087858f137773f584f2a323b6b3ace08f2f024f40ed0fed  dist/professio
 ecc8f4626324bfd4883b1ecb6ac0173fd2ac726f731ae7c9d24f28ff2271dd95  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-20260920.zip
 77312fb362fe8447eb657b85f2c174787e434a17db7d9bf5b66032062ae83c07  dist/sketchup-managed-mcp-0.5.24-s1-s6-cpal-skill-card-ruby-tower-stale-instance-isolated-host-20260920.zip
 7873bff3b1e4881c018b8467714a4cd55d54518f90d3edf106b4bda62fb9ee39  dist/sketchup-managed-mcp-0.5.25-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
-254f63f6fa4b0c403770f487d3d5d5a28a26f086869837e91735a715f55d6d18  dist/sketchup-managed-mcp-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip
+0fb1b65833b80f25a9a3fab6ecfa10d35345012437edbf4c0e1f7c8a9b29309f  dist/sketchup-managed-mcp-0.5.26-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip

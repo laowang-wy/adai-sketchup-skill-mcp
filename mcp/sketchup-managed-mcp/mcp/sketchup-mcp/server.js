@@ -152,7 +152,7 @@ const tools = [
   {
     name: 'sketchup_project_status',
     description: 'Return the current managed project status and only the next action the agent needs.',
-    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, detail:{type:'boolean',description:'Include the full phase method guidance.'} }, required: ['project_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, detail:{type:'boolean',description:'Include the full phase method guidance.'}, section:{type:'string',enum:['delivery','quality','task','constraints'],description:'Read one bounded section; delivery/quality/constraints never include the original task text.'} }, required: ['project_id'], additionalProperties: false },
   },
   {
     name: 'sketchup_project_operation_receipt',
