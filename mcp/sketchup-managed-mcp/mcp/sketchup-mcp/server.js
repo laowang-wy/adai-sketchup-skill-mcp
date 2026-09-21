@@ -138,7 +138,7 @@ const tools = [
   {
     name: 'sketchup_project_recover',
     description: 'Verify an already opened signed phase checkpoint and rebind the existing managed project after a restart. Does not open files, build geometry or grant visual approval.',
-    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore'] } }, required: ['project_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore', 'abort_pending'] }, reason: {type:'string', minLength:8, description:'Required for abort_pending: withdraw only the current frozen unreviewed phase, retaining its audit history.'} }, required: ['project_id'], additionalProperties: false },
   },
   {
     name:'sketchup_project_retry_evidence',description:'Retry incomplete desktop viewport evidence without rerunning geometry. Verifies pending checkpoint, source hash and live audit, then requires normal visual review.',

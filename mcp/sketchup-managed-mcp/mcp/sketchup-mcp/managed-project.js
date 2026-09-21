@@ -1160,11 +1160,22 @@ class ManagedProjects {
     }
 
     const geometryArtifacts={};
+    const evidenceWarnings=[];
     if(evidenceBuildResult?.build_result?.geometry_readback){
       const materializeInput=path.join(evidenceDir,'geometry-materialize-input.json');
       await fs.writeFile(materializeInput,JSON.stringify({project_id:state.project_id,phase,evidence_id:evidenceId,geometry_readback:evidenceBuildResult.build_result.geometry_readback}));
-      await execFileAsync(process.env.PIPCLAW_PYTHON||'python',[path.join(path.dirname(this.helperPath),'materialize_geometry_review.py'),'--input',materializeInput,'--output',evidenceDir],{windowsHide:true,timeout:30000,env:{...process.env,PYTHONIOENCODING:'utf-8'}});
-      for(const name of ['readback','id-map','measurements','dependencies','review-draft','timing'])geometryArtifacts['geometry_'+name.replaceAll('-','_')]=path.join(evidenceDir,'geometry-'+name+'.json');
+      try {
+        await execFileAsync(process.env.PIPCLAW_PYTHON||'python',[path.join(path.dirname(this.helperPath),'materialize_geometry_review.py'),'--input',materializeInput,'--output',evidenceDir],{windowsHide:true,timeout:30000,env:{...process.env,PYTHONIOENCODING:'utf-8'}});
+        for(const name of ['readback','id-map','measurements','dependencies','review-draft','timing'])geometryArtifacts['geometry_'+name.replaceAll('-','_')]=path.join(evidenceDir,'geometry-'+name+'.json');
+      } catch(error) {
+        // A malformed optional derived field must not strand a committed model in
+        // evidence_pending. Preserve the raw readback and exact formatter error;
+        // review can continue with these machine inputs explicitly unverified.
+        const diagnostic=path.join(evidenceDir,'geometry-materialization-error.json');
+        await fs.writeFile(diagnostic,JSON.stringify({code:'GEOMETRY_DERIVED_INPUT_INVALID',message:String(error.message||error),source:materializeInput,required_correction:'Fix the producer output and rerun the phase if these measurements are required; no geometry was replayed.'},null,2));
+        geometryArtifacts.geometry_materialization_error=diagnostic;
+        evidenceWarnings.push({code:'GEOMETRY_DERIVED_INPUT_INVALID',state:'unverified',message:'Optional geometry review artifacts were not materialized; raw geometry_readback is preserved.'});
+      }
     }
     const files = {};
     for (const [name, file] of Object.entries({ checkpoint: checkpointPath, reference: referencePath, audit: auditOutput, audit_preview: auditPreview, review_sheet: reviewSheet, review_report: reviewReport, capture_fallback: path.join(evidenceDir,'capture-fallback.json'), ...geometryArtifacts, ...detailViews })) {
@@ -1178,6 +1189,7 @@ class ManagedProjects {
       task_contract: { mode: state.mode, phase, task_profile: state.task_profile || {} }, camera_state: cameraState,
       timing:{geometry_views_seconds:geometryViewSeconds,geometry_write_readback_seconds:evidenceBuildResult?.build_result?.geometry_readback?.write_readback_seconds??null},
       model_path: state.model_path,
+      ...(evidenceWarnings.length ? {evidence_warnings:evidenceWarnings,missing_machine_inputs:['geometry_measurements','geometry_dependencies']} : {}),
       ...(consistencyRetry ? {geometry_readback_status:'not_measured_after_scene_change',missing_machine_inputs:['geometry_readback','geometry_measurements','geometry_dependencies'],note:'Fresh audit and views only; the prior build readback was not relabelled after the scene changed.'} : {}),
     };
     const saved = await this.writeEvidence(state, record);
@@ -1979,6 +1991,45 @@ class ManagedProjects {
     return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:qualityReviewSummary(state), ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
   }
 
+  async abortPendingEvidence(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => {
+      const state = await this.loadState(safeId(input.project_id));
+      if (state.status !== 'evidence_pending' || !state.pending_evidence) throw this.stateError('ABORT_PENDING_NOT_AVAILABLE', 'Only an unreviewed phase with frozen evidence may be withdrawn');
+      if (pendingOperation(state).pending_operation) throw this.stateError('RESULT_UNKNOWN', 'Reconcile the original operation before withdrawal');
+      const reason = String(input.reason || '').trim();
+      if (reason.length < 8) throw this.stateError('ABORT_REASON_REQUIRED', 'Explain why this unreviewed phase must be withdrawn');
+      const pending = state.pending_evidence;
+      const phase = (state.phase_plan || PHASE_PLANS[state.mode] || PHASES)[state.step_index];
+      if (!phase || phase.name !== pending.phase || state.phase !== pending.phase || state.recovery_recapture_required) throw this.stateError('ABORT_PENDING_SCOPE_MISMATCH', 'Withdrawal cannot remove accepted or recapture-only geometry');
+      await this.assertModelBinding(state, bridge);
+      if (!pending.checkpoint || !pending.audit) throw this.stateError('ABORT_PENDING_BASIS_MISSING', 'A verified checkpoint and frozen audit are required');
+      await verifyEvidenceFiles({checkpoint: pending.checkpoint, audit: pending.audit});
+      const livePath = path.join(this.projectDir(state.project_id), 'withdraw-live-' + crypto.randomUUID() + '.json');
+      parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,livePath.replaceAll('\\','/')]),file:this.helperPath},120000));
+      const live = JSON.parse(await fs.readFile(livePath,'utf8'));
+      const prior = JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
+      validateAuditReadback(live); validateAuditReadback(prior);
+      if ((state.quality_reviews || []).some(x=>x.phase===phase.name)) throw this.stateError('ABORT_ACCEPTED_PHASE','Accepted phases require the existing revision route');
+      if (!live.root || !prior.root || canonical(live.root)!==canonical(prior.root)) throw this.stateError('ABORT_PENDING_SCENE_CHANGED', 'Live geometry differs from the frozen phase; withdrawal refused');
+      const record = await this.writeEvidence(state, {
+        schema_version:1, evidence_id:'withdraw_'+crypto.randomUUID(), project_id:state.project_id,
+        phase:phase.name, record_type:'pending_evidence_withdrawal', created_at:new Date().toISOString(),
+        reason, pending_evidence:pending, pending_execution:state.pending_execution || null,
+        original_operation_journal:state.operation_journal || [], evidence_error:state.evidence_error || null,
+        files:{checkpoint:pending.checkpoint,audit:pending.audit,live_audit:await fileEvidence(livePath)},
+      });
+      await this.saveState(state);
+      const context = {purpose:'withdraw_pending_evidence',reason,withdrawal_evidence_id:record.record?.evidence_id || state.last_evidence_id,withdrawal_evidence_path:record.path};
+      const response = await this.dispatchAuxiliaryWrite(state,'remove_phase',[state.project_id,phase.name],bridge,context);
+      parseManagedResult(response);
+      const operation = state.operation_journal[state.operation_journal.length-1];
+      try { await this.resumeAuxiliaryResult(state,operation,null,bridge); }
+      catch(error) { state.status='recovery_required'; operation.status='result_unknown'; state.recovery_error=error.message; await this.saveState(state); throw error; }
+      await this.saveState(state);
+      return {ok:true,project_id:state.project_id,status:state.status,operation_id:operation.operation_id,withdrawal_evidence_path:record.path,next_call:nextCallForState(state),next_action:'Correct the Ruby file and submit a new managed step. Original frozen inputs and checkpoint are preserved; nothing was accepted.'};
+    });
+  }
+
   async recoveryInspect(input, bridge) {
     let state;
     try {
@@ -2046,6 +2097,11 @@ class ManagedProjects {
     if(affected.includes('facade_detail'))delete state.unique_details;
     if(affected.some(x=>['massing','source_alignment'].includes(x))){delete state.projection_subjects;delete state.massing_summary;delete state.source_camera;}
     delete state.pending_evidence;delete state.validation_failed;delete state.structure_error;delete state.evidence_error;delete state.complexity_warning;
+    if (context.purpose==='withdraw_pending_evidence') {
+      state.withdrawn_evidence = [...(state.withdrawn_evidence || []), {operation_id:operation.operation_id,...context}];
+      delete state.pending_execution;
+      delete state.recovered_checkpoint;
+    }
     state.status='ready_for_step';
   }
 
@@ -2141,6 +2197,7 @@ class ManagedProjects {
 
   async recover(input, bridge) {
     const action = input.action || 'restore';
+    if (action === 'abort_pending') return this.abortPendingEvidence(input, bridge);
     if (!['inspect', 'reconcile', 'restore'].includes(action)) throw this.stateError('RECOVERY_ACTION_INVALID', 'Recovery action must be inspect, reconcile, or restore');
     if (action === 'inspect') return this.recoveryInspect(input, bridge);
     if (action === 'reconcile') return this.recoveryReconcile(input, bridge);
