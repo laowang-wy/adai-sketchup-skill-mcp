@@ -1,4 +1,4 @@
 f44a9b304fcd95f70d9e34c54fa86cfb11896e5b08c6fb6fec9735e6c629ece3  dist\professional-sketchup-modeling-0.5.29-context-projection-ref-routing-20260923.zip
 42cde50e437b0c7831625ee9ee7b46e258b9d0ffe2556929f959ebe789fabb6c  dist\sketchup-managed-mcp-0.5.29-context-projection-ref-routing-20260923.zip
-509b6d98d5e315911c342e144676aec39417c53368465966e48c91244d168354  dist\professional-sketchup-modeling-0.5.29-guided-typed-ops-method-focus-20260923.zip
-a524a9c559fa50a412b60cfd45a363bbc3b3152508b7db0b81ee82d7f99c86dc  dist\sketchup-managed-mcp-0.5.29-guided-typed-ops-method-focus-20260923.zip
+f302a8b28cf56e2da4d644fe677f9f6995c22cf3bf72c285ae97e78d124912d2  dist\professional-sketchup-modeling-0.5.29-guided-typed-ops-method-focus-20260923.zip
+eb04dc30a395c563cef71ac2fff61424554ed909240be32fb702137888a45cd6  dist\sketchup-managed-mcp-0.5.29-guided-typed-ops-method-focus-20260923.zip

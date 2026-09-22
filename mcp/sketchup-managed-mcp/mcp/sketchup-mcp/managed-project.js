@@ -508,10 +508,10 @@ function complexityWarning(result) {
     decision:'Inspect whether repetition is necessary primary form or premature detail; continue with rationale or explicitly revise. Geometry preserved.'} : null;
 }
 
-// Expert projects do not follow the guided phase cursor, but they still need
-// the existing architectural method cards at the moment a system is chosen.
-// Keep this a small projection of the cards; the full references remain
-// available through the Skill/REF route and are not copied into every reply.
+// Expert projects do not follow the guided phase cursor.  Keep only the names
+// of relevant architectural references in the task card; pushing decisions
+// and reject_if entries into every reply makes the expert optimize a checklist
+// instead of the source.  The full cards remain available on demand.
 function expertMethodFocus(state) {
   const profile = state?.task_profile || {};
   const names = [];
@@ -519,28 +519,8 @@ function expertMethodFocus(state) {
   else if (Array.isArray(profile.features) && profile.features.some((x) => /曲面|屋面|楼|塔|古建|roof|tower|curv/i.test(String(x)))) names.push('roof_profile', 'archetypes');
   if (!names.length) return null;
   const seen = new Set();
-  const focus = names.filter((name) => !seen.has(name) && seen.add(name)).map((name) => {
-    const card = modelingMethodCards.phases?.[name];
-    if (!card) return null;
-    return {
-      phase: name,
-      decisions: Array.isArray(card.decisions) ? card.decisions.slice(0, 2) : [],
-      evidence_checks: Array.isArray(card.evidence_checks) ? card.evidence_checks.slice(0, 2) : [],
-      reject_if: Array.isArray(card.reject_if) ? card.reject_if.slice(0, 2) : [],
-    };
-  }).filter(Boolean);
-  return focus.length ? {
-    source: 'existing_modeling_method_cards',
-    cards: focus,
-    // Keep the route boundary beside the method cards so an expert chooses a
-    // construction path before a large low-level batch.  This names existing
-    // capabilities; it does not prescribe a new recipe or judge the shape.
-    construction_route: {
-      ancient_tool: 'Compile is offline; use family=geometry only when its parts match the current managed phase. Other family results must be inspected/adapted through a managed step, never treated as direct SketchUp writes.',
-      managed_step: 'Use typed operations for bounded massing/supporting primitives; use a managed Ruby file for source-matched roofs and repeated timber, then execute through sketchup_project_step.',
-      visual_boundary: 'A successful compile, entity count, or detail registration does not prove the source silhouette; compare the captured reference and decisive views before review.'
-    }
-  } : null;
+  const focus = names.filter((name) => !seen.has(name) && seen.add(name));
+  return focus.length ? { source: 'existing_modeling_method_cards', available_sections: focus, read: 'sketchup_project_status(detail=true) or the matching reference when a construction question arises' } : null;
 }
 function abstractionRecheckNeeded(state, phaseName) {
   const attempts=Number(state?.revision_attempts?.[phaseName] || 0);
