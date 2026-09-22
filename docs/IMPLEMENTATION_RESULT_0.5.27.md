@@ -9,10 +9,8 @@
 
 ## 同构建包
 
-- Skill ZIP: `dist/professional-sketchup-modeling-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`
-  - SHA256 `522a65338be801f438cfb1c863489c112e897bab2feb73b5b1dbf0cba2684be4`
-- MCP ZIP: `dist/sketchup-managed-mcp-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`
-  - SHA256 `6963299fa9ce76094541414bc23e97d84174aa2ef9a7f4693773c9326afc6ea0`
+- Skill ZIP: `dist/professional-sketchup-modeling-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`\n  - SHA256 `1ab559dfc663101b51650e621fbd146a18004b0595c262b48bdfcb19480b34b6`
+- MCP ZIP: `dist/sketchup-managed-mcp-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`\n  - SHA256 `b0c9f559b4e0d23afc872044e9b203e285a9b1c2a8d3a9d73018854aa4f44532`
 
 ## 验证
 
@@ -23,7 +21,8 @@
 ## 未测项
 
 - 真实 SketchUp/SU2019 建模、来源图对照、重开编辑和第二台机器验收：`not_run`。
-- autonomous 跨多个原阶段类别的完整真实工作单元、工具包组合和视觉合并审核：`not_run`；本版只接通 bounded work-unit 连续受管写入与证据合并记录，未放开裸写或绕过阶段保护。
+- autonomous 跨多个原阶段类别的完整真实工作单元、工具包组合和视觉合并审核：`not_run`；本版已接通 bounded work-unit 的 `continue_work_unit` + `next_phase`、逐笔证据保留与合并审核记录，未放开裸写或绕过阶段保护。
 - 官方签名/远程发布服务：`not_run`。
+
 
 
