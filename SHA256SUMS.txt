@@ -1,2 +1,2 @@
-3acca753a60dba59b7b369af3f0e88bbaceb493986bfd3471026589d08453015  dist/professional-sketchup-modeling-0.5.27-r2-q01-q05-20260922.zip
-b7fca42403dd042f92b71f7015da17d5ea84827cdaa8bba2b37ba4e497d91b63  dist/sketchup-managed-mcp-0.5.27-r2-q01-q05-20260922.zip
+568a4544b89ff4f7a071353f63304cccf0ffbc2bf6c7bd19c75bea0cd2c458e9  dist/professional-sketchup-modeling-0.5.27-r2-q01-q05-20260922.zip
+09c27d97a4362d2380179170963f655e924a029ab5caa4c8517b3f4ced92ddce  dist/sketchup-managed-mcp-0.5.27-r2-q01-q05-20260922.zip

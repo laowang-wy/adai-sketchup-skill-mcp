@@ -67,6 +67,24 @@ function phasePlanFor(mode, profile) {
   return [...selected.slice(0,insert),ROOF_PROFILE_PHASE,...selected.slice(insert)];
 }
 
+// The saved execution policy is the single source for strategy-sensitive
+// behavior. Older states have no policy and are read through their saved plan
+// as a compatibility migration; new writes never infer strategy independently
+// from mode or from a caller's operation intent.
+function resolveExecutionPolicy({ mode, assistanceMode, profile, phasePlan, version = 1 }) {
+  const strategy = assistanceMode === 'autonomous' ? 'autonomous_work_unit' : 'guided_phase';
+  return {
+    version,
+    strategy,
+    review_mode: strategy === 'autonomous_work_unit' ? 'merged_work_unit' : 'phase_review',
+    phase_plan: (phasePlan || phasePlanFor(mode, profile)).map((item) => ({ name: item.name, hint: item.hint })),
+  };
+}
+
+function executionPlan(state) {
+  return state?.execution_policy?.phase_plan || state?.phase_plan || PHASE_PLANS[state?.mode] || PHASES;
+}
+
 const PHASE_PLANS = MANAGED_CONTRACT.mode_plans;
 
 const RAW_WRITE_TOOLS = new Set([
@@ -984,12 +1002,13 @@ class ManagedProjects {
     parseManagedResult(response);
     const modelBinding = await this.modelIdentity(bridge);
     const phasePlan = phasePlanFor(mode, taskProfile);
+    const execution_policy = resolveExecutionPolicy({ mode, assistanceMode: assistance.mode, profile: taskProfile, phasePlan });
     const state = {
       schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
       model_path: modelBinding.path || ping.model_path || '', model_binding: modelBinding,
       toolkit_bindings: toolkitBinding ? [toolkitBinding] : [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, phase_plan: phasePlan,
+      status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, phase_plan: phasePlan, execution_policy,
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
@@ -1214,7 +1233,7 @@ class ManagedProjects {
     if (state.status !== 'ready_for_step' && !continueWorkUnit) throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
     let continuationTarget = state.step_index;
     if (continueWorkUnit && state.last_evidence_id) {
-      const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+      const plan = executionPlan(state);
       if (input.next_phase) {
         const target = plan.findIndex((item) => item.name === String(input.next_phase).trim());
         if (target < 0) throw this.stateError('WORK_UNIT_PHASE_UNKNOWN', 'next_phase is not in the saved project plan');
@@ -1226,7 +1245,7 @@ class ManagedProjects {
     // Work-unit identity is derived for the operation; never mutate the
     // caller's input object while preparing a write.
     await this.assertModelBinding(state, bridge);
-    const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+    const phasePlan = executionPlan(state);
     const phase = phasePlan[continuationTarget];
     if (!phase) throw new Error('All managed phases are complete; call sketchup_project_finish');
     const unresolved = await this.unresolvedDocumentOperation(state.model_binding || { path: state.model_path, object_id: null }, state.project_id);
@@ -1248,7 +1267,9 @@ class ManagedProjects {
     const scriptHash = await hashFile(scriptPath);
     const requestedIntent = input.operation_intent == null ? 'append' : String(input.operation_intent).trim();
     if (!['append','update','replace'].includes(requestedIntent)) throw this.stateError('OPERATION_INTENT_INVALID', 'operation_intent must be append, update, or replace');
-    const intent = state.assistance_mode === 'autonomous' ? requestedIntent : 'replace';
+    const policy = state.execution_policy || resolveExecutionPolicy({ mode: state.mode, assistanceMode: state.assistance_mode, profile: state.task_profile, phasePlan: state.phase_plan });
+    const expertStrategy = policy.strategy === 'autonomous_work_unit';
+    const intent = expertStrategy ? requestedIntent : 'replace';
     const priorStatus = state.status;
     const progress = { phase: phase.name, step_index: continuationTarget,
       ...(continueWorkUnit && state.last_evidence_id ? { previous_evidence_id: state.last_evidence_id } : {}),
@@ -1257,7 +1278,7 @@ class ManagedProjects {
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
-    const operationContext = { strategy: state.assistance_mode === 'autonomous' ? 'expert_work_unit' : 'guided_phase', work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id, progress };
+    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id, progress };
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
     const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
@@ -1407,7 +1428,7 @@ class ManagedProjects {
       await this.assertModelBinding(state, bridge);
       const execution = state.pending_execution;
       if (await hashFile(execution.script_path) !== execution.script_hash) throw this.stateError('RECOVERY_SCRIPT_CHANGED', 'Recorded build source changed; do not replay it');
-      const phase = (state.phase_plan || PHASES)[state.step_index];
+      const phase = executionPlan(state)[state.step_index];
       if (!phase || phase.name !== execution.phase) throw this.stateError('RECOVERY_PHASE_MISMATCH', 'Receipt phase does not match current project');
       const evidence = await this.automaticEvidence(state, phase.name, execution.script_path, execution.script_hash, bridge, execution.build_result);
       try {
@@ -1469,7 +1490,7 @@ class ManagedProjects {
       parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
       const audit = JSON.parse(await fs.readFile(auditPath, 'utf8'));
       validateAuditReadback(audit);
-      const recapturePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+      const recapturePlan = executionPlan(state);
       const phase = state.recapture_phase || recapturePlan[Math.min(state.step_index,recapturePlan.length-1)]?.name || state.phase;
       if (state.recapture_basis) {
         await verifyEvidenceFiles({basis:state.recapture_basis});
@@ -1480,7 +1501,7 @@ class ManagedProjects {
       }
       parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
       if (!fsSync.existsSync(referencePath) || (await fs.stat(referencePath)).size <= 0) throw this.stateError('EVIDENCE_CAPTURE_FAILED', 'Final recapture did not deliver a nonzero visual file');
-      const isFinal = state.step_index >= (state.phase_plan || PHASE_PLANS[state.mode] || PHASES).length;
+      const isFinal = state.step_index >= executionPlan(state).length;
       const files = {audit:await fileEvidence(auditPath),reference:await fileEvidence(referencePath)};
       const geometry = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_geometry_views',[state.project_id,phase,dir.replaceAll('\\','/')]),file:this.helperPath},120000));
       for (const view of geometry.views || []) files['geometry_'+view.label] = await fileEvidence(view.path);
@@ -1527,7 +1548,7 @@ class ManagedProjects {
     if (pending.checkpoint) state.recovered_checkpoint = pending.checkpoint;
     for(const file of [pending.checkpoint,pending.audit]) if(await hashFile(file.path)!==file.sha256) throw new Error('Pending evidence integrity mismatch');
     if(await hashFile(pending.script_path)!==pending.script_hash) throw new Error('Build source changed since checkpoint');
-    const phase=(state.phase_plan || PHASE_PLANS[state.mode] || PHASES)[state.step_index];
+    const phase=executionPlan(state)[state.step_index];
     if(phase.name!==pending.phase) throw new Error('Pending phase mismatch');
     const livePath=path.join(this.projectDir(state.project_id),'retry-live-audit.json');
     parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,livePath.replaceAll('\\','/')]),file:this.helperPath},120000));
@@ -1580,7 +1601,7 @@ class ManagedProjects {
     try { await this.assertEvidenceCurrent(state, sealedEvidence, bridge); }
     catch (error) {
       if (error.code !== 'EVIDENCE_MODEL_CHANGED' || !error.liveAudit) throw error;
-      const phase = (state.phase_plan || PHASES)[state.step_index]?.name;
+      const phase = executionPlan(state)[state.step_index]?.name;
       if (!phase || state.patch_review) throw error;
       assertRecaptureScope(error.recordedAudit, error.liveAudit, phase);
       if (input.verdict !== 'revise') {
@@ -1595,7 +1616,7 @@ class ManagedProjects {
       // Explicit revise may remove only the current phase after this scope check.
     }
     const verdict = String(input.verdict || '');
-    const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+    const phasePlan = executionPlan(state);
     const patchReview = state.patch_review || null;
     const finalReview = ['final_recapture','continuation_recapture'].includes(sealedEvidence.record.record_type);
     const phase = patchReview ? { name: patchReview.phase, hint: 'Inspect the patch result and continue the existing managed phase.' } : finalReview ? { name: sealedEvidence.record.phase, hint: 'Review the fresh evidence before continuing.' } : phasePlan[state.step_index];
@@ -1654,7 +1675,7 @@ class ManagedProjects {
     }
     if (verdict === 'revise') {
       state.revision_attempts={...(state.revision_attempts||{}),[phase.name]:Number(state.revision_attempts?.[phase.name]||0)+1};
-      if (state.assistance_mode === 'autonomous') {
+      if ((state.execution_policy?.strategy || '') === 'autonomous_work_unit' || state.assistance_mode === 'autonomous') {
         // A work-unit review cannot erase the whole phase container: it may
         // include accepted wall/window objects from earlier appends. Keep the
         // committed scene and require a scoped update/replace operation on the
@@ -1716,7 +1737,7 @@ class ManagedProjects {
       throw new Error(`Cannot revise upstream while project is ${state.status}.`);
     }
     await this.assertModelBinding(state, bridge);
-    const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+    const plan = executionPlan(state);
     const targetName = String(input.target_phase || '').trim();
     const targetIndex = plan.findIndex((item) => item.name === targetName);
     if (targetIndex < 0) throw new Error(`Unknown target_phase '${targetName}' for this project route.`);
@@ -1904,7 +1925,7 @@ class ManagedProjects {
     const state = await this.loadState(safeId(input.project_id));
     if (state.status !== 'ready_to_finish') throw new Error(`Project is ${state.status}; all phases must be reviewed before finish`);
     const currentBinding = await this.assertModelBinding(state, bridge);
-    const plannedNames=(state.phase_plan || PHASE_PLANS[state.mode] || PHASES).map(p=>p.name);
+    const plannedNames=executionPlan(state).map(p=>p.name);
     if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 1)) {
       throw new Error('Delivery blocked: reusable archetypes do not contain an audited source-visible detail system required by this task. Rebuild and review the archetypes step.');
     }
@@ -2059,7 +2080,7 @@ class ManagedProjects {
       const reason = String(input.reason || '').trim();
       if (reason.length < 8) throw this.stateError('ABORT_REASON_REQUIRED', 'Explain why this unreviewed phase must be withdrawn');
       const pending = state.pending_evidence;
-      const phase = (state.phase_plan || PHASE_PLANS[state.mode] || PHASES)[state.step_index];
+      const phase = executionPlan(state)[state.step_index];
       if (!phase || phase.name !== pending.phase || state.phase !== pending.phase || state.recovery_recapture_required) throw this.stateError('ABORT_PENDING_SCOPE_MISMATCH', 'Withdrawal cannot remove accepted or recapture-only geometry');
       await this.assertModelBinding(state, bridge);
       if (!pending.checkpoint || !pending.audit) throw this.stateError('ABORT_PENDING_BASIS_MISSING', 'A verified checkpoint and frozen audit are required');
@@ -2272,7 +2293,7 @@ class ManagedProjects {
     const file = sealed.record.files?.checkpoint;
     if (!file || path.resolve(file.path) !== path.resolve(checkpoint.path)) throw new Error('Checkpoint is not sealed by its phase evidence');
     if (await hashFile(checkpoint.path) !== file.sha256) throw new Error('Checkpoint hash mismatch');
-    const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+    const plan = executionPlan(state);
     const index = plan.findIndex(p => p.name === checkpoint.phase);
     if (index < 0 || (state.status === 'ready_for_step' && state.step_index !== index + 1) || (state.status === 'review_required' && state.step_index !== index)) throw new Error('Checkpoint phase does not match current review/continuation state');
     const current = await this.modelIdentity(bridge);
@@ -2303,7 +2324,7 @@ class ManagedProjects {
 
   async status(input) {
     const state = await this.loadState(safeId(input.project_id));
-    const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+    const phasePlan = executionPlan(state);
     const phase = phasePlan[state.step_index];
     let reviewSheet = '';
     let evidencePath = '';
@@ -2342,3 +2363,4 @@ class ManagedProjects {
 }
 
 module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, normalizedWorkUnit, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualityReviewSummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
+
