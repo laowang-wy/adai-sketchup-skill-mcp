@@ -521,10 +521,11 @@ function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const systems = Array.isArray(audit?.visible_detail_systems) ? audit.visible_detail_systems : [];
   const valid = systems.filter((item) => item && typeof item.id === 'string' && item.id.trim());
-  // The required detail set comes from the task/source contract. A single
-  // repeated system is valid when that is all the source requires; missing
-  // source-required systems are rejected by the task-specific audit.
-  if (valid.length < 1) throw new Error('Managed audit found no registered visible detail system required by this task.');
+  // The shared Python geometry adapter requires two independently registered
+  // visible detail systems. Keep the public Node gate identical; a source
+  // that truly has only one system must declare a different route rather than
+  // silently weakening this production contract.
+  if (valid.length < 2) throw new Error('Managed audit requires two registered visible detail systems.');
   return valid;
 }
 
