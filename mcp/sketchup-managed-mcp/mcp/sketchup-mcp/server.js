@@ -101,7 +101,7 @@ const tools = [
     description: 'Execute exactly one managed modeling step from a Ruby file. The MCP isolates the write, runs one transaction, generates signed evidence and blocks further geometry until review.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
+      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, next_phase: { type: 'string', description: 'Autonomous work unit only: later phase already in the saved plan; previous evidence remains unreviewed and is merged at the next review.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
       required: ['project_id', 'ruby_file'],
       additionalProperties: false,
     },

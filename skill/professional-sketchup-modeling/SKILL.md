@@ -28,7 +28,7 @@ Ruby 只承担当前阶段的实体构造：先建立所属 group/definition，�
 
 按 MCP 当前阶段执行 `begin → step → 实际看图 → review → 下一阶段 → ready_to_finish → finish`；普通新建六阶段，古建按条件保留 `roof_profile`，局部修改沿用原路线。阶段限制本次几何提交和证据范围，不限制提前推演整体体量、空间及接口；每步只说明改什么、依据和预期视图变化，然后执行。
 按当前问题读相关契约：主形比例查[投影说明](references/projection-brief-guide.md)，复制查[实例契约](references/instance-layout-contract.md)；同版本已读内容复用，具体错误解释不足时再定向读源码，不全目录扫描。
-一次只做当前阶段；例如 `MASSING` 只做主形与空间，不提前做瓦片、斗拱、门窗或装饰。Ruby 先写入文件，再把路径作为 `ruby_file` 调用 `sketchup_project_step`；不在聊天输出完整 Ruby，不一次编写整栋全阶段脚本。当前阶段脚本较长时分段写入同一完整入口，确认完整后再提交，不用多次 step 绕过审查。没有成功的 step 返回、实际查看的证据图及接受本阶段的 review 结果，不得宣称阶段完成或推进；输出截断时先查执行状态，不重放未知写入。
+guided 按当前阶段执行；例如 `MASSING` 只做主形与空间，不提前做瓦片、斗拱、门窗或装饰。autonomous 在明确 `work_unit_id` 后可用 `continue_work_unit=true`，并以 `next_phase` 进入同一工作单元的后续既有阶段（例如先墙体再窗），保留每笔 operation 与证据，最后合并审核；不能以此跳过来源、读回、事务或对象保护。Ruby 先写入文件，再把路径作为 `ruby_file` 调用 `sketchup_project_step`；不在聊天输出完整 Ruby，不一次编写整栋无边界脚本。没有成功的 step 返回、实际查看的证据图及合并审核结果，不得宣称完成或交付；输出截断时先查执行状态，不重放未知写入。
 主形、空间关系和连接通过后，先做完整开间或转角样板，局部和接缝通过才复制；检查首、中、末、对侧和转角。用户认可的主形和参数锁定，一轮只改一个问题及其最小范围；镜像用同一母型和中轴，保留回退点。
 严禁把“几何检查通过”当作“形态正确”。几何、拓扑和数量检查只是必要条件；造型验收必须在对应视角下对照原图，判断主次体量、宽高比例、层间关系、轮廓及开敞空间是否一致。体量关系不符，即使全部机械检查通过也必须返修；来源不足则标为未验证，不能判通过。
 每轮实际核对参考图及 geometry-whole-perspective/front/side/plan/underside 五视图；优先看 review sheet，缺图或细节不清再打开对应原图，不设张数上限。最多抓三个主要缺陷并比较是否改善；连续两轮无改善就回查形制、比例、拓扑、坐标或接口，改变方法，关键主形错误不能用细节掩盖。
@@ -41,4 +41,5 @@ REF 按当前问题定向 list/match/read，冲突时选定包并记录版本；
 只有 `finish` 返回 `finished`、实际 SKP 存在且最终证据已检查，才报告交付；说明文件、主要证据、假设、缺陷和未验证项，未重开则明确注明。`sketchup_project_patch` 正式入口关闭，直接调用应返回 `PATCH_NOT_RELEASED`。详细契约按需读取[几何守卫](references/geometry-guard.md)、[审查](references/managed-quality-review.md)和[恢复](references/managed-recovery.md)。
 
 本次动作后只简短汇报实际执行、观察、阻碍和下一步，不制作运行时表单。
+
 

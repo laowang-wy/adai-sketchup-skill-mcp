@@ -1208,10 +1208,18 @@ class ManagedProjects {
 
   async _stepUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
-    const continueWorkUnit = state.status === 'review_required' && state.mode === 'autonomous' && state.work_unit && input.continue_work_unit === true;
+    const continueWorkUnit = state.status === 'review_required' && state.assistance_mode === 'autonomous' && state.work_unit && input.continue_work_unit === true;
     if (state.status !== 'ready_for_step' && !continueWorkUnit) throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
     if (continueWorkUnit && state.last_evidence_id) {
       state.pending_unit_reviews = [...new Set([...(state.pending_unit_reviews || []), state.last_evidence_id])].slice(-16);
+      if (input.next_phase) {
+        const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
+        const target = plan.findIndex((item) => item.name === String(input.next_phase).trim());
+        if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'next_phase must be a later planned phase in the same autonomous work unit');
+        if (target < 0) throw this.stateError('WORK_UNIT_PHASE_UNKNOWN', 'next_phase is not in the saved project plan');
+        state.step_index = target;
+        state.phase = plan[target].name;
+      }
       state.status = 'ready_for_step';
       await this.saveState(state);
     }
