@@ -54,6 +54,29 @@ function validateOperations(input) {
     return JSON.parse(JSON.stringify(op));
   });
 }
+// Guided projects keep their phase-replacement transaction: the phase group is
+// rebuilt before the Ruby runs.  A typed guided batch is therefore allowed to
+// refer only to objects created earlier in that same batch.  This exposes the
+// safe construction subset without turning a guided phase into an update API.
+function validateGuidedOperations(input) {
+  const ops = validateOperations(input);
+  const created = new Map();
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    const requireCreated = (field, id) => {
+      if (!created.has(id)) reject(i, field, 'guided batches may target only objects created earlier in this batch');
+    };
+    if (op.op === 'set_wall_openings' || op.op === 'translate' || op.op === 'material') requireCreated('target', op.target);
+    if (op.op === 'window_frame') requireCreated('wall', op.wall);
+    if (op.op === 'instance') {
+      requireCreated('prototype', op.prototype);
+      if (!created.get(op.prototype).component) reject(i, 'prototype', 'guided instances require a component created earlier in this batch');
+    }
+    if (op.op === 'box' || op.op === 'wall' || op.op === 'mesh') created.set(op.id, { component: op.op === 'box' && op.component === true });
+    else if (op.op === 'window_frame') created.set(op.id, { component: false });
+  }
+  return ops;
+}
 function compileOperations(input, helperPath) {
   const ops = validateOperations(input);
   const payload = Buffer.from(JSON.stringify(ops)).toString('base64');
@@ -61,4 +84,4 @@ function compileOperations(input, helperPath) {
   // Paths and JSON bytes are encoded, never interpolated as executable Ruby.
   return `require 'json'\nrequire 'base64'\nload Base64.strict_decode64('${helper}').force_encoding('UTF-8')\nmodule PipClawManagedBuild\n  def self.build(entities, context)\n    ADAIManagedOperations.build(entities, context, JSON.parse(Base64.strict_decode64('${payload}')))\n  end\nend\n`;
 }
-module.exports = { validateOperations, compileOperations, operationNames: Object.keys(keys) };
+module.exports = { validateOperations, validateGuidedOperations, compileOperations, operationNames: Object.keys(keys) };

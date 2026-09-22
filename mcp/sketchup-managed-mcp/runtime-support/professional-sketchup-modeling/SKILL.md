@@ -1,6 +1,6 @@
 ---
 name: professional-sketchup-modeling
-description: Create, inspect, revise and deliver editable SketchUp architecture with managed tools, shared source interpretation, and guided or autonomous execution.
+description: Use whenever a user asks to create, inspect, revise, or deliver a SketchUp/SKP architectural model. Build editable architecture with managed tools, shared source interpretation, and guided or autonomous execution.
 ---
 
 # ADAI SketchUp 建模
@@ -13,6 +13,8 @@ description: Create, inspect, revise and deliver editable SketchUp architecture 
 
 几何闭合、包围框或数量不证明建筑相符。重要主形错误先修依赖它的部分，其他合法工作可继续；重复不收敛时换控制几何或表示方法，不堆细节。经验用于判断，不逐条提交遵守证明。任务没有照片时核对任务条件，不制造图像前置。
 
+**工作取舍**：验证服务于建筑判断，不让模型为流程本身工作；能由程序可靠完成的构造、对象定位和重复信息由工具承担，模型把时间留给来源理解、方法选择、几何构造和实际看图纠错。每次返回只突出会改变下一步的结果，完整记录留在项目证据中。
+
 ## 接入与策略
 
 首次激活调用 `sketchup_runtime(action=startup)`，只读一次短指导；已有确定绑定和当前状态直接复用。多实例需要选择目标；实例或文档改变、结果未知时再确认。保护未保存工作，不反复启动SU。工具不可见时只查[接入说明](references/HOST-ENABLEMENT.md)。
@@ -20,7 +22,7 @@ description: Create, inspect, revise and deliver editable SketchUp architecture 
 调用 `sketchup_project_begin` 后，以保存策略和工具实际返回为准：
 
 - **guided**：阅读[引导操作](references/guided-operation.md)，严格按 MCP 返回的当前阶段推进，完成当前阶段的主形、样板、取证和审核后才能正常进入下一阶段；不得跳阶段、合并阶段或提前制作后续构件。后续阶段发现上游缺项时，可按 `revise_from` 或当前返修入口回到对应阶段修改，只失效受影响的下游审核并保留已正确成果；不能用回退重做整栋。可以提前推演整体空间与接口，但不能提前写入后续阶段几何。
-- **autonomous**：阅读[专家操作](references/expert-operation.md)，并把六阶段经验当作建筑判断地图：先理解当前系统涉及的阶段目标、构造顺序和检查重点，再按建筑系统合并连续操作或审核；可以合并调用，不能跳过相关阶段内容或质量检查，不固定每笔五图。旧项目保持其原策略，不静默改变历史写入语义。
+- **autonomous**：阅读[专家操作](references/expert-operation.md)，并把六阶段经验当作建筑判断地图：先理解当前系统涉及的阶段目标、构造顺序和检查重点，再按建筑系统合并连续操作或审核；可以合并写入。需要检查时调用取证入口，默认得到来源/参考图和五个整体视图，再按疑点补局部，不让每笔写入都触发截图。不能跳过相关阶段内容或质量检查。旧项目保持其原策略，不静默改变历史写入语义。
 
 ## 构造、观察与纠错
 

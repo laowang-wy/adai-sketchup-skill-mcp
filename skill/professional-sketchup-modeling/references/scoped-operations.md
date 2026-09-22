@@ -1,6 +1,8 @@
-# 专家受管操作（毫米）
+# 受管类型化操作（毫米）
 
 `sketchup_project_step(project_id, operations=[...])`。与`ruby_file`互斥；同一批在同一个受管事务内执行。默认当前建筑系统，可选`work_unit_name`命名或选择已有`work_unit_id`。`operation_intent`默认`append`，也支持`update`、明确的`replace`。程序绑定范围和回执；不需要另外提交登记表。
+
+专家可在授权工作单元内追加、更新或替换。guided 也可使用同一接口减轻重复 Ruby，但仍按当前阶段替换：批内只能引用前面已创建的对象，不能借此修改旧阶段或跨阶段对象；需要更新旧对象时继续走 guided 的返修/阶段入口。
 
 | op | 必要字段 | 可选字段/含义 |
 |---|---|---|

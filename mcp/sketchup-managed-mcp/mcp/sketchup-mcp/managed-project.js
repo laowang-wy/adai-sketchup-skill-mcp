@@ -507,6 +507,30 @@ function complexityWarning(result) {
   return repeated.length ? {code:'complexity_warning', advisory:true, families:repeated, metrics:m, thresholds:{min_instances:9,min_entity_share:0.35,max_bbox_volume_ratio:0.1},
     decision:'Inspect whether repetition is necessary primary form or premature detail; continue with rationale or explicitly revise. Geometry preserved.'} : null;
 }
+
+// Expert projects do not follow the guided phase cursor, but they still need
+// the existing architectural method cards at the moment a system is chosen.
+// Keep this a small projection of the cards; the full references remain
+// available through the Skill/REF route and are not copied into every reply.
+function expertMethodFocus(state) {
+  const profile = state?.task_profile || {};
+  const names = [];
+  if (ancientRoofRoute(profile)) names.push('roof_profile', 'archetypes', 'replication', 'facade_detail');
+  else if (Array.isArray(profile.features) && profile.features.some((x) => /曲面|屋面|楼|塔|古建|roof|tower|curv/i.test(String(x)))) names.push('roof_profile', 'archetypes');
+  if (!names.length) return null;
+  const seen = new Set();
+  const focus = names.filter((name) => !seen.has(name) && seen.add(name)).map((name) => {
+    const card = modelingMethodCards.phases?.[name];
+    if (!card) return null;
+    return {
+      phase: name,
+      decisions: Array.isArray(card.decisions) ? card.decisions.slice(0, 2) : [],
+      evidence_checks: Array.isArray(card.evidence_checks) ? card.evidence_checks.slice(0, 2) : [],
+      reject_if: Array.isArray(card.reject_if) ? card.reject_if.slice(0, 2) : [],
+    };
+  }).filter(Boolean);
+  return focus.length ? { source: 'existing_modeling_method_cards', cards: focus } : null;
+}
 function abstractionRecheckNeeded(state, phaseName) {
   const attempts=Number(state?.revision_attempts?.[phaseName] || 0);
   const acknowledged=Number(state?.abstraction_rechecks?.[phaseName]?.attempt || 0);
@@ -518,6 +542,7 @@ function taskCard(state, phase, detail=false) {
     work_unit: state.work_unit || null,
     shared_foundation: 'references/shared-architectural-foundation.md',
     operation_guidance: 'references/expert-operation.md',
+    method_focus: expertMethodFocus(state),
     open_findings: validationIssues(state),
     revision_required: state.revision_required || null,
     evidence: 'Choose useful views when ready; no per-operation visual report is required.'
@@ -1445,8 +1470,8 @@ class ManagedProjects {
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw this.stateError('BUILD_FILE_INVALID', 'Build input must be a regular Ruby file up to 16 MiB.');
       return target;
     }
-    if (!expert) throw this.stateError('OPERATIONS_REQUIRE_EXPERT', 'Typed operation batches are for new expert projects; guided keeps its existing compiler route.');
-    const { compileOperations } = require('./scoped-operations');
+    const { compileOperations, validateGuidedOperations } = require('./scoped-operations');
+    if (!expert) validateGuidedOperations(input.operations);
     const source = compileOperations(input.operations, path.join(this.skillRoot, 'scripts', 'managed_operations.rb'));
     const dir = path.join(this.projectDir(state.project_id), 'prepared-builds');
     await fs.mkdir(dir, { recursive: true });
@@ -1512,7 +1537,8 @@ class ManagedProjects {
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
-    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
+    const typedOperations = input.operations !== undefined;
+    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : (typedOperations ? 'guided_typed_batch' : 'guided_phase'), policy_version: policy.version, typed_operations_allowed: typedOperations, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
     operationContext.dimension_targets = state.task_profile?.dimension_targets || [];
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
@@ -1679,7 +1705,11 @@ class ManagedProjects {
     if (!execution || !Object.values(state.work_units || {}).some(u => u.fingerprint)) throw this.stateError('MODEL_EMPTY', 'Build a system before requesting evidence.');
     if (await hashFile(execution.script_path) !== execution.script_hash) throw this.stateError('RECOVERY_SCRIPT_CHANGED','The committed input file changed; preserve it for provenance, do not replay.');
     const supported = new Set(['reference','perspective','front','side','plan','underside']);
-    const views = input.views === undefined ? ['reference'] : input.views;
+    // Keep the old, proven inspection packet as the default at an explicit
+    // expert checkpoint: the source/reference frame plus five whole-model
+    // views. The agent may request a smaller question-focused set; geometry
+    // writes themselves still do not capture anything automatically.
+    const views = input.views === undefined ? ['reference','perspective','front','side','plan','underside'] : input.views;
     if (!Array.isArray(views) || !views.length || views.some(x => !supported.has(x)) || new Set(views).size !== views.length) throw this.stateError('EVIDENCE_VIEWS_INVALID', 'Choose distinct supported view names.');
     try {
       const evidence = await this.automaticEvidence(state, UNIT_PHASE, execution.script_path, execution.script_hash, bridge, null, { views, comparison:input.comparison });
