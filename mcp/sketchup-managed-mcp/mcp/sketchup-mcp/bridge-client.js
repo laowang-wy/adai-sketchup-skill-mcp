@@ -9,10 +9,13 @@ const {setTimeout: delay} = require('node:timers/promises');
 const normalize = value => path.resolve(value).toLowerCase();
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const execFileAsync = promisify(execFile);
-async function processImages() {
+async function processImages(processId = null) {
   if (process.platform !== 'win32') return null;
   try {
-    const {stdout} = await execFileAsync('tasklist.exe', ['/FO', 'CSV', '/NH'], {windowsHide:true, maxBuffer:4 * 1024 * 1024});
+    const args = processId == null
+      ? ['/FO', 'CSV', '/NH']
+      : ['/FI', `PID eq ${Number(processId)}`, '/FO', 'CSV', '/NH'];
+    const {stdout} = await execFileAsync('tasklist.exe', args, {windowsHide:true, maxBuffer:4 * 1024 * 1024});
     const images = new Map();
     for (const line of String(stdout).split(/\r?\n/)) {
       const match = line.match(/^"([^"]+)","(\d+)"/);
@@ -107,7 +110,7 @@ class BridgeClient {
       const record = await readJson(path.join(this.root, 'instances', `${target.process_id}.json`));
       if (record.protocol !== 'sketchup-file-bridge/v3' || record.session_id !== target.session_id ||
           Number(record.process_id) !== Number(target.process_id) || normalize(record.executable) !== normalize(target.executable)) return false;
-      const images = await processImages();
+      const images = await processImages(target.process_id);
       return processImageMatches(record, images);
     } catch { return false; }
   }
