@@ -100,6 +100,22 @@ class BridgeClient {
     this.pinned = candidates[0];
     return this.pinned;
   }
+  async targetStillRegistered(target) {
+    if (!target || !Number.isSafeInteger(Number(target.process_id)) || !target.session_id) return false;
+    if (!alive(Number(target.process_id))) return false;
+    try {
+      const record = await readJson(path.join(this.root, 'instances', `${target.process_id}.json`));
+      if (record.protocol !== 'sketchup-file-bridge/v3' || record.session_id !== target.session_id ||
+          Number(record.process_id) !== Number(target.process_id) || normalize(record.executable) !== normalize(target.executable)) return false;
+      const images = await processImages();
+      return processImageMatches(record, images);
+    } catch { return false; }
+  }
+  async targetLostError(target) {
+    const error = new Error(`RESULT_UNKNOWN: target SketchUp instance ${target?.process_id || 'unknown'} disappeared before a response; inspect the operation and do not replay`);
+    error.code = 'RESULT_UNKNOWN';
+    return error;
+  }
   async call(command, args = {}, timeoutMs = 30000, signal) {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 100 || timeoutMs > 1800000) throw Error('INVALID_BRIDGE_TIMEOUT');
     const target = await this.target();
@@ -131,7 +147,12 @@ class BridgeClient {
     const response = path.join(dir, 'responses', `${id}.json`);
     const temp = request + '.tmp';
     const deadline = Date.now() + timeoutMs;
+    let nextTargetCheck = 0;
     if (signal?.aborted) throw signal.reason || Error('Cancelled');
+    // Re-check immediately before dispatch. A selected PID may have exited or
+    // been replaced after target() returned; never send into a stale process
+    // directory or silently switch to a different SketchUp instance.
+    if (!(await this.targetStillRegistered(target))) throw Error('INSTANCE_CHANGED: selected SketchUp instance is no longer registered; select the current instance');
     try {
       await fs.writeFile(temp, JSON.stringify({...payload,id,protocol:'sketchup-file-bridge/v3',created_at:new Date().toISOString(),expires_at:new Date(deadline).toISOString()}), {flag:'wx'});
       await fs.rename(temp, request);
@@ -139,6 +160,15 @@ class BridgeClient {
     try {
       while (Date.now() < deadline) {
         if (signal?.aborted) throw signal.reason || Error('Cancelled');
+        // A claimed request can leave its outcome unknown if SketchUp exits.
+        // Detect that boundary promptly instead of waiting for the full bridge
+        // timeout. The caller must inspect the receipt/project before retrying.
+        if (Date.now() >= nextTargetCheck) {
+          if (!(await this.targetStillRegistered(target))) throw await this.targetLostError(target);
+          // tasklist/registry validation is deliberately bounded; the bridge
+          // remains responsive without spawning a process query every 100 ms.
+          nextTargetCheck = Date.now() + 500;
+        }
         try {
           const envelope = await readJson(response);
           if (envelope.id !== id) throw Error('BRIDGE_RESPONSE_ID_MISMATCH');
