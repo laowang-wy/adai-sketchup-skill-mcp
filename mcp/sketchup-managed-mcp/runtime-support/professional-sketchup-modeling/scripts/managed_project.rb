@@ -344,6 +344,21 @@ module PipClawManagedProject
     end
   end
 
+  def model_binding_matches?(expected, actual)
+    return false unless expected.is_a?(Hash) && actual.is_a?(Hash)
+    expected_path = expected['path'].to_s
+    actual_path = actual['path'].to_s
+    if !expected_path.empty? || !actual_path.empty?
+      return false unless !expected_path.empty? && !actual_path.empty? && File.expand_path(expected_path).casecmp(File.expand_path(actual_path)).zero?
+    end
+    if expected['object_id'] != nil
+      return false unless actual['object_id'] != nil && expected['object_id'].to_i == actual['object_id'].to_i
+    end
+    true
+  rescue StandardError
+    false
+  end
+
   def count_recursive(entities, counts = Hash.new(0), depth = 0)
     counts['max_depth'] = [counts['max_depth'], depth].max
     entities.each do |entity|
@@ -1053,6 +1068,10 @@ module PipClawManagedProject
     begin
       operation_context = operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s)
       validate_operation_context(operation_context, operation_id)
+      expected_binding = operation_context['expected_model_binding']
+      if expected_binding && !model_binding_matches?(expected_binding, binding)
+        return JSON.generate({'ok'=>false, 'error'=>'DOCUMENT_BINDING_CHANGED', 'code'=>'DOCUMENT_BINDING_CHANGED', 'transaction_started'=>false, 'rollback_unconfirmed'=>false, 'request_model_binding'=>expected_binding, 'current_model_binding'=>binding})
+      end
       source = File.binread(script_path.to_s)
       expected = operation_context['expected_script_sha256']
       raise 'SCRIPT_CHANGED_BEFORE_EXECUTION' if expected && Digest::SHA256.hexdigest(source) != expected
@@ -1197,7 +1216,11 @@ module PipClawManagedProject
         raise 'Managed isolation violation: geometry outside the project root changed; see last-isolation-diff.json'
       end
       raise 'LOCKED_ENTITY_CHANGED' if new_expert && locked_before != locked_scope_fingerprint(root)
-      unit_result = new_expert ? unit_scope_record(phase) : nil
+      # SketchUp may finalize group/definition bookkeeping when the operation
+      # commits. Compute the expert scope after commit so the fingerprint
+      # stored in the operation result is the same representation later used
+      # by project audits and checkpoint recovery.
+      unit_result = nil
       counts = count_recursive(phase.entities)
       bounds = bounds_signature(phase)
       metrics = complexity_metrics(phase)
@@ -1208,6 +1231,7 @@ module PipClawManagedProject
       commit_result = model.commit_operation
       raise 'commit_operation returned false' if commit_result == false
       committed = true
+      unit_result = new_expert ? unit_scope_record(phase) : nil
       JSON.generate({
         'complexity_metrics'=>metrics,
         'ok'=>true, 'project_id'=>project_id.to_s, 'phase'=>phase_name.to_s,

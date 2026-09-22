@@ -36,6 +36,9 @@ function classifyError(error) {
     retryable:error?.code ? false : (rule?.retryable ?? false),
     suggested_next_action:error?.next_action || (error?.code ? '按当前项目状态处理；未知写入查询原回执，不自动重放。' : rule?.suggested_next_action || '检查服务日志与目标应用状态'),
     ...(error?.operation_id ? {operation_id:error.operation_id} : {}),
+    ...(error?.delivery_state ? {delivery_state:error.delivery_state} : {}),
+    ...(error?.request_published !== undefined ? {request_published:Boolean(error.request_published)} : {}),
+    ...(error?.request_id ? {bridge_request_id:error.request_id} : {}),
     ...(error?.committed !== undefined ? {committed:error.committed} : {}),
     ...(error?.next_call !== undefined ? {next_call:error.next_call} : {})}
 }

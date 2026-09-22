@@ -692,6 +692,30 @@ class ManagedProjects {
   projectDir(projectId) { return path.join(this.root, safeId(projectId)); }
   statePath(projectId) { return path.join(this.projectDir(projectId), 'state.json'); }
 
+  async reclaimDeadProjectLock(lockPath) {
+    let record;
+    try { record = JSON.parse(await fs.readFile(lockPath, 'utf8')); }
+    catch (error) { return error.code === 'ENOENT'; }
+    const pid = Number(record?.pid);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+    let alive = false;
+    try { process.kill(pid, 0); alive = true; }
+    catch (error) { alive = error.code === 'EPERM'; }
+    if (alive) return false;
+    // Rename first so a new owner cannot be deleted between our read and rm.
+    // A dead owner can only leave a stale lock; state/operation guards still
+    // decide whether the next request is allowed to mutate the project.
+    const stalePath = `${lockPath}.stale-${process.pid}-${crypto.randomUUID()}`;
+    try {
+      await fs.rename(lockPath, stalePath);
+      await fs.rm(stalePath, { force: true });
+      return true;
+    } catch (error) {
+      await fs.rm(stalePath, { force: true }).catch(() => {});
+      return error.code === 'ENOENT';
+    }
+  }
+
   async withProjectLock(projectId, operation) {
     const inherited = this._projectLockContext.getStore();
     if (inherited?.projectId === projectId && inherited.active) return operation();
@@ -705,8 +729,13 @@ class ManagedProjects {
       await handle.sync().catch(() => {});
     } catch (error) {
       await handle?.close().catch(() => {});
-      if (error.code === 'EEXIST') throw this.stateError('STATE_BUSY', 'Managed project is busy; inspect the recorded operation before retrying');
-      throw error;
+      if (error.code === 'EEXIST' && await this.reclaimDeadProjectLock(lockPath)) {
+        try { handle = await fs.open(lockPath, 'wx', 0o600); await handle.writeFile(JSON.stringify({ pid: process.pid, acquired_at: new Date().toISOString() })); await handle.sync().catch(() => {}); }
+        catch (retryError) { await handle?.close().catch(() => {}); if (retryError.code === 'EEXIST') throw this.stateError('STATE_BUSY', 'Managed project is busy; inspect the recorded operation before retrying'); throw retryError; }
+      } else if (error.code === 'EEXIST') {
+        throw this.stateError('STATE_BUSY', 'Managed project is busy; inspect the recorded operation before retrying');
+      }
+      if (!handle) throw error;
     }
     const owner = { projectId, active: true };
     try {
@@ -1083,6 +1112,13 @@ class ManagedProjects {
     const files={},metadata=[];
     const script=path.join(path.dirname(this.helperPath),'capture_window.py');
     const prepareOutput=path.join(directory,'window-prepare.png');
+    const progressPath=path.join(directory,'capture-progress.json');
+    const progress={schema_version:1,project_id:state.project_id,phase,backend:'window_print',requested_views:requestedViews || null,status:'starting',completed_views:[],current_view:null,updated_at:new Date().toISOString()};
+    const saveProgress=async(extra={})=>{
+      Object.assign(progress,extra,{updated_at:new Date().toISOString()});
+      try { await fs.writeFile(progressPath,JSON.stringify(progress,null,2)); } catch (_) { /* Diagnostics must not replace the capture result. */ }
+    };
+    await saveProgress();
     const capture=async(output,pid,action)=>{
       const args=[script,output,String(pid)];if(action)args.push(action);
       const result=await execFileAsync(process.env.PIPCLAW_PYTHON || 'python',args,{windowsHide:true,timeout:25000});
@@ -1098,8 +1134,10 @@ class ManagedProjects {
       const preparation=await capture(prepareOutput,plan.process_id,'--prepare');
       await runHelper('restore_camera',[JSON.stringify(state.source_camera || savedCamera)]);
       sourceCamera=await runHelper('camera_state');
-      plan.shots[0].camera=sourceCamera;
+      const referenceShot=plan.shots.find((shot)=>shot.label==='reference');
+      if (referenceShot) referenceShot.camera=sourceCamera;
       for(const shot of plan.shots){
+        await saveProgress({status:'capturing',current_view:shot.label});
         await runHelper('restore_camera',[JSON.stringify(shot.camera)]);
         const expected=await runHelper('camera_state');
         const output=path.join(directory,shot.label+'.png');
@@ -1110,10 +1148,16 @@ class ManagedProjects {
         if(delta>0.001 || Math.abs(actual[lens]-expected[lens])>0.001 || actual.perspective!==expected.perspective)throw new Error('Camera changed during window capture; evidence rejected');
         files[shot.label]=output;
         metadata.push({label:shot.label,camera:expected,verified_camera:actual,...pixels});
+        progress.completed_views.push(shot.label);
+        await saveProgress({status:'capturing',current_view:null});
       }
       const manifest=path.join(directory,'viewport-capture.json');
       await fs.writeFile(manifest,JSON.stringify({backend:'window_print',preparation,render_options:plan.render_options,shots:metadata},null,2));
       files.capture_manifest=manifest;
+      await saveProgress({status:'complete',current_view:null});
+    } catch (error) {
+      await saveProgress({status:'incomplete',current_view:progress.current_view,error:String(error.message || error)});
+      throw error;
     } finally {
       // Attempt every restoration even if a preceding restoration fails.
       const errors=[];
@@ -1177,6 +1221,10 @@ class ManagedProjects {
     parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,beforeAuditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
     state.pending_evidence={phase,script_path:scriptPath,script_hash:scriptHash,build_result:evidenceBuildResult,checkpoint:await fileEvidence(checkpointPath),audit:await fileEvidence(beforeAuditPath)};
     delete state.recovered_checkpoint;
+    // Persist the frozen-capture state before any viewport or OS work. If the
+    // caller disappears while screenshots are being collected, recovery must
+    // not leave an expert project looking ready for another geometry write.
+    state.status='evidence_pending';
     await this.saveState(state);
     if (state.source_camera && !expert) {
       const sourceRestore = await bridge('run_ruby', { code: this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]), file: this.helperPath }, 120000);
@@ -1400,9 +1448,9 @@ class ManagedProjects {
     operationContext.dimension_targets = state.task_profile?.dimension_targets || [];
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
-    const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
+    let ruby;
     let response;
-    let dispatched = false;
+    let operationPersisted = false;
     try {
       response = await this.withDocumentWriteLock(operation.model_binding, async () => {
         // All checks above are preparatory. Re-check the live binding and
@@ -1415,17 +1463,33 @@ class ManagedProjects {
         if (await hashFile(scriptPath) !== scriptHash) throw this.stateError('SCRIPT_CHANGED_BEFORE_DISPATCH', 'Ruby build file changed after preparation; no geometry was dispatched');
         operation.model_binding = currentBinding;
         operation.request.model_binding = currentBinding;
+        operationContext.expected_model_binding = currentBinding;
+        operation.operation_context = operationContext;
+        operation.request.operation_context = operationContext;
         operation.dispatched_at = new Date().toISOString();
         operation.status = 'dispatched';
         state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation];
         state.status = 'step_in_progress';
         state.updated_at = new Date().toISOString();
         await this.saveState(state);
-        dispatched = true;
-        return bridge('run_ruby', { code: ruby, file: scriptPath }, input.timeout_ms || 120000);
+        operationPersisted = true;
+        ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
+        return bridge('run_ruby', { code: ruby, file: scriptPath, operation_id: operation.operation_id }, input.timeout_ms || 120000);
       });
     } catch (error) {
-      if (!dispatched) throw error;
+      if (!operationPersisted) throw error;
+      if (error?.delivery_state === 'not_published' || error?.request_published === false) {
+        operation.status = 'not_dispatched';
+        operation.completed_at = new Date().toISOString();
+        operation.error = String(error.message || error);
+        operation.delivery_state = 'not_published';
+        operation.request_published = false;
+        state.status = priorStatus;
+        state.transaction_result = { code: 'NOT_DISPATCHED', not_dispatched: true, operation_id: operation.operation_id, message: operation.error };
+        state.updated_at = new Date().toISOString();
+        await this.saveState(state);
+        throw error;
+      }
       operation.status = 'result_unknown';
       operation.completed_at = new Date().toISOString();
       operation.error = String(error.message || error);
@@ -1578,6 +1642,14 @@ class ManagedProjects {
 
   async _retryEvidenceUnlocked(input, bridge) {
     const state=await this.loadState(safeId(input.project_id));
+    // Older interrupted expert captures could have the pending record saved
+    // while the status write was still in flight. Normalize that durable
+    // combination before checking the bridge; this never approves evidence or
+    // changes geometry, it only exposes the existing retry path.
+    if (isExpert(state) && state.pending_evidence && state.status !== 'evidence_pending') {
+      state.status='evidence_pending';
+      await this.saveState(state);
+    }
     if (isExpert(state)) return this.captureExpertEvidence(state, input, bridge);
     if (state.status === 'evidence_pending' && !state.pending_evidence && state.pending_execution) {
       await this.assertModelBinding(state, bridge);
@@ -2521,6 +2593,32 @@ class ManagedProjects {
   }
 
   async restoreExpertCheckpoint(state, bridge) {
+    if (state.pending_evidence && state.status === 'ready_for_step') {
+      state.status='evidence_pending';
+      await this.saveState(state);
+    }
+    if (state.pending_evidence) {
+      const pending=state.pending_evidence;
+      if (!pending.checkpoint?.path || !pending.audit?.path) throw this.stateError('RECOVERY_CHECKPOINT_MISSING','Incomplete evidence has no frozen checkpoint and audit.');
+      await verifyEvidenceFiles({checkpoint:pending.checkpoint,audit:pending.audit});
+      const binding=await this.modelIdentity(bridge);
+      if (path.resolve(binding.path || '').toLowerCase() !== path.resolve(pending.checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH','Open the exact frozen checkpoint before recovering incomplete evidence.');
+      const auditPath=path.join(this.projectDir(state.project_id),'pending-restore-audit-'+crypto.randomUUID()+'.json');
+      try {
+        parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+        const live=JSON.parse(await fs.readFile(auditPath,'utf8'));
+        const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
+        validateAuditReadback(live); validateAuditReadback(prior);
+        if (checkpointContent(live)!==checkpointContent(prior)) throw this.stateError('RECOVERY_SCENE_CHANGED','Opened checkpoint content differs from the frozen audit.');
+        state.model_binding=binding;
+        state.model_path=binding.path;
+        state.recovery_resolution={resolved_at:new Date().toISOString(),result:'incomplete_evidence_checkpoint_rebound',checkpoint:pending.checkpoint.path};
+        state.recovered_checkpoint=pending.checkpoint;
+        state.status='evidence_pending';
+        await this.saveState(state);
+        return {ok:true,project_id:state.project_id,status:state.status,model_binding:binding,recovered_checkpoint:pending.checkpoint.path,next_action:'Call sketchup_project_retry_evidence; no geometry was replayed and the frozen evidence record was retained.'};
+      } finally { await fs.rm(auditPath,{force:true}).catch(()=>{}); }
+    }
     if (pendingOperation(state).pending_operation || state.pending_delivery || !['ready_for_step','review_required','ready_to_finish'].includes(state.status)) {
       throw this.stateError('RECOVERY_WRITE_UNCERTAIN', 'Resolve pending writes before rebinding an opened checkpoint.');
     }

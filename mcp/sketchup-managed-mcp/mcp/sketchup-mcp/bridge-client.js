@@ -32,6 +32,12 @@ function processImageMatches(record, images) {
   return Boolean(images && images.get(record.process_id) === 'sketchup.exe');
 }
 async function readJson(file) { return JSON.parse((await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '')); }
+function bridgeError(message, code, details = {}) {
+  const error = new Error(message);
+  if (code) error.code = code;
+  Object.assign(error, details);
+  return error;
+}
 class BridgeClient {
   constructor(appData, env = process.env) {
     this.appData = appData;
@@ -95,7 +101,7 @@ class BridgeClient {
     }
     if (selected) {
       const match = candidates.find(item => item.process_id === selected.process_id && item.session_id === selected.session_id);
-      if (!match) throw Error('INSTANCE_CHANGED: use runtime instances/select_instance; no automatic process switching');
+      if (!match) throw bridgeError('INSTANCE_CHANGED: use runtime instances/select_instance; no automatic process switching', 'INSTANCE_CHANGED', {delivery_state:'not_published', request_published:false});
       this.pinned = match;
       return match;
     }
@@ -114,16 +120,21 @@ class BridgeClient {
       return processImageMatches(record, images);
     } catch { return false; }
   }
-  async targetLostError(target) {
-    const error = new Error(`RESULT_UNKNOWN: target SketchUp instance ${target?.process_id || 'unknown'} disappeared before a response; inspect the operation and do not replay`);
-    error.code = 'RESULT_UNKNOWN';
-    return error;
+  async targetLostError(target, requestId = null) {
+    return bridgeError(`RESULT_UNKNOWN: target SketchUp instance ${target?.process_id || 'unknown'} disappeared after request publication; inspect the operation and do not replay`, 'RESULT_UNKNOWN', {delivery_state:'published_unknown', request_published:true, request_id:requestId});
   }
   async call(command, args = {}, timeoutMs = 30000, signal) {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 100 || timeoutMs > 1800000) throw Error('INVALID_BRIDGE_TIMEOUT');
-    const target = await this.target();
-    const token = await this.token(); // Read per call: a server can start before the extension creates its token.
-    const payload = {command,args,timeout_ms:timeoutMs,target_process_id:target.process_id,target_session_id:target.session_id};
+    let target;
+    try { target = await this.target(); }
+    catch (error) {
+      if (error.delivery_state === undefined) Object.assign(error, {delivery_state:'not_published', request_published:false});
+      throw error;
+    }
+    let token;
+    try { token = await this.token(); } // Read per call: a server can start before the extension creates its token.
+    catch (error) { Object.assign(error, {delivery_state:'not_published', request_published:false}); throw error; }
+    const payload = {command,args,operation_id:args && args.operation_id ? String(args.operation_id) : null,timeout_ms:timeoutMs,target_process_id:target.process_id,target_session_id:target.session_id};
     if ((this.env.SKETCHUP_BRIDGE_MODE || 'file') === 'file') return this.fileCall(target, {...payload,token}, timeoutMs, signal);
     const url = this.env.SKETCHUP_BRIDGE_URL || `http://${this.env.SKETCHUP_BRIDGE_HOST || '127.0.0.1'}:${this.env.SKETCHUP_BRIDGE_PORT || 9876}`;
     if (!['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname.toLowerCase())) throw Error('LOCAL_RUNTIME_REQUIRED');
@@ -133,13 +144,14 @@ class BridgeClient {
     signal?.addEventListener('abort', abort, {once:true});
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      if (!(await this.targetStillRegistered(target))) throw bridgeError('INSTANCE_CHANGED: selected SketchUp instance is no longer registered; request was not published', 'INSTANCE_CHANGED', {delivery_state:'not_published', request_published:false});
       const response = await fetch(`${url}/command`, {method:'POST',headers:{'content-type':'application/json','x-codex-sketchup-token':token},body:JSON.stringify(payload),signal:controller.signal});
       const result = await response.json();
-      if (!response.ok || !result.ok) throw Error(result.error || `Bridge HTTP ${response.status}`);
+      if (!response.ok || !result.ok) throw bridgeError(result.error || `Bridge HTTP ${response.status}`, result.code || 'BRIDGE_ERROR', {delivery_state:'response', request_published:true});
       return result;
     } catch (e) {
       // Never replay an HTTP write through a different transport after an unknown outcome.
-      if (controller.signal.aborted) throw Error('RESULT_UNKNOWN: inspect request/project state before retrying');
+      if (controller.signal.aborted) throw bridgeError('RESULT_UNKNOWN: inspect request/project state before retrying', 'RESULT_UNKNOWN', {delivery_state:'published_unknown', request_published:true});
       throw e;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
@@ -155,10 +167,13 @@ class BridgeClient {
     // Re-check immediately before dispatch. A selected PID may have exited or
     // been replaced after target() returned; never send into a stale process
     // directory or silently switch to a different SketchUp instance.
-    if (!(await this.targetStillRegistered(target))) throw Error('INSTANCE_CHANGED: selected SketchUp instance is no longer registered; select the current instance');
+    if (!(await this.targetStillRegistered(target))) throw bridgeError('INSTANCE_CHANGED: selected SketchUp instance is no longer registered; request was not published', 'INSTANCE_CHANGED', {delivery_state:'not_published', request_published:false, request_id:id});
     try {
       await fs.writeFile(temp, JSON.stringify({...payload,id,protocol:'sketchup-file-bridge/v3',created_at:new Date().toISOString(),expires_at:new Date(deadline).toISOString()}), {flag:'wx'});
       await fs.rename(temp, request);
+    } catch (error) {
+      Object.assign(error, {delivery_state:'not_published', request_published:false, request_id:id});
+      throw error;
     } finally { await fs.rm(temp, {force:true}).catch(()=>{}); }
     try {
       while (Date.now() < deadline) {
@@ -176,12 +191,12 @@ class BridgeClient {
           const envelope = await readJson(response);
           if (envelope.id !== id) throw Error('BRIDGE_RESPONSE_ID_MISMATCH');
           await fs.unlink(response);
-          if (!envelope.result?.ok) throw Error(envelope.result?.error || 'BRIDGE_ERROR');
+          if (!envelope.result?.ok) throw bridgeError(envelope.result?.error || 'BRIDGE_ERROR', envelope.result?.code || 'BRIDGE_ERROR', {delivery_state:'response', request_published:true, request_id:id});
           return envelope.result;
         } catch (e) { if (e.code !== 'ENOENT') throw e; }
         await delay(100, undefined, {signal});
       }
-      throw Error(`RESULT_UNKNOWN: request ${id} timed out; no automatic replay`);
+      throw bridgeError(`RESULT_UNKNOWN: request ${id} timed out; no automatic replay`, 'RESULT_UNKNOWN', {delivery_state:'published_unknown', request_published:true, request_id:id});
     } catch (e) {
       // Remove only this caller's unclaimed request; a claimed operation may still be completing.
       try { await fs.unlink(request); } catch (cleanup) { if (cleanup.code !== 'ENOENT') e.message += `; cleanup: ${cleanup.message}`; }

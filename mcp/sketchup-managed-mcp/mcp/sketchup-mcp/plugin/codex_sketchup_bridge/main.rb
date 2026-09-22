@@ -35,6 +35,12 @@ module CodexSketchUpBridge
   INSTANCE_DIR = File.join(BRIDGE_DIR, 'processes', Process.pid.to_s, SESSION_ID)
   REQUESTS_DIR = File.join(INSTANCE_DIR, 'requests')
   RESPONSES_DIR = File.join(INSTANCE_DIR, 'responses')
+  # The original 2026-09-08 package used one machine-wide requests/
+  # responses/ directory. Keep that adapter for old MCP clients; new clients
+  # continue to use the per-process directories above so multi-instance
+  # selection remains explicit.
+  LEGACY_REQUESTS_DIR = File.join(BRIDGE_DIR, 'requests')
+  LEGACY_RESPONSES_DIR = File.join(BRIDGE_DIR, 'responses')
   REGISTRY_PATH = File.join(BRIDGE_DIR, 'instances', "#{Process.pid}.json")
   MAX_REQUEST_AGE_MS = Integer((ENV['SKETCHUP_BRIDGE_REQUEST_MAX_AGE_MS'] || '120000')) rescue 120000
 
@@ -69,6 +75,8 @@ module CodexSketchUpBridge
       @jobs ||= Queue.new
       FileUtils.mkdir_p(REQUESTS_DIR)
       FileUtils.mkdir_p(RESPONSES_DIR)
+      FileUtils.mkdir_p(LEGACY_REQUESTS_DIR)
+      FileUtils.mkdir_p(LEGACY_RESPONSES_DIR)
       log("starting file bridge at #{BRIDGE_DIR}; TCP compatibility endpoint=#{HOST}:#{PORT}")
       begin
         @server = TCPServer.new(HOST, PORT)
@@ -147,7 +155,15 @@ module CodexSketchUpBridge
     end
 
     def poll_file_requests
-      Dir.glob(File.join(REQUESTS_DIR, '*.json')).sort.each do |request_path|
+      poll_file_requests_in(REQUESTS_DIR, RESPONSES_DIR, false)
+      # Compatibility with the original package's machine-wide file bridge.
+      # Atomic claiming prevents two live instances from executing one legacy
+      # request twice; callers using the new MCP are unaffected.
+      poll_file_requests_in(LEGACY_REQUESTS_DIR, LEGACY_RESPONSES_DIR, true) unless LEGACY_REQUESTS_DIR == REQUESTS_DIR
+    end
+
+    def poll_file_requests_in(requests_dir, responses_dir, legacy = false)
+      Dir.glob(File.join(requests_dir, '*.json')).sort.each do |request_path|
         payload = JSON.parse(File.read(request_path))
         id = payload['id'].to_s
         created_at = begin
@@ -172,7 +188,8 @@ module CodexSketchUpBridge
         rescue Errno::ENOENT
           next
         end
-        response_path = File.join(RESPONSES_DIR, "#{id}.json")
+        response_path = File.join(responses_dir, "#{id}.json")
+        log("request_claimed id=#{id} operation_id=#{payload['operation_id'].to_s} legacy=#{legacy}")
 
         result =
           if secure_compare(payload['token'].to_s, TOKEN)
@@ -185,7 +202,14 @@ module CodexSketchUpBridge
               log("dropped expired request #{id}; expires_at=#{payload['expires_at']}")
               { ok: false, error: 'Expired request dropped before execution' }
             else
-              dispatch(payload)
+              # The original file client had no instance-selection fields.
+              # Keep that single-instance contract only for the legacy root
+              # directory; current per-process requests remain strict.
+              dispatch_payload = legacy ? payload.merge(
+                'target_process_id' => Process.pid,
+                'target_session_id' => SESSION_ID
+              ) : payload
+              dispatch(dispatch_payload)
             end
           else
             { ok: false, error: 'Unauthorized' }
@@ -207,7 +231,7 @@ module CodexSketchUpBridge
         rescue
           File.basename(request_path, '.json')
         end
-        response_path = File.join(RESPONSES_DIR, "#{fallback_id}.json")
+        response_path = File.join(responses_dir, "#{fallback_id}.json")
         File.write(response_path, JSON.generate({
           ok: false,
           error: "#{e.class}: #{e.message}",

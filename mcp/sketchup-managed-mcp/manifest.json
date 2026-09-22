@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.28",
-  "build_id": "0.5.28-rc1-expert-work-units-20260922",
+  "build_id": "0.5.28-rc1-expert-work-units-postcommit-fingerprint-legacy-bridge-delivery-state-write-boundary-live-chain-20260922",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -26,7 +26,7 @@
     "Pillow >= 10 (evidence helpers)",
     "interactive Windows desktop for viewport evidence"
   ],
-  "realSketchUpAcceptance": "not_run for this build. Linux source, public MCP protocol with a simulated SU transport, and Ruby geometry/fingerprint tests with an in-memory SU API have run; Windows, SU2018/2019, real visual matching, material rendering and save/reopen acceptance remain not_run.",
+  "realSketchUpAcceptance": "partial. Windows SketchUp 2019.0.685 with Ruby 2.5.1 completed live bridge ping, selected-instance binding, expert typed construction, post-commit unit-scope readback, retry-only evidence recovery after a capture consistency rejection, review and finish with a real final SKP; the original 0.2.2 file-bridge client also completed isolated ping and smoke_wall begin/step through the legacy root adapter. The live review used shorthand with geometry/dependencies explicitly unverified; source matching, architectural similarity, reopen-and-edit, multi-round editing, other SketchUp versions and material-quality acceptance remain not_run.",
   "bundledKnowledgePacks": [
     {
       "id": "adai-ancient-architecture",
@@ -64,7 +64,7 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.28-rc1-expert-work-units-20260922",
+  "codeBaseline": "0.5.28-rc1-expert-work-units-postcommit-fingerprint-legacy-bridge-delivery-state-write-boundary-live-chain-20260922",
   "engineeringVersion": "0.5.28",
   "sourceBaseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8"
 }
