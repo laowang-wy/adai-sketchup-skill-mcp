@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
-  "version": "0.5.27",
-  "build_id": "0.5.27-r3-c01-c06-visual-shorthand-20260922",
+  "version": "0.5.28",
+  "build_id": "0.5.28-rc1-expert-work-units-20260922",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -26,7 +26,7 @@
     "Pillow >= 10 (evidence helpers)",
     "interactive Windows desktop for viewport evidence"
   ],
-  "realSketchUpAcceptance": "SU2019 19.0.685 / Ruby2.5.1: engineering solids, receipt recovery, stale-audit refusal, translation/review/rollback/recapture/save and reopen/edit executed. Patch production entry closed pending full recovery acceptance. Architecture/source matching, SU2018, second-machine and model comparison remain not_run.",
+  "realSketchUpAcceptance": "not_run for this build. Linux source, public MCP protocol with a simulated SU transport, and Ruby geometry/fingerprint tests with an in-memory SU API have run; Windows, SU2018/2019, real visual matching, material rendering and save/reopen acceptance remain not_run.",
   "bundledKnowledgePacks": [
     {
       "id": "adai-ancient-architecture",
@@ -40,16 +40,16 @@
     {
       "id": "ancient-architecture",
       "sourceVersion": "0.4",
-      "integrationVersion": "0.5.27",
+      "integrationVersion": "0.5.28",
       "entry": "sketchup_ancient_tool",
-      "scope": "legacy diagnostic compilers; explicit geometry family supports five formal managed phases with phase-bound registration mappings",
-      "version": "0.4.4",
+      "scope": "phase-role compiler used by guided phases or version-2 expert work units; actual readback and visual review remain required",
+      "version": "0.4.5",
       "integrationBaseline": "0.5.6"
     },
     {
       "id": "parametric-facade-bay",
       "sourceVersion": "0.1",
-      "integrationVersion": "0.5.27",
+      "integrationVersion": "0.5.28",
       "entry": "sketchup_toolkit",
       "scope": "bounded parametric facade-bay massing; live readback and visual review required",
       "version": "0.1.0",
@@ -64,6 +64,7 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.27-r3",
-  "engineeringVersion": "0.5.27"
+  "codeBaseline": "0.5.28-rc1-expert-work-units-20260922",
+  "engineeringVersion": "0.5.28",
+  "sourceBaseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8"
 }

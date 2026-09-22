@@ -14,10 +14,13 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { resolveMethodBinding } = require('./toolkit-registry');
 const { applyCommittedProgress, pendingExecution, classifyEvidenceFailure } = require('./operation-outcome');
+const {normalizeTargets, evaluateMeasurements, assertTargets} = require('./source-dimensions');
+const { createPolicy, policyFor, isExpert, isAutonomous, planForState, resolveUnit, commitUnit, UNIT_PHASE, UNIT_HINT } = require('./execution-policy');
+const { pendingOperation, describeActions } = require('./project-actions');
+const { validationIssues, applyValidationResult, revisionMatches, qualitySummary } = require('./review-state');
+const { requiredSystems, validateDetails } = require('./detail-contract');
 
-// These are deliberately narrow production scales. A model may not jump from a
-// reference image to a finished tower in one Ruby call: each scale is evidence
-// reviewed before the next becomes available.
+// Guided stage plans are a teaching strategy, not expert permissions.
 const MANAGED_CONTRACT = require('./contracts/managed-contract.json');
 const PHASES = MANAGED_CONTRACT.mode_plans.single_image;
 
@@ -35,11 +38,10 @@ function normalizedProfile(value) {
   const optionalPhases = new Set(['roof_profile','archetypes','replication','variants','facade_detail']);
   if (omitPhases.length > 8 || omitPhases.some((name)=>!optionalPhases.has(name))) throw new Error('omit_phases may contain only optional implemented phase names');
   const repetition = profile.repetition === 'none' ? 'none' : profile.repetition === 'present' ? 'present' : 'unspecified';
-  const requiredDetailSystems = Array.isArray(profile.required_detail_systems)
-    ? [...new Set(profile.required_detail_systems.map((x)=>String(x).trim()).filter(Boolean))].slice(0,20) : [];
+  const requiredDetailSystems = requiredSystems(profile.required_detail_systems);
   const rationale=String(profile.repetition_reason||'').trim().slice(0,1000);
-  if(repetition==='none' && !rationale)throw new Error('Non-repeating route requires a short source-based repetition_reason.');
-  return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale,required_detail_systems:requiredDetailSystems};
+
+  return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale,required_detail_systems:requiredDetailSystems,dimension_targets:normalizeTargets(profile.dimension_targets)};
 }
 function ancientRoofRoute(profile) {
   if (profile?.roof_route === 'custom') return false;
@@ -69,23 +71,10 @@ function phasePlanFor(mode, profile) {
   return [...selected.slice(0,insert),ROOF_PROFILE_PHASE,...selected.slice(insert)];
 }
 
-// The saved execution policy is the single source for strategy-sensitive
-// behavior. Older states have no policy and are read through their saved plan
-// as a compatibility migration; new writes never infer strategy independently
-// from mode or from a caller's operation intent.
-function resolveExecutionPolicy({ mode, assistanceMode, profile, phasePlan, version = 1 }) {
-  const strategy = assistanceMode === 'autonomous' ? 'autonomous_work_unit' : 'guided_phase';
-  return {
-    version,
-    strategy,
-    review_mode: strategy === 'autonomous_work_unit' ? 'merged_work_unit' : 'phase_review',
-    phase_plan: (phasePlan || phasePlanFor(mode, profile)).map((item) => ({ name: item.name, hint: item.hint })),
-  };
+function resolveExecutionPolicy({ mode, assistanceMode, profile }) {
+  return createPolicy(mode, assistanceMode, profile, phasePlanFor);
 }
-
-function executionPlan(state) {
-  return state?.execution_policy?.phase_plan || state?.phase_plan || PHASE_PLANS[state?.mode] || PHASES;
-}
+function executionPlan(state) { return planForState(state, PHASE_PLANS); }
 
 const PHASE_PLANS = MANAGED_CONTRACT.mode_plans;
 
@@ -98,6 +87,14 @@ const RAW_WRITE_TOOLS = new Set([
   'sketchup_create_ridge_system', 'sketchup_clear_model', 'sketchup_save_model',
   'sketchup_bridge_command',
 ]);
+
+function assertEvidenceId(id) {
+  if (typeof id !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{2,159}$/.test(id)) throw Object.assign(new Error('Invalid evidence identifier.'), { code: 'EVIDENCE_ID_INVALID' });
+}
+function isModelEvidence(record) {
+  const types = new Set(['model_snapshot', 'expert_snapshot', 'final_recapture', 'continuation_recapture', 'patch_applied']);
+  return !!record?.files?.audit?.path && (!record.record_type || types.has(record.record_type));
+}
 
 function safeId(value) {
   const text = String(value || '').trim();
@@ -123,7 +120,7 @@ function patchScope(value) {
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).filter(key => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
 }
 
@@ -368,7 +365,7 @@ function normalizedWorkUnit(value, mode) {
   if (!/^[A-Za-z][A-Za-z0-9_-]{2,63}$/.test(id)) throw new Error('work_unit_id must start with a letter and contain 3-64 letters, digits, underscores or hyphens');
   return { id, strategy: 'autonomous_work_unit' };
 }
-function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}) {
+function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}, expert = false) {
   // Ruby comments are guidance, not executed method calls.  Use a small
   // line-level lexical boundary for phase gates; lifecycle checks remain
   // conservative and the real managed execution/readback contracts still
@@ -390,6 +387,7 @@ function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}
   if (!/module\s+PipClawManagedBuild\b/.test(executableSource) || !/def\s+(?:self\.)?build\b/.test(executableSource)) {
     throw new Error('Managed build file must define module PipClawManagedBuild with build(entities, context)');
   }
+  if (expert) return; // Compiled algorithms keep their own input contracts.
   // The generated adapter records its phase in a metadata comment.  Keep that
   // declaration visible to the gate while still ignoring commented-out calls.
   const compiledPhase = String(source).match(/ADAI_COMPILED_PHASE\s*:\s*([a-z_]+)/i)?.[1]?.toLowerCase() || '';
@@ -447,6 +445,15 @@ function abstractionRecheckNeeded(state, phaseName) {
   return attempts >= 3 && Math.floor(attempts / 3) > Math.floor(acknowledged / 3);
 }
 function taskCard(state, phase, detail=false) {
+  if (isExpert(state)) return {
+    objective: state.work_unit?.name || 'Current architectural system',
+    work_unit: state.work_unit || null,
+    shared_foundation: 'references/shared-architectural-foundation.md',
+    operation_guidance: 'references/expert-operation.md',
+    open_findings: validationIssues(state),
+    revision_required: state.revision_required || null,
+    evidence: 'Choose useful views when ready; no per-operation visual report is required.'
+  };
   const warning=abstractionRecheckNeeded(state,phase.name) ? {code:'abstraction_recheck_required',revision_attempts:Number(state.revision_attempts?.[phase.name]||0),required_action:'Re-read source evidence and change or defend the geometric abstraction. The next step must provide abstraction_note; adding detail to the same failed abstraction is forbidden.'} : null;
   const card=phaseTaskCard(phase,state.mode,state.task_profile);
   if(!detail) {
@@ -461,52 +468,16 @@ function taskCard(state, phase, detail=false) {
   return {...card, work_unit: state.work_unit || null, shared_foundation: 'references/shared-architectural-foundation.md', complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
 }
 function assistanceSummary(state, detail=false) {
-  const mode = state?.assistance_selection ? normalizeAssistanceMode(state.assistance_mode) || 'guided' : 'guided';
+  const mode = isAutonomous(state) ? 'autonomous' : 'guided';
   const text=String(state?.task_text||'');
   const profile=state?.task_profile||{};const brief=state?.projection_brief||{};
-  const summary={ ...assistanceGuidance(mode), work_unit: state?.work_unit || null, source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(detail=true)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  const summary={ ...assistanceGuidance(mode), work_unit: state?.work_unit || null, source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(section=task)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
   if(detail) summary.task_text=text;
   return summary;
 }
 
-function pendingOperation(state) {
-  const journal=Array.isArray(state?.operation_journal)?state.operation_journal:[];
-  const last=journal.length?journal[journal.length-1]:null;
-  const pending=[...journal].reverse().find(item=>item&&['dispatched','write_in_progress','result_unknown','recovery_required'].includes(item.status));
-  return {pending_operation:pending?{operation_id:pending.operation_id,kind:pending.kind||null,status:pending.status,phase:pending.phase||state?.phase||null}:null,last_operation_id:last?.operation_id||null};
-}
-
-function nextCallForState(state) {
-  const id=state?.project_id, status=state?.status;
-  const op=pendingOperation(state).pending_operation;
-  if(op && ['result_unknown','recovery_required','dispatched','write_in_progress'].includes(op.status)) return {tool:'sketchup_project_operation_receipt',arguments:{project_id:id,operation_id:op.operation_id},required_fields:[]};
-  if(state?.recovery_recapture_required) return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
-  if(status==='evidence_pending') {
-    const error=String(state?.evidence_error||'');
-    if (/consumer|producer|materializ|GEOMETRY_DERIVED_INPUT_INVALID/i.test(error) && state?.pending_evidence) {
-      return {tool:'sketchup_project_recover',arguments:{project_id:id,action:'abort_pending',reason:'撤回当前未审阶段并保留原始取证记录，修正派生证据输入后重新提交'},required_fields:['reason'],alternatives:[{tool:'sketchup_project_retry_evidence',arguments:{project_id:id}}]};
-    }
-    return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
-  }
-  if(status==='review_required' && state.revision_required && !state.revision_required.repair_evidence_id) return {tool:'sketchup_project_step',arguments:{project_id:id,continue_work_unit:true,operation_intent:'update'},required_fields:['ruby_file']};
-  if(status==='review_required'&&state.last_evidence_id) return {tool:'sketchup_project_review',arguments:{project_id:id,evidence_id:state.last_evidence_id},required_fields:['verdict','visual_review_or_quality_review']};
-  if(status==='ready_to_finish') return {tool:'sketchup_project_finish',arguments:{project_id:id},required_fields:[]};
-  if(status==='finished') return null;
-  if(status==='ready_for_step') return {tool:'sketchup_project_step',arguments:{project_id:id},required_fields:['ruby_file']};
-  return null;
-}
-
-function qualityReviewSummary(state) {
-  const plan=(state?.phase_plan||PHASE_PLANS[state?.mode]||PHASES).map(p=>p.name);
-  const history=Array.isArray(state?.quality_reviews)?state.quality_reviews:[];
-  const latest=new Map(history.map(item=>[item.phase,item]));
-  const phases=plan.map(phase=>{const item=latest.get(phase);return {phase,state:item?.state||'unreviewed',evidence_id:item?.evidence_id||null,checks:(item?.checks||[]).map(c=>({kind:c.kind,state:c.state}))};});
-  const unverified=[];for(const row of phases)for(const check of row.checks)if(['unverified','not_applicable','unsupported'].includes(check.state))unverified.push({phase:row.phase,kind:check.kind,state:check.state});
-  const unresolved=[];for(const key of ['validation_failed','revision_required','structure_error','recovery_recapture_required'])if(state?.[key])unresolved.push({kind:key,value:key==='recovery_recapture_required'?true:state[key]});
-  const history_gaps=history.flatMap(item=>Array.isArray(item.history_gaps)?item.history_gaps:[]).slice(-20);
-  if(history_gaps.length) unresolved.push({kind:'history_gaps',value:history_gaps});
-  return {reviewed_phases:phases.filter(p=>p.state!=='unreviewed').length,total_phases:plan.length,phases,unverified,unresolved,history_gaps};
-}
+function nextCallForState(state) { return describeActions(state).next_call; }
+function qualityReviewSummary(state) { return qualitySummary(state, executionPlan(state), isExpert(state)); }
 
 function validateRoofControlContract(state, phase, buildResult) {
   if (!ancientRoofRoute(state.task_profile) || !['massing','roof_profile'].includes(phase.name)) return null;
@@ -525,57 +496,19 @@ function validateRoofControlContract(state, phase, buildResult) {
 }
 
 function validatePhaseOutput(state, phase, buildResult) {
-  validateRoofControlContract(state,phase,buildResult);
-  const counts = buildResult?.counts || {};
-  const entities = Number(counts.entities || 0);
-  const edges = Number(counts.edges || 0);
-  if (phase.name === 'massing') return complexityWarning(buildResult);
-  if (phase.name === 'roof_profile') { if (entities < 30 || edges < 40) throw new Error('roof_profile contains too little actual geometry for body and corner prototypes.'); return; }
-  if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return;
-  if (phase.name === 'archetypes') {
-    if (entities < 20 || edges < 30) throw new Error('Archetype contains too little actual geometry to represent a complete reusable source-matched component.');
+  if (isExpert(state)) {
+    if (!buildResult?.unit_scope) throw Object.assign(new Error('Live unit scope readback is missing.'), { code: 'UNIT_READBACK_MISSING' });
+    return complexityWarning(buildResult);
   }
-  if (phase.name === 'facade_detail') {
-    if (entities < 6 || edges < 8) throw new Error('Facade-detail step contains too little actual geometry for a visible one-off architectural detail.');
-  }
+  validateRoofControlContract(state, phase, buildResult);
+  return complexityWarning(buildResult);
 }
 
 function validateDetailAudit(state, audit) {
-  if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
-  const systems = audit?.visible_detail_systems;
-  if (!Array.isArray(systems)) throw new Error('VISIBLE_DETAIL_SYSTEMS_REQUIRED');
-  const required = Array.isArray(state.task_profile?.required_detail_systems)
-    ? state.task_profile.required_detail_systems.map(String).filter(Boolean) : [];
-  const seen = new Set();
-  for (const item of systems) {
-    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id.trim()) throw new Error('VISIBLE_DETAIL_MAPPING_INVALID');
-    const id = item.id.trim();
-    if (seen.has(id)) throw new Error('DUPLICATE_VISIBLE_DETAIL_ID');
-    seen.add(id);
-  }
-  if (!systems.length) throw new Error('VISIBLE_DETAIL_SYSTEMS_REQUIRED');
-  const missing = required.filter(id => !seen.has(id));
-  if (missing.length) throw new Error(`VISIBLE_DETAIL_SYSTEMS_MISSING: ${missing.join(',')}`);
-  return systems;
+  if (!['single_image', 'cad', 'refinement'].includes(state.mode) && !isExpert(state) && !(state.task_profile?.required_detail_systems || []).length) return [];
+  return validateDetails(audit?.visible_detail_systems, state.task_profile?.required_detail_systems || [], { allowEmpty: isExpert(state), requireActual: true });
 }
 
-// Internal findings are keyed by the check and its audited phase/unit scope.
-// Agent input does not carry evidence lineage or issue bookkeeping.
-function validationIssues(state) {
-  const issues = [...(state.validation_issues || [])];
-  if (state.validation_failed && !issues.some(x => canonical(x) === canonical(state.validation_failed))) issues.push(state.validation_failed);
-  return issues;
-}
-function applyValidationResult(state, phase, check, error = null, evidenceId = null) {
-  const unit = state.work_unit?.id || null;
-  const covered = item => item.phase === phase && (item.work_unit_id || null) === unit &&
-    (item.check || (item.kind === 'structure' ? 'phase_audit' : null)) === check;
-  const issues = validationIssues(state).filter(item => !covered(item));
-  if (error) issues.push({phase,work_unit_id:unit,check,kind:check,code:error.code || 'VALIDATION_FAILED',message:String(error.message || error),evidence_id:evidenceId,operation_id:state.pending_execution?.operation_id || null});
-  state.validation_issues = issues;
-  if (issues.length) state.validation_failed = issues[0];
-  else { delete state.validation_failed; delete state.structure_error; }
-}
 function validateCurrentOutput(state, phase, result) {
   try { state.complexity_warning = validatePhaseOutput(state,phase,result) || null; }
   catch(error) { applyValidationResult(state,phase.name,'phase_output',error); throw error; }
@@ -583,6 +516,7 @@ function validateCurrentOutput(state, phase, result) {
 }
 function validateCurrentAudit(state, phase, audit, evidenceId) {
   try {
+    if (isExpert(state)) { validateExpertAudit(state, audit); applyValidationResult(state,phase.name,'phase_audit',null,evidenceId); return; }
     validateAuditReadback(audit);
     if(phase.name === 'massing' && state.mode === 'single_image') {
       state.projection_subjects=validateProjectionAudit(state,audit);
@@ -596,11 +530,6 @@ function validateCurrentAudit(state, phase, audit, evidenceId) {
   } catch(error) { applyValidationResult(state,phase.name,'phase_audit',error,evidenceId); throw error; }
   applyValidationResult(state,phase.name,'phase_audit',null,evidenceId);
 }
-function revisionMatches(state, phase) {
-  const revision=state.revision_required;
-  return !!revision && revision.phase===phase && (revision.work_unit_id||null)===(state.work_unit?.id||null);
-}
-
 function validateUniqueDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const details = Array.isArray(audit?.unique_details) ? audit.unique_details.filter((item) => item?.valid && Number(item?.counts?.entities || 0) >= 3) : [];
@@ -618,7 +547,7 @@ function validateInspectedViews(qualityReview, evidenceRecord) {
     return /\.(?:png|jpe?g|webp|gif|bmp|tiff?)$/i.test(name) || /^(?:view|reference|preview|image|shot)/i.test(key) || !path.extname(name);
   }).map(([, file]) => path.resolve(file.path).toLowerCase()));
   for (const view of views) {
-    const resolved = path.resolve(String(view || '')).toLowerCase();
+    const resolved = path.resolve(String(evidenceRecord.files?.[view]?.path || view || '')).toLowerCase();
     if (!delivered.has(resolved)) throw new Error(`EVIDENCE_VIEW_NOT_DELIVERED: inspected view is not one of the sealed evidence files: ${view}`);
   }
 }
@@ -630,6 +559,7 @@ function validateAuditReadback(value) {
 }
 
 function validateFinalAudit(state, audit, plannedNames = []) {
+  if (isExpert(state)) return validateExpertAudit(state, audit);
   validateAuditReadback(audit);
   const names = new Set(plannedNames.map(String));
   const result = {};
@@ -646,6 +576,20 @@ function validateFinalAudit(state, audit, plannedNames = []) {
   if (names.has('replication')) result.structure = validateStructureAudit(state, { name: 'replication' }, audit);
   if (names.has('facade_detail')) result.unique_details = validateUniqueDetailAudit(state, audit);
   return result;
+}
+
+function validateExpertAudit(state, audit) {
+  validateAuditReadback(audit);
+  if (!audit || audit.project_id !== state.project_id || !audit.root || !Array.isArray(audit.work_units)) throw Object.assign(new Error('Current project/unit audit is missing.'), { code: 'AUDIT_INCOMPLETE' });
+  const units = Object.values(state.work_units || {}).filter(u => u.fingerprint);
+  if (!units.length || Number(audit.root.counts?.faces || 0) < 1) throw Object.assign(new Error('No actual model faces in the current result.'), { code: 'MODEL_EMPTY' });
+  for (const unit of units) {
+    const found = audit.work_units.filter(u => u.work_unit_id === unit.id);
+    if (found.length !== 1 || found[0].fingerprint !== unit.fingerprint) throw Object.assign(new Error(`Work unit ${unit.name} changed or is missing; inspect the live result before editing.`), { code: 'UNIT_SCOPE_CHANGED' });
+  }
+  validateDetailAudit(state, audit);
+  if (state.projection_brief) validateProjectionAudit(state, audit);
+  return { source_coverage: 'agent_visual_and_explicit_constraints', unit_count: units.length };
 }
 
 function parseManagedResult(bridgeResult) {
@@ -672,6 +616,7 @@ class ManagedProjects {
     this.helperPath = path.join(skillRoot, 'scripts', 'managed_project.rb').replaceAll('\\', '/');
     this.sheetScript = path.join(skillRoot, 'scripts', 'make_visual_review_sheet.py');
     this._projectLockContext = new AsyncLocalStorage();
+    this._documentLockContext = new AsyncLocalStorage();
   }
 
   async modelIdentity(bridge) {
@@ -685,14 +630,7 @@ class ManagedProjects {
   async assertModelBinding(state, bridge) {
     const current = await this.modelIdentity(bridge);
     const bound = state.model_binding || { path: state.model_path || '', object_id: null };
-    const normalize = (value) => path.resolve(String(value || '')).toLowerCase();
-    if (bound.path) {
-      if (!current.path || normalize(current.path) !== normalize(bound.path)) {
-        throw new Error(`Managed project is bound to another SketchUp document: expected '${bound.path}', active '${current.path || '<unsaved>'}'`);
-      }
-    } else if (bound.object_id !== null && Number(current.object_id) !== Number(bound.object_id)) {
-      throw new Error('Managed project is bound to a different unsaved SketchUp document');
-    }
+    if (!sameModelBinding(bound, current)) throw this.stateError('MODEL_BINDING_MISMATCH', 'The active document/session differs from the bound project; use verified recovery.');
     return current;
   }
 
@@ -790,7 +728,7 @@ class ManagedProjects {
     let entries = [];
     try { entries = await fs.readdir(this.root, { withFileTypes: true }); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name === safeId(excludeProjectId)) continue;
+      if (!entry.isDirectory() || entry.name === (excludeProjectId ? safeId(excludeProjectId) : '')) continue;
       try {
         const state = await this.readStoredStateForCas(entry.name);
         if (!state || this.documentBindingKey(state.model_binding || { path: state.model_path, object_id: null }) !== wanted) continue;
@@ -816,6 +754,8 @@ class ManagedProjects {
 
   async withDocumentWriteLock(binding, operation) {
     const key = crypto.createHash('sha256').update(this.documentBindingKey(binding)).digest('hex');
+    const inherited = this._documentLockContext.getStore();
+    if (inherited?.key === key && inherited.active) return operation();
     const lockPath = path.join(this.root, `.document-write-${key}.lock`);
     await fs.mkdir(this.root, { recursive: true });
     let handle;
@@ -828,8 +768,9 @@ class ManagedProjects {
       if (error.code === 'EEXIST') throw this.stateError('DOCUMENT_WRITE_BUSY', 'The bound SketchUp document has another write in progress; inspect its operation before retrying');
       throw error;
     }
-    try { return await operation(); }
-    finally { await handle.close().catch(() => {}); await fs.rm(lockPath, { force: true }).catch(() => {}); }
+    const owner = { key, active: true };
+    try { return await this._documentLockContext.run(owner, operation); }
+    finally { owner.active = false; await handle.close().catch(() => {}); await fs.rm(lockPath, { force: true }).catch(() => {}); }
   }
 
   async dispatchAuxiliaryWrite(state, method, args, bridge, context = {}) {
@@ -842,7 +783,7 @@ class ManagedProjects {
         const priorStatus = state.status;
         const operation = { operation_id: crypto.randomUUID(), kind: method, project_id: state.project_id, model_binding: binding, arguments: args, input_sha256:crypto.createHash('sha256').update(canonical(args)).digest('hex'), prior_status:priorStatus, context, status: 'dispatched', dispatched_at: new Date().toISOString() };
         operation.request={operation_id:operation.operation_id,kind:method,project_id:state.project_id,model_binding:binding,arguments:args,input_sha256:operation.input_sha256};
-        state.operation_journal = [...(state.operation_journal || []), operation].slice(-32);
+        state.operation_journal = [...(state.operation_journal || []), operation];
         state.status = 'write_in_progress';
         await this.saveState(state);
         try {
@@ -869,6 +810,42 @@ class ManagedProjects {
         }
       });
     });
+  }
+
+  async archiveOperations(state) {
+    const journal = state.operation_journal;
+    if (!Array.isArray(journal) || journal.length <= 64) return;
+    const terminal = new Set(['completed','result_known','failed_confirmed','not_dispatched','completed_evidence_recovered']);
+    const removable = journal.slice(0,-32).filter(o => terminal.has(o.status));
+    if (!removable.length) return;
+    const dir=path.join(this.projectDir(state.project_id),'operations');
+    await fs.mkdir(dir,{recursive:true});
+    for (const operation of removable) {
+      const body={project_id:state.project_id,operation};
+      const record={...body,signature:await this.signObject(body,{create:false})};
+      const file=path.join(dir,operation.operation_id+'.json');
+      try { await fs.writeFile(file,JSON.stringify(record),{flag:'wx',mode:0o600}); }
+      catch(error) {
+        if(error.code !== 'EEXIST') throw error;
+        const old=JSON.parse(await fs.readFile(file,'utf8'));
+        if(canonical(old)!==canonical(record)) throw this.stateError('OPERATION_ARCHIVE_CONFLICT','Existing operation archive differs; no history was discarded.');
+      }
+    }
+    const removed=new Set(removable.map(o=>o.operation_id));
+    state.operation_journal=journal.filter(o=>!removed.has(o.operation_id));
+    state.archived_operation_count=(state.archived_operation_count || 0)+removable.length;
+  }
+
+  async recordedOperation(state, operationId) {
+    const recent=(state.operation_journal || []).find(o=>o.operation_id===operationId);
+    if(recent) return recent;
+    const target=path.join(this.projectDir(state.project_id),'operations',operationId+'.json');
+    let record;
+    try { record=JSON.parse(await fs.readFile(target,'utf8')); }
+    catch(error) { if(error.code==='ENOENT') return null; throw error; }
+    const {signature,...body}=record;
+    if(body.project_id!==state.project_id || body.operation?.operation_id!==operationId || typeof signature!=='string' || !/^[a-f0-9]{64}$/.test(signature) || !crypto.timingSafeEqual(Buffer.from(signature,'hex'),Buffer.from(await this.signObject(body,{create:false}),'hex'))) throw this.stateError('OPERATION_ARCHIVE_INVALID','Operation archive failed identity verification.');
+    return body.operation;
   }
 
   async readStoredStateForCas(projectId) {
@@ -921,6 +898,7 @@ class ManagedProjects {
       if ((existing && actualRevision !== expectedRevision) || (!existing && expectedRevision !== undefined)) {
         throw this.stateError('STATE_CONFLICT', 'Managed project state changed since it was read; reload before saving');
       }
+      await this.archiveOperations(state);
       const priorRevision = expectedRevision === undefined ? 0 : expectedRevision;
       const clean = { ...state, state_revision: priorRevision + 1 };
       if (!clean.assistance_selection && !['recovery_required','step_in_progress','patch_in_progress','write_in_progress'].includes(clean.status)) {
@@ -965,29 +943,31 @@ class ManagedProjects {
   }
 
   async writeEvidence(state, record) {
+    assertEvidenceId(record.evidence_id);
     const clean = { ...record, previous_record_hash: state.last_record_hash || '' };
     clean.record_hash = crypto.createHash('sha256').update(canonical(clean)).digest('hex');
     clean.signature = await this.signObject(clean, { create: false });
     const dir = path.join(this.projectDir(state.project_id), 'evidence');
     await fs.mkdir(dir, { recursive: true });
     const target = path.join(dir, `${clean.evidence_id}.json`);
-    await fs.writeFile(target, JSON.stringify(clean, null, 2), 'utf8');
+    await fs.writeFile(target, JSON.stringify(clean, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     state.last_record_hash = clean.record_hash;
     // The record chain includes decisions and diagnostics.  Only a record
     // carrying a sealed model audit is the current model evidence pointer;
     // review decisions must never become the next review input.
-    if (clean.files?.audit?.path) state.last_evidence_id = clean.evidence_id;
+    if (isModelEvidence(clean)) state.last_evidence_id = clean.evidence_id;
     return { record: clean, path: target };
   }
 
   async verifyEvidenceIdentity(state, evidenceId, options = {}) {
+    assertEvidenceId(evidenceId);
     const target = path.join(this.projectDir(state.project_id), 'evidence', `${evidenceId}.json`);
     const record = JSON.parse(await fs.readFile(target, 'utf8'));
     const signature = record.signature;
     const clean = { ...record };
     delete clean.signature;
     const expected = await this.signObject(clean, { create: false });
-    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) throw new Error('Evidence signature verification failed');
+    if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/i.test(signature) || !crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) throw this.stateError('EVIDENCE_SIGNATURE_INVALID', 'Evidence signature verification failed');
     const withoutHash = { ...clean };
     const recordHash = withoutHash.record_hash;
     delete withoutHash.record_hash;
@@ -1000,6 +980,7 @@ class ManagedProjects {
 
   async verifyEvidence(state, evidenceId, currentModel = null, options = {}) {
     const { record, path: target } = await this.verifyEvidenceIdentity(state, evidenceId, options);
+    if (!isModelEvidence(record)) throw this.stateError('EVIDENCE_NOT_MODEL_RESULT', 'This record is an event, not a reviewable model result.');
     if (!options.restoringCheckpoint && record.model_binding && state.model_binding && !sameModelBinding(record.model_binding, state.model_binding)) {
       throw this.stateError('EVIDENCE_MODEL_BINDING_MISMATCH', 'Evidence is bound to a different SketchUp document or session');
     }
@@ -1036,48 +1017,59 @@ class ManagedProjects {
   }
 
   rubyCall(method, args) {
-    const rubyArgs = args.map((value) => JSON.stringify(value)).join(', ');
-    return `load ${JSON.stringify(this.helperPath)}; r=PipClawManagedProject.${method}(${rubyArgs}); puts 'PIPCLAW_MANAGED_RESULT='+r; r`;
+    if (!/^[a-z_]+$/.test(method)) throw this.stateError('HELPER_METHOD_INVALID', 'Invalid managed helper method.');
+    const encode = value => Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
+    // Never interpolate JSON strings directly into Ruby double-quoted literals:
+    // #{...} is Ruby interpolation and JSON null is not the Ruby nil literal.
+    return `require 'json'; require 'base64'; load(JSON.parse(Base64.strict_decode64('${encode(this.helperPath)}'))); r=PipClawManagedProject.${method}(*JSON.parse(Base64.strict_decode64('${encode(args)}'))); puts 'PIPCLAW_MANAGED_RESULT='+r; r`;
   }
 
   async begin(input, bridge) {
+    const projectId = safeId(input.project_id || `su_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`);
+    return this.withProjectLock(projectId, () => this._beginUnlocked({...input, project_id:projectId}, bridge));
+  }
+
+  async _beginUnlocked(input, bridge) {
     await this.ensureRoot();
     const mode = String(input.mode || 'single_image');
     if (!['single_image', 'cad', 'freeform', 'refinement', 'test','attribution'].includes(mode)) throw new Error('Unsupported managed project mode');
     if(mode==='attribution' && input.attribution_command!=='显源')throw new Error('EXPLICIT_ATTRIBUTION_COMMAND_REQUIRED');
     const sourcePath = path.resolve(input.source_image || '');
-    if (mode === 'single_image' && !fsSync.existsSync(sourcePath)) throw new Error(`Source image not found: ${sourcePath}`);
+    if (mode === 'single_image' && (!input.source_image || !fsSync.existsSync(sourcePath) || !fsSync.lstatSync(sourcePath).isFile())) throw new Error(`Source image not found: ${sourcePath}`);
     const outputDirectory = path.resolve(input.output_directory || path.join(process.cwd(), 'sketchup-managed-output'));
     await fs.mkdir(outputDirectory, { recursive: true });
     const projectId = safeId(input.project_id || `su_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`);
     if (fsSync.existsSync(this.statePath(projectId))) throw new Error(`Managed project already exists: ${projectId}`);
     const ping = await bridge('ping');
     const source = mode === 'single_image' ? await fileEvidence(sourcePath) : null;
-    const projectionBrief = mode === 'single_image' ? validateProjectionBrief(input.projection_brief) : null;
+    let projectionBrief = null;
     const taskProfile = normalizedProfile(input.task_profile);
     const toolkitBinding = taskProfile.method_family ? await resolveMethodBinding(this.appDataDir, taskProfile.method_family) : null;
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
     if (assistance.command_required) throw this.stateError('ASSISTANCE_COMMAND_REQUIRED', 'autonomous requires an exact first non-empty task line: ADAI老王，开启专家模式 or 开启ADAI老王专家模式');
+    projectionBrief = mode === 'single_image' && (input.projection_brief || assistance.mode !== 'autonomous') ? validateProjectionBrief(input.projection_brief) : null;
     const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode) || (assistance.mode === 'autonomous' ? { id: `unit_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`, strategy: 'autonomous_work_unit' } : null);
     const response = await bridge('run_ruby', { code: this.rubyCall('begin_project', [projectId]), file: this.helperPath });
     parseManagedResult(response);
     const modelBinding = await this.modelIdentity(bridge);
-    const phasePlan = phasePlanFor(mode, taskProfile);
-    const execution_policy = resolveExecutionPolicy({ mode, assistanceMode: assistance.mode, profile: taskProfile, phasePlan });
+    const execution_policy = resolveExecutionPolicy({ mode, assistanceMode: assistance.mode, profile: taskProfile });
+    const expert = execution_policy.version === 2;
+    const phasePlan = expert ? [{ name: UNIT_PHASE, hint: UNIT_HINT }] : execution_policy.phase_plan;
+    if (workUnit) workUnit.name = 'Main architectural system';
     const state = {
       schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
       model_path: modelBinding.path || ping.model_path || '', model_binding: modelBinding,
       toolkit_bindings: toolkitBinding ? [toolkitBinding] : [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, phase_plan: phasePlan, execution_policy,
+      status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, ...(expert ? { work_units: { [workUnit.id]: { id: workUnit.id, name: workUnit.name, revision: 0 } }, scene_revision: 0 } : { phase_plan: phasePlan }), execution_policy,
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
     return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, task_card: taskCard(state,phasePlan[0]), next_action: phasePlan[0].hint };
   }
 
-  async captureViewportSet(state, phase, directory, bridge) {
+  async captureViewportSet(state, phase, directory, bridge, requestedViews = null) {
     await fs.mkdir(directory, {recursive:true});
     // Large but already accepted scenes can take longer than the generic
     // 30-second bridge default just to read the active camera/viewport state.
@@ -1086,6 +1078,7 @@ class ManagedProjects {
     // capture calls below.
     const runHelper=async(name,args=[])=>parseManagedResult(await bridge('run_ruby',{code:this.rubyCall(name,args),file:this.helperPath},120000));
     const savedCamera=await runHelper('camera_state');
+    if (savedCamera.two_point === true) throw this.stateError('VIEWPORT_NATIVE_REQUIRED', 'Preserve the native two-point camera; use native evidence capture.');
     let plan, prepared=false, selectionSaved=false;
     const files={},metadata=[];
     const script=path.join(path.dirname(this.helperPath),'capture_window.py');
@@ -1100,6 +1093,7 @@ class ManagedProjects {
       // Save selection once; do not overwrite it with a second viewport_plan call.
       selectionSaved=true;
       plan=await runHelper('viewport_plan',[state.project_id,phase]);
+      if (requestedViews) plan.shots = plan.shots.filter(shot => requestedViews.includes(shot.label));
       prepared=true;
       const preparation=await capture(prepareOutput,plan.process_id,'--prepare');
       await runHelper('restore_camera',[JSON.stringify(state.source_camera || savedCamera)]);
@@ -1147,7 +1141,12 @@ class ManagedProjects {
     return {ok:true,status_preserved:state.status,directory:dir,...result};
   }
 
-  async automaticEvidence(state, phase, scriptPath, scriptHash, bridge, buildResult) {
+  async automaticEvidence(state, phase, scriptPath, scriptHash, bridge, buildResult, options = {}) {
+    const expert = isExpert(state);
+    const requestedViews = expert ? [...new Set(['reference', ...(options.views || ['reference'])])] : null;
+    // Evidence generation never changes the user's inspection camera. A saved
+    // source camera is used only by the legacy route; expert supplies its own
+    // current inspection camera and may ask for complementary geometry views.
     // A consistency retry follows a scene transition observed during the
     // initial capture. The build result belongs to the earlier scene and must
     // never be re-labelled as a measurement for this new evidence id. There
@@ -1179,7 +1178,7 @@ class ManagedProjects {
     state.pending_evidence={phase,script_path:scriptPath,script_hash:scriptHash,build_result:evidenceBuildResult,checkpoint:await fileEvidence(checkpointPath),audit:await fileEvidence(beforeAuditPath)};
     delete state.recovered_checkpoint;
     await this.saveState(state);
-    if (state.source_camera) {
+    if (state.source_camera && !expert) {
       const sourceRestore = await bridge('run_ruby', { code: this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]), file: this.helperPath }, 120000);
       parseManagedResult(sourceRestore);
     }
@@ -1190,7 +1189,7 @@ class ManagedProjects {
     let viewportCaptured = false;
     if (['window_print','desktop_viewport'].includes(profile.capture_backend)) {
       try {
-      const captured = await this.captureViewportSet(state,phase,evidenceDir,bridge);
+      const captured = await this.captureViewportSet(state,phase,evidenceDir,bridge,requestedViews);
       cameraState=captured.camera;
       for (const [label,file] of Object.entries(captured.files)) if(label!=='reference') detailViews[label]=file;
       viewportCaptured = true;
@@ -1218,12 +1217,25 @@ class ManagedProjects {
     }
     }
     const geometryViewStart=Date.now();
-    const geometryViews=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_geometry_views',[state.project_id,phase,evidenceDir.replaceAll('\\','/')]),file:this.helperPath},120000));
+    const geometrySelection = requestedViews ? requestedViews.filter(name => name !== 'reference') : null;
+    const geometryViews = geometrySelection && !geometrySelection.length ? {ok:true, views:[]} : parseManagedResult(await bridge('run_ruby', {
+      code: this.rubyCall('capture_geometry_views', [state.project_id, phase, evidenceDir.replaceAll('\\','/'), geometrySelection ? JSON.stringify(geometrySelection) : null]), file: this.helperPath
+    }, 120000));
     const geometryCameraPath=path.join(evidenceDir,'geometry-cameras.json');
     await fs.writeFile(geometryCameraPath,JSON.stringify(geometryViews,null,2));
     detailViews.geometry_cameras=geometryCameraPath;
     for(const item of geometryViews.views||[])detailViews['geometry_'+item.label]=item.path;
     const geometryViewSeconds=(Date.now()-geometryViewStart)/1000;
+    const dimensionTargets = state.task_profile?.dimension_targets || [];
+    let dimensionResults = [];
+    if (dimensionTargets.length) {
+      const measured = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('measure_source_dimensions',[state.project_id,JSON.stringify(dimensionTargets)]),file:this.helperPath},120000));
+      if (measured.project_id !== state.project_id) throw this.stateError('DIMENSION_PROJECT_MISMATCH','Measurement came from a different project.');
+      dimensionResults = evaluateMeasurements(dimensionTargets, measured);
+      const dimensionPath = path.join(evidenceDir,'source-dimensions.json');
+      await fs.writeFile(dimensionPath,JSON.stringify({project_id:state.project_id,evidence_id:evidenceId,results:dimensionResults}));
+      detailViews.source_dimensions = dimensionPath;
+    }
     const auditOutput = path.join(evidenceDir, 'audit.json');
     const auditPreview = path.join(evidenceDir, 'audit-preview.png');
     const auditBridge = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditOutput.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
@@ -1241,11 +1253,25 @@ class ManagedProjects {
 
     let reviewSheet = '';
     let reviewReport = '';
+    const comparisonImages = {};
     if (state.source) {
+      await verifyEvidenceFiles({source:state.source});
       reviewSheet = path.join(evidenceDir, 'review-sheet.png');
       reviewReport = path.join(evidenceDir, 'review-evidence.json');
       const python = process.env.PIPCLAW_PYTHON || 'python';
-      await execFileAsync(python, [this.sheetScript, '--source', state.source.path, '--candidate', referencePath, '--output', reviewSheet, '--report', reviewReport], { windowsHide: true, timeout: 120000 });
+      const args=[this.sheetScript,'--source',state.source.path,'--source-sha256',state.source.sha256,'--candidate',referencePath,'--output',reviewSheet,'--report',reviewReport];
+      if(options.comparison?.aligned) args.push('--aligned');
+      if(options.comparison?.regions) {
+        const regionFile=path.join(evidenceDir,'comparison-regions.json');
+        await fs.writeFile(regionFile,JSON.stringify(options.comparison.regions));
+        args.push('--regions-file',regionFile);
+      }
+      await execFileAsync(python,args,{windowsHide:true,timeout:120000});
+      const comparison=JSON.parse(await fs.readFile(reviewReport,'utf8'));
+      for(const [i,item] of (comparison.additional_images || []).entries()) {
+        if(path.dirname(path.resolve(item.path))!==path.resolve(evidenceDir)) throw this.stateError('COMPARISON_PATH_INVALID','Derived image is outside the current evidence directory.');
+        comparisonImages['comparison_'+i]=item.path;
+      }
     }
 
     const geometryArtifacts={};
@@ -1261,20 +1287,23 @@ class ManagedProjects {
         // evidence_pending. Preserve the raw readback and exact formatter error;
         // review can continue with these machine inputs explicitly unverified.
         const diagnostic=path.join(evidenceDir,'geometry-materialization-error.json');
-        await fs.writeFile(diagnostic,JSON.stringify({code:'GEOMETRY_DERIVED_INPUT_INVALID',message:String(error.message||error),source:materializeInput,required_correction:'Fix the producer output and rerun the phase if these measurements are required; no geometry was replayed.'},null,2));
+        const failure = classifyEvidenceFailure(error, 'evidence');
+        await fs.writeFile(diagnostic,JSON.stringify({...failure,source:materializeInput,required_correction:'Repair only the missing derived artifact; do not replay committed geometry.'},null,2));
         geometryArtifacts.geometry_materialization_error=diagnostic;
-        evidenceWarnings.push({code:'GEOMETRY_DERIVED_INPUT_INVALID',state:'unverified',message:'Optional geometry review artifacts were not materialized; raw geometry_readback is preserved.'});
+        evidenceWarnings.push({code:failure.code,state:'unverified',message:'Geometry review artifacts were not materialized; raw geometry_readback is preserved.'});
       }
     }
     const files = {};
-    for (const [name, file] of Object.entries({ checkpoint: checkpointPath, reference: referencePath, audit: auditOutput, audit_preview: auditPreview, review_sheet: reviewSheet, review_report: reviewReport, capture_fallback: path.join(evidenceDir,'capture-fallback.json'), ...geometryArtifacts, ...detailViews })) {
+    for (const [name, file] of Object.entries({ checkpoint: checkpointPath, reference: referencePath, audit: auditOutput, audit_preview: auditPreview, review_sheet: reviewSheet, review_report: reviewReport, capture_fallback: path.join(evidenceDir,'capture-fallback.json'), ...geometryArtifacts, ...detailViews, ...comparisonImages })) {
       if (file && fsSync.existsSync(file)) files[name] = await fileEvidence(file);
     }
     const record = {
       schema_version: 1, evidence_id: evidenceId, project_id: state.project_id, mode: state.mode,
       phase, step_index: state.step_index, created_at: new Date().toISOString(), source: state.source,
+      record_type: 'model_snapshot',
       script: { path: path.resolve(scriptPath), sha256: scriptHash }, build_result: evidenceBuildResult, files,
-      model_binding: evidenceModelBinding, scene_revision: buildResult?.build_result?.scene_revision ?? state.scene_revision ?? null,
+      ...(expert ? {work_unit_ids:Object.keys(state.work_units || {}), capture_scope:'current_project', requested_views:requestedViews} : {}),
+      model_binding: evidenceModelBinding, scene_revision: expert ? state.scene_revision : (buildResult?.build_result?.scene_revision ?? state.scene_revision ?? null),
       task_contract: { mode: state.mode, phase, task_profile: state.task_profile || {} }, camera_state: cameraState,
       timing:{geometry_views_seconds:geometryViewSeconds,geometry_write_readback_seconds:evidenceBuildResult?.build_result?.geometry_readback?.write_readback_seconds??null},
       model_path: state.model_path,
@@ -1282,30 +1311,57 @@ class ManagedProjects {
       ...(consistencyRetry ? {geometry_readback_status:'not_measured_after_scene_change',missing_machine_inputs:['geometry_readback','geometry_measurements','geometry_dependencies'],note:'Fresh audit and views only; the prior build readback was not relabelled after the scene changed.'} : {}),
     };
     const saved = await this.writeEvidence(state, record);
-    return { evidence_id: evidenceId, evidence_path: saved.path, files, camera_state: cameraState, review_input:reviewAvailability(files) };
+    state.dimension_results = dimensionResults;
+    return { dimension_results:dimensionResults, evidence_id: evidenceId, evidence_path: saved.path, files, camera_state: cameraState, review_input:reviewAvailability(files) };
+  }
+
+  async withActions(result, projectId) {
+    const state = await this.loadState(projectId);
+    return { ...result, ...describeActions(state) };
+  }
+
+  async prepareBuildFile(state, input, expert) {
+    const hasFile = typeof input.ruby_file === 'string' && input.ruby_file.length > 0;
+    if (hasFile === (input.operations !== undefined)) throw this.stateError('BUILD_INPUT_CONFLICT', 'Supply ruby_file OR operations.');
+    if (hasFile) {
+      const target = path.resolve(input.ruby_file);
+      const stat = await fs.lstat(target);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw this.stateError('BUILD_FILE_INVALID', 'Build input must be a regular Ruby file up to 16 MiB.');
+      return target;
+    }
+    if (!expert) throw this.stateError('OPERATIONS_REQUIRE_EXPERT', 'Typed operation batches are for new expert projects; guided keeps its existing compiler route.');
+    const { compileOperations } = require('./scoped-operations');
+    const source = compileOperations(input.operations, path.join(this.skillRoot, 'scripts', 'managed_operations.rb'));
+    const dir = path.join(this.projectDir(state.project_id), 'prepared-builds');
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${crypto.createHash('sha256').update(source).digest('hex')}.rb`);
+    try { await fs.writeFile(file, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 }); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; if (await hashFile(file) !== crypto.createHash('sha256').update(source).digest('hex')) throw this.stateError('BUILD_FILE_CHANGED', 'Cached typed build changed.'); }
+    return file;
   }
 
   async step(input, bridge) {
-    return this.withProjectLock(safeId(input.project_id), () => this._stepUnlocked(input, bridge));
+    return this.withProjectLock(safeId(input.project_id), async () => this.withActions(await this._stepUnlocked(input, bridge), input.project_id));
   }
 
   async _stepUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
-    const continueWorkUnit = state.status === 'review_required' && state.assistance_mode === 'autonomous' && state.work_unit && input.continue_work_unit === true;
-    if (state.status !== 'ready_for_step' && !continueWorkUnit) throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
-    let continuationTarget = state.step_index;
-    if (continueWorkUnit && state.last_evidence_id) {
-      const plan = executionPlan(state);
-      if (input.next_phase) {
-        const target = plan.findIndex((item) => item.name === String(input.next_phase).trim());
-        if (target < 0) throw this.stateError('WORK_UNIT_PHASE_UNKNOWN', 'next_phase is not in the saved project plan');
-        if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'next_phase must be a later planned phase in the same autonomous work unit');
-        continuationTarget = target;
-      }
-    }
-    if (state.work_unit && input.work_unit_id && String(input.work_unit_id) !== state.work_unit.id) throw new Error('WORK_UNIT_MISMATCH');
-    // Work-unit identity is derived for the operation; never mutate the
-    // caller's input object while preparing a write.
+    const policy = policyFor(state);
+    const expert = isExpert(state);
+    const continueWorkUnit = !expert && state.status === 'review_required' && isAutonomous(state) && state.work_unit && input.continue_work_unit === true;
+    const writable = expert ? ['ready_for_step','review_required','ready_to_finish'].includes(state.status) : state.status === 'ready_for_step' || continueWorkUnit;
+    if (!writable || pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('WRITE_NOT_READY', 'Resolve the current operation or evidence repair before a new write.');
+    if (expert && input.next_phase !== undefined) throw this.stateError('LEGACY_PHASE_PARAMETER', 'New expert projects select architectural systems, not next_phase.');
+    let continuationTarget = expert ? 0 : state.step_index;
+    if (continueWorkUnit && state.last_evidence_id && input.next_phase) {
+      const target = executionPlan(state).findIndex(item => item.name === String(input.next_phase).trim());
+      if (target < 0) throw this.stateError('WORK_UNIT_PHASE_UNKNOWN', 'next_phase is not in the saved project plan');
+      if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'Legacy next_phase must be later in the saved plan');
+      continuationTarget = target;
+    } else if (!expert && input.next_phase !== undefined) throw this.stateError('LEGACY_PHASE_PARAMETER', 'next_phase applies only to legacy expert continuation.');
+    if (!expert && input.work_unit_name !== undefined) throw this.stateError('WORK_UNIT_AUTONOMOUS_ONLY', 'Named systems require a new expert project.');
+    if (!expert && state.work_unit && input.work_unit_id && input.work_unit_id !== state.work_unit.id) throw this.stateError('WORK_UNIT_MISMATCH', 'Work unit does not match this legacy project.');
+    const unit = expert ? resolveUnit(state, input, () => `unit_${crypto.randomBytes(8).toString('hex')}`) : state.work_unit;
     await this.assertModelBinding(state, bridge);
     const phasePlan = executionPlan(state);
     const phase = phasePlan[continuationTarget];
@@ -1313,34 +1369,35 @@ class ManagedProjects {
     const unresolved = await this.unresolvedDocumentOperation(state.model_binding || { path: state.model_path, object_id: null }, state.project_id);
     if (unresolved) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `The bound SketchUp document has an unresolved write for project ${unresolved.project_id}; reconcile operation ${unresolved.operation?.operation_id || '<unknown>'} before any new project can write`);
     let abstractionRecheckRecord = null;
-    if (abstractionRecheckNeeded(state, phase.name)) {
+    if (!expert && abstractionRecheckNeeded(state, phase.name)) {
       const note=String(input.abstraction_note || '').trim();
-      if (!note) throw new Error(`After ${state.revision_attempts?.[phase.name]} revisions of ${phase.name}, the next step must provide a short abstraction_note explaining the source evidence re-read and the changed or defended geometric abstraction.`);
+      // A method hint is not a word-count or paperwork gate.
       abstractionRecheckRecord={attempt:Number(state.revision_attempts?.[phase.name]||0),note,recorded_at:new Date().toISOString()};
     }
-    const scriptPath = path.resolve(input.ruby_file || '');
+    const scriptPath = await this.prepareBuildFile(state, input, expert);
     if (!fsSync.existsSync(scriptPath)) throw new Error(`Ruby build file not found: ${scriptPath}`);
     const scriptSource = await fs.readFile(scriptPath, 'utf8');
     if(state.mode==='attribution') {
       const manifest=JSON.parse(await fs.readFile(path.join(path.dirname(scriptPath),'attribution-manifest.json'),'utf8'));
       if(state.attribution_command!=='显源' || manifest.command!=='显源' || manifest.user_requested!==true || path.resolve(manifest.ruby_file)!==path.resolve(scriptPath) || manifest.build_sha256!==crypto.createHash('sha256').update(scriptSource).digest('hex'))throw new Error('ATTRIBUTION_BUILD_MISMATCH');
     }
-    validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile);
+    validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile, expert);
     const scriptHash = await hashFile(scriptPath);
     const requestedIntent = input.operation_intent == null ? 'append' : String(input.operation_intent).trim();
     if (!['append','update','replace'].includes(requestedIntent)) throw this.stateError('OPERATION_INTENT_INVALID', 'operation_intent must be append, update, or replace');
-    const policy = state.execution_policy || resolveExecutionPolicy({ mode: state.mode, assistanceMode: state.assistance_mode, profile: state.task_profile, phasePlan: state.phase_plan });
     const expertStrategy = policy.strategy === 'autonomous_work_unit';
     const intent = expertStrategy ? requestedIntent : 'replace';
     const priorStatus = state.status;
     const progress = { phase: phase.name, step_index: continuationTarget,
       ...(continueWorkUnit && state.last_evidence_id ? { previous_evidence_id: state.last_evidence_id } : {}),
       ...(abstractionRecheckRecord ? { abstraction_recheck: abstractionRecheckRecord } : {}) };
-    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: continuationTarget, work_unit_id: state.work_unit?.id || null, intent, status: 'prepared', prior_status: priorStatus, progress };
+    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: continuationTarget, work_unit_id: unit?.id || null, ...(expert ? {unit} : {}), intent, status: 'prepared', prior_status: priorStatus, progress };
+    if (operation.unit === undefined) delete operation.unit;
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
-    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id, progress };
+    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
+    operationContext.dimension_targets = state.task_profile?.dimension_targets || [];
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
     const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
@@ -1360,7 +1417,7 @@ class ManagedProjects {
         operation.request.model_binding = currentBinding;
         operation.dispatched_at = new Date().toISOString();
         operation.status = 'dispatched';
-        state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation].slice(-32);
+        state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation];
         state.status = 'step_in_progress';
         state.updated_at = new Date().toISOString();
         await this.saveState(state);
@@ -1421,6 +1478,12 @@ class ManagedProjects {
     operation.result = buildResult;
     applyCommittedProgress(state, operation);
     state.pending_execution = pendingExecution(operation, buildResult);
+    if (expert) {
+      try { commitUnit(state, operation, buildResult); }
+      catch (error) { state.status = 'recovery_required'; state.recovery_error = error.message; await this.saveState(state); throw error; }
+      await this.saveState(state);
+      return { ok: true, committed: true, project_id: state.project_id, status: state.status, operation_id: operation.operation_id, work_unit: state.work_unit, scene_revision: state.scene_revision, result: { counts: buildResult.counts, bounds_inches: buildResult.bounds_inches, unit_scope: buildResult.unit_scope, objects: buildResult.build_result?.objects || [] }, ...describeActions(state) };
+    }
     state.status = 'evidence_pending';
     await this.saveState(state);
     let evidenceStage = 'validation';
@@ -1473,8 +1536,49 @@ class ManagedProjects {
     return {ok:true,project_id:state.project_id,root_exists:result.root_exists,diagnostic_path:file,phase_count:result.phases?.length||0,scope:result.scope};
   }
 
+  async captureExpertEvidence(state, input, bridge) {
+    if (!['ready_for_step','review_required','ready_to_finish','evidence_pending'].includes(state.status) || pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('EVIDENCE_NOT_READY', 'Resolve the original write/delivery before capture.');
+    await this.assertModelBinding(state, bridge);
+    const execution = state.pending_execution;
+    if (!execution || !Object.values(state.work_units || {}).some(u => u.fingerprint)) throw this.stateError('MODEL_EMPTY', 'Build a system before requesting evidence.');
+    if (await hashFile(execution.script_path) !== execution.script_hash) throw this.stateError('RECOVERY_SCRIPT_CHANGED','The committed input file changed; preserve it for provenance, do not replay.');
+    const supported = new Set(['reference','perspective','front','side','plan','underside']);
+    const views = input.views === undefined ? ['reference'] : input.views;
+    if (!Array.isArray(views) || !views.length || views.some(x => !supported.has(x)) || new Set(views).size !== views.length) throw this.stateError('EVIDENCE_VIEWS_INVALID', 'Choose distinct supported view names.');
+    try {
+      const evidence = await this.automaticEvidence(state, UNIT_PHASE, execution.script_path, execution.script_hash, bridge, null, { views, comparison:input.comparison });
+      const audit = JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8'));
+      try { validateExpertAudit(state, audit); applyValidationResult(state, UNIT_PHASE, 'project_audit', null, evidence.evidence_id, { work_unit_id: null }); }
+      catch (error) { applyValidationResult(state, UNIT_PHASE, 'project_audit', error, evidence.evidence_id, { work_unit_id: null }); }
+      // Fresh evidence alone does not close a finding. A subsequent explicit
+      // visual judgment must address it; a corrected interpretation need not
+      // manufacture a dummy geometry write merely to increase a counter.
+      if (state.revision_required) state.revision_required.repair_evidence_id = evidence.evidence_id;
+      delete state.pending_evidence;
+      delete state.evidence_error;
+      delete state.recovery_recapture_required;
+      state.status = 'review_required';
+      await this.saveState(state);
+      return { ok: !state.validation_failed, project_id: state.project_id, status: state.status, ...evidence, quality: qualityReviewSummary(state), ...describeActions(state) };
+    } catch (error) {
+      if (state.status === 'recovery_required' || pendingOperation(state).pending_operation) throw error;
+      state.status = 'evidence_pending';
+      state.evidence_error = classifyEvidenceFailure(error);
+      await this.saveState(state);
+      throw error;
+    }
+  }
+
   async retryEvidence(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => {
+      const state = await this.loadState(input.project_id);
+      return this.withDocumentWriteLock(state.model_binding, async () => this.withActions(await this._retryEvidenceUnlocked(input, bridge), input.project_id));
+    });
+  }
+
+  async _retryEvidenceUnlocked(input, bridge) {
     const state=await this.loadState(safeId(input.project_id));
+    if (isExpert(state)) return this.captureExpertEvidence(state, input, bridge);
     if (state.status === 'evidence_pending' && !state.pending_evidence && state.pending_execution) {
       await this.assertModelBinding(state, bridge);
       const execution = state.pending_execution;
@@ -1612,6 +1716,13 @@ class ManagedProjects {
   }
 
   async review(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => {
+      const state = await this.loadState(input.project_id);
+      return this.withDocumentWriteLock(state.model_binding, async () => this.withActions(await this._reviewUnlocked(input, bridge), input.project_id));
+    });
+  }
+
+  async _reviewUnlocked(input, bridge) {
     if(input.quality_review!==undefined && input.visual_review!==undefined)throw this.stateError('REVIEW_INPUT_CONFLICT','Supply quality_review or visual_review, not both');
     const state = await this.loadState(safeId(input.project_id));
     if (state.status !== 'review_required') throw new Error(`Project is ${state.status}; no phase is awaiting review`);
@@ -1627,6 +1738,10 @@ class ManagedProjects {
       if (error.code !== 'EVIDENCE_MODEL_CHANGED' || !error.liveAudit) throw error;
       const phase = executionPlan(state)[state.step_index]?.name;
       if (!phase || state.patch_review) throw error;
+      if (isExpert(state)) {
+        state.recovery_recapture_required=true; state.current_review=null;
+        await this.saveState(state); throw error;
+      }
       assertRecaptureScope(error.recordedAudit, error.liveAudit, phase);
       if (input.verdict !== 'revise') {
         state.recapture_phase = phase;
@@ -1639,7 +1754,9 @@ class ManagedProjects {
       }
       // Explicit revise may remove only the current phase after this scope check.
     }
+    const dimensionResults = await this.readDimensionEvidence(state,sealedEvidence.record);
     const verdict = String(input.verdict || '');
+    if (verdict === 'continue') assertTargets(dimensionResults);
     const phasePlan = executionPlan(state);
     const patchReview = state.patch_review || null;
     const finalReview = ['final_recapture','continuation_recapture'].includes(sealedEvidence.record.record_type);
@@ -1651,11 +1768,11 @@ class ManagedProjects {
       error.validation_failed = state.validation_failed;
       throw error;
     }
-    if (verdict==='continue' && state.revision_required && (!revisionMatches(state,phase.name) || state.revision_required.repair_evidence_id!==input.evidence_id)) throw this.stateError('REVISION_REQUIRED','The rejected result needs a scoped correction before a new acceptance.');
+    if (verdict==='continue' && state.revision_required && ((!isExpert(state) && !revisionMatches(state,phase.name)) || state.revision_required.repair_evidence_id!==input.evidence_id)) throw this.stateError('REVISION_REQUIRED','The rejected result needs a scoped correction before a new acceptance.');
     const prepared = input.visual_review!==undefined ? await assembleVisualReview(input,state,phase.name,sealedEvidence.record) : input;
-    const qualityReview = await validateQualityReview(prepared, state, phase.name, this.skillRoot, input.visual_review!==undefined ? sealedEvidence.record.files : null);
+    const qualityReview = await validateQualityReview(prepared, state, phase.name, this.skillRoot, sealedEvidence.record.files);
     if (verdict === 'continue') validateInspectedViews(qualityReview, sealedEvidence.record);
-    if (verdict==='continue' && revisionMatches(state,phase.name)) delete state.revision_required;
+    if (verdict==='continue' && revisionMatches(state,phase.name) && !isExpert(state)) delete state.revision_required;
     await this.writeEvidence(state, {
       schema_version: 1,
       evidence_id: `decision_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`,
@@ -1669,6 +1786,7 @@ class ManagedProjects {
       quality_review: qualityReview,
       complexity_warning: state.complexity_warning || null,
     });
+    if (isExpert(state)) return this.acceptExpertReview(state, input, sealedEvidence, qualityReview);
     if (patchReview) {
       if (verdict === 'revise') {
         const rollback = await this.rollbackPatch(state.project_id, { patch_id: patchReview.patch_id }, bridge);
@@ -1701,7 +1819,7 @@ class ManagedProjects {
     }
     if (verdict === 'revise') {
       state.revision_attempts={...(state.revision_attempts||{}),[phase.name]:Number(state.revision_attempts?.[phase.name]||0)+1};
-      if ((state.execution_policy?.strategy || '') === 'autonomous_work_unit' || state.assistance_mode === 'autonomous') {
+      if (isAutonomous(state)) {
         // A work-unit review cannot erase the whole phase container: it may
         // include accepted wall/window objects from earlier appends. Keep the
         // committed scene and require a scoped update/replace operation on the
@@ -1755,8 +1873,31 @@ class ManagedProjects {
   }
 
 
+  async acceptExpertReview(state, input, evidence, quality) {
+    if (input.verdict === 'revise') {
+      state.revision_required = { phase: UNIT_PHASE, work_unit_id: state.work_unit?.id || null, scene_revision: state.scene_revision, evidence_id: input.evidence_id, reason: String(input.note || quality.visual?.observations || 'Current result needs correction.') };
+      state.current_review = null;
+      state.status = 'ready_for_step';
+    } else {
+      validateExpertAudit(state, JSON.parse(await fs.readFile(evidence.record.files.audit.path, 'utf8')));
+      if (state.revision_required && state.revision_required.repair_evidence_id !== input.evidence_id) throw this.stateError('REVISION_REQUIRED', 'A corrected current result is required before acceptance.');
+      delete state.revision_required;
+      const accepted = { phase: UNIT_PHASE, evidence_id: input.evidence_id, scene_revision: state.scene_revision, scope: 'current_project_result', unit_ids: Object.values(state.work_units).filter(u => u.fingerprint).map(u => u.id), state: quality.state, checks: quality.checks.map(({ kind, state, reason }) => ({ kind, state, ...(reason ? { reason } : {}) })) };
+      state.quality_reviews = [...(state.quality_reviews || []), accepted];
+      state.current_review = accepted;
+      state.status = 'ready_to_finish';
+    }
+    await this.saveState(state);
+    return { ok: true, project_id: state.project_id, status: state.status, quality: qualityReviewSummary(state), ...describeActions(state) };
+  }
+
   async reviseFrom(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => this.withActions(await this._reviseFromUnlocked(input, bridge), input.project_id));
+  }
+
+  async _reviseFromUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
+    if (isExpert(state)) throw this.stateError('EXPERT_SCOPED_EDIT', 'Use step with the existing system ID and update/replace; old phase rollback is not an expert edit.');
     const allowed = new Set(['ready_for_step','review_required','ready_to_finish']);
     if (!allowed.has(state.status)) {
       if (state.status === 'evidence_pending') throw new Error('Cannot revise upstream while evidence_pending; next action must be sketchup_project_retry_evidence.');
@@ -1865,7 +2006,7 @@ class ManagedProjects {
       const current = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, 120000));
       if (current.target_fingerprint !== preview.target.target_fingerprint) throw Object.assign(new Error('Patch target changed after preview; no write was attempted'), { code: 'PATCH_TARGET_CHANGED' });
       const operation = { operation_id: crypto.randomUUID(), kind: 'patch', project_id: projectId, target_semantic_id: targetSemanticId, scope, preview_id: previewId, dispatched_at: new Date().toISOString(), status: 'dispatched' };
-      fresh.operation_journal = [...(Array.isArray(fresh.operation_journal) ? fresh.operation_journal : []), operation].slice(-32);
+      fresh.operation_journal = [...(Array.isArray(fresh.operation_journal) ? fresh.operation_journal : []), operation];
       const priorStatus = fresh.status;
       fresh.status = 'patch_in_progress';
       await this.saveState(fresh);
@@ -1948,17 +2089,27 @@ class ManagedProjects {
   }
 
   async finish(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => {
+      const state = await this.loadState(input.project_id);
+      return this.withDocumentWriteLock(state.model_binding, async () => this.withActions(await this._finishUnlocked(input, bridge), input.project_id));
+    });
+  }
+
+  async _finishUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
-    if (state.status !== 'ready_to_finish') throw new Error(`Project is ${state.status}; all phases must be reviewed before finish`);
+    if (state.status === 'finished' && !pendingOperation(state).pending_operation) return { ok: true, project_id: state.project_id, status: 'finished', output_path: state.output_path, evidence_path: state.final_evidence_path, ...describeActions(state) };
+    if (state.status !== 'ready_to_finish') throw this.stateError('DELIVERY_NOT_READY', 'Inspect and review the current result before delivery.');
+    if (validationIssues(state).length || state.revision_required) throw this.stateError('DELIVERY_OPEN_FINDINGS', 'Resolve current known defects before delivery.');
+    if (isExpert(state) && (!state.current_review || state.current_review.scene_revision !== state.scene_revision)) throw this.stateError('DELIVERY_UNREVIEWED', 'Current geometry has not been reviewed.');
     const currentBinding = await this.assertModelBinding(state, bridge);
-    const plannedNames=executionPlan(state).map(p=>p.name);
+    const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
     if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 1)) {
       throw new Error('Delivery blocked: reusable archetypes do not contain an audited source-visible detail system required by this task. Rebuild and review the archetypes step.');
     }
     if (plannedNames.includes('facade_detail') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.unique_details) || state.unique_details.length < 1)) {
       throw new Error('Delivery blocked: no audited source-visible one-off detail is registered. Rebuild and review the facade_detail step.');
     }
-    if (state.mode === 'single_image' && state.source_camera) {
+    if (!isExpert(state) && state.mode === 'single_image' && state.source_camera) {
       const restoreCode = this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]);
       const restored = await bridge('run_ruby', { code: restoreCode, file: this.helperPath }, 120000);
       parseManagedResult(restored);
@@ -2008,6 +2159,7 @@ class ManagedProjects {
       const approvedBinding = pendingMigration ? pending.model_binding_before : currentBinding;
       const approvedState = pendingMigration ? {...state, model_binding: approvedBinding} : state;
       const approved = await this.verifyEvidence(approvedState, approvedEvidenceId, approvedBinding);
+      assertTargets(await this.readDimensionEvidence(state,approved.record),true);
       const recordedAudit = approved.record.files?.audit?.path ? JSON.parse(await fs.readFile(approved.record.files.audit.path, 'utf8')) : null;
       const comparableAudit = pendingMigration ? auditContent : (value) => { const copy = JSON.parse(JSON.stringify(value)); delete copy.created_at; return copy; };
       if (recordedAudit && canonical(comparableAudit(recordedAudit)) !== canonical(comparableAudit(preflightAudit))) {
@@ -2099,6 +2251,7 @@ class ManagedProjects {
   }
 
   async abortPendingEvidence(input, bridge) {
+    if (isExpert(await this.loadState(safeId(input.project_id)))) throw this.stateError('EXPERT_SCOPED_EDIT', 'Committed work units cannot be deleted by phase recovery; use an explicitly scoped update or replace.');
     return this.withProjectLock(safeId(input.project_id), async () => {
       const state = await this.loadState(safeId(input.project_id));
       if (state.status !== 'evidence_pending' || !state.pending_evidence) throw this.stateError('ABORT_PENDING_NOT_AVAILABLE', 'Only an unreviewed phase with frozen evidence may be withdrawn');
@@ -2223,7 +2376,7 @@ class ManagedProjects {
     const pendingAuxiliaryWrite = state.status === 'write_in_progress'
       && unresolved?.status === 'dispatched'
       && ['save_copy', 'remove_phase', 'remove_phases'].includes(unresolved.kind);
-    if (state.status !== 'recovery_required' && !pendingAuxiliaryWrite) throw this.stateError('RECOVERY_NOT_REQUIRED', 'Reconcile is only available while recovery is required or a dispatched auxiliary receipt is pending');
+    if (state.status !== 'recovery_required' && !pendingAuxiliaryWrite && !(state.status === 'step_in_progress' && unresolved?.kind === 'geometry_step')) throw this.stateError('RECOVERY_NOT_REQUIRED', 'Reconcile is only available while recovery is required or a dispatched auxiliary receipt is pending');
     if (unresolved) {
       const receiptResult = await this.operationReceipt({ project_id: state.project_id, operation_id: unresolved.operation_id }, bridge);
       const receipt = receiptResult.receipt;
@@ -2267,7 +2420,8 @@ class ManagedProjects {
         if (unresolved.kind !== 'geometry_step' || !unresolved.script_path) throw this.stateError('RECOVERY_KIND_UNSUPPORTED', 'This receipt requires a supported action-specific recovery adapter; no write is unlocked');
         applyCommittedProgress(state, unresolved);
         state.pending_execution = pendingExecution(unresolved, unresolved.result);
-        state.status = 'evidence_pending';
+        if (isExpert(state)) commitUnit(state, unresolved, unresolved.result);
+        else state.status = 'evidence_pending';
         delete state.recovery_error;
         await this.saveState(state);
         return { ok: true, project_id: state.project_id, status: state.status, reconciled: true, result: 'committed_receipt', can_retry_write: false, operation_id: unresolved.operation_id, next_action: 'Call sketchup_project_retry_evidence, then review; do not replay the committed operation.' };
@@ -2304,12 +2458,17 @@ class ManagedProjects {
   }
 
   async recover(input, bridge) {
+    return this.withProjectLock(safeId(input.project_id), async () => this.withActions(await this._recoverUnlocked(input, bridge), input.project_id));
+  }
+
+  async _recoverUnlocked(input, bridge) {
     const action = input.action || 'restore';
     if (action === 'abort_pending') return this.abortPendingEvidence(input, bridge);
     if (!['inspect', 'reconcile', 'restore'].includes(action)) throw this.stateError('RECOVERY_ACTION_INVALID', 'Recovery action must be inspect, reconcile, or restore');
     if (action === 'inspect') return this.recoveryInspect(input, bridge);
     if (action === 'reconcile') return this.recoveryReconcile(input, bridge);
     const state = await this.loadState(safeId(input.project_id));
+    if (isExpert(state)) return this.restoreExpertCheckpoint(state, bridge);
     const checkpoint = state.last_checkpoint;
     if (!checkpoint?.path || !checkpoint.evidence_id) throw new Error('No managed checkpoint is recorded');
     if (!['ready_for_step', 'review_required'].includes(state.status)) throw new Error('Recovery requires a fully recorded phase; do not infer incomplete evidence approval');
@@ -2348,27 +2507,92 @@ class ManagedProjects {
     return { ok: true, project_id: state.project_id, status: state.status, phase: state.phase, recovered_checkpoint: checkpoint.path, model_binding: current, next_action: 'Call sketchup_project_retry_evidence and review the new evidence_id; the continuation index is preserved.' };
   }
 
+  async readDimensionEvidence(state, record) {
+    const targets = state.task_profile?.dimension_targets || [];
+    if (!targets.length) return [];
+    const file = record.files?.source_dimensions;
+    if (!file?.path) return targets.map(t=>({...t,state:'unverified',reason:'No sealed actual dimension measurement.'}));
+    await verifyEvidenceFiles({file});
+    const data = JSON.parse(await fs.readFile(file.path,'utf8'));
+    if (data.project_id !== state.project_id || data.evidence_id !== record.evidence_id) throw this.stateError('DIMENSION_EVIDENCE_MISMATCH','Dimension evidence belongs to a different result.');
+    // Targets remain authoritative in the task; do not trust expected values
+    // echoed by a build or manufacture coverage from a returned pass label.
+    return evaluateMeasurements(targets,{results:(data.results || []).map(r=>({...r,state:typeof r.measured_mm==='number'?'measured':'unverified'}))});
+  }
+
+  async restoreExpertCheckpoint(state, bridge) {
+    if (pendingOperation(state).pending_operation || state.pending_delivery || !['ready_for_step','review_required','ready_to_finish'].includes(state.status)) {
+      throw this.stateError('RECOVERY_WRITE_UNCERTAIN', 'Resolve pending writes before rebinding an opened checkpoint.');
+    }
+    const checkpoint = state.last_checkpoint;
+    if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING', 'No sealed checkpoint is available.');
+    const sealed = await this.verifyEvidenceIdentity(state, checkpoint.evidence_id);
+    if (sealed.record.scene_revision !== state.scene_revision) throw this.stateError('RECOVERY_CHECKPOINT_STALE', 'This checkpoint predates committed work; automatic rollback would discard it. Preserve the current model.');
+    const file = sealed.record.files?.checkpoint;
+    const auditFile = sealed.record.files?.audit;
+    if (!file?.path || !auditFile?.path || path.resolve(file.path) !== path.resolve(checkpoint.path)) throw this.stateError('RECOVERY_CHECKPOINT_UNSEALED', 'Checkpoint and scene audit must be sealed together.');
+    const binding = await this.modelIdentity(bridge);
+    if (path.resolve(binding.path || '').toLowerCase() !== path.resolve(file.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Open the exact recorded checkpoint explicitly before restore. This action does not open or replace documents.');
+    return this.withDocumentWriteLock(binding, async () => {
+      const current = await this.modelIdentity(bridge);
+      if (!sameModelBinding(binding, current)) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Active document changed during recovery.');
+      const uncertain = await this.unresolvedDocumentOperation(current, state.project_id);
+      if (uncertain) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', 'The opened document has an unresolved write.');
+      const auditPath = path.join(this.projectDir(state.project_id), 'restore-audit-' + crypto.randomUUID() + '.json');
+      try {
+        parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+        const live = JSON.parse(await fs.readFile(auditPath, 'utf8'));
+        const prior = JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
+        validateAuditReadback(live); validateAuditReadback(prior);
+        if (checkpointContent(live) !== checkpointContent(prior)) throw this.stateError('RECOVERY_SCENE_CHANGED', 'Opened checkpoint content differs from its sealed audit. No state was rebound.');
+        validateExpertAudit(state, live);
+        state.model_binding = current;
+        state.model_path = current.path;
+        state.current_review = null;
+        state.last_evidence_id = '';
+        state.status = 'ready_for_step';
+        state.recovery_recapture_required = true;
+        delete state.pending_evidence;
+        await this.writeEvidence(state, {schema_version:1,evidence_id:'recovery_'+crypto.randomUUID(),project_id:state.project_id,record_type:'checkpoint_recovery',created_at:new Date().toISOString(),checkpoint:file,scene_revision:state.scene_revision,model_binding:current});
+        await this.saveState(state);
+        return {ok:true,project_id:state.project_id,status:state.status,model_binding:current,recovered_checkpoint:file.path,...describeActions(state)};
+      } finally { await fs.rm(auditPath,{force:true}).catch(()=>{}); }
+    });
+  }
+
   async status(input) {
     const state = await this.loadState(safeId(input.project_id));
-    const phasePlan = executionPlan(state);
-    const phase = phasePlan[state.step_index];
-    let reviewSheet = '';
-    let evidencePath = '';
-    let reviewInput = null;
-    if (state.status === 'review_required' && state.last_evidence_id && !state.recovery_recapture_required) {
-      const verified = await this.verifyEvidence(state, state.last_evidence_id);
-      reviewInput=reviewAvailability(verified.record.files);
-      reviewSheet = verified.record.files?.review_sheet?.path || '';
-      evidencePath = verified.path;
+    const actions = describeActions(state);
+    const quality = qualityReviewSummary(state);
+    const base = {ok:true, project_id:state.project_id, status:state.status, ...actions};
+    if (input.section === 'review_packet') {
+      if (!state.last_evidence_id) throw this.stateError('MODEL_EVIDENCE_REQUIRED','Capture current model evidence before asking for a review packet.');
+      const evidence=await this.verifyEvidence(state,state.last_evidence_id);
+      return {...base,question:input.question || 'Compare the current model with the original task and source; identify consequential discrepancies.',
+        scope:'current_captured_result_not_live_remeasurement',source:state.source || null,
+        original_task:{...assistanceSummary(state).task_text_ref,read:'sketchup_project_status(section=task)'},
+        evidence:{id:state.last_evidence_id,scene_revision:evidence.record.scene_revision,files:evidence.record.files},
+        findings:quality.unresolved,limits:quality.unverified,
+        instruction:'Read original conditions and actual images. Do not treat the builder’s prior acceptance as evidence. Report only the inspected scope; do not write geometry or state.'};
     }
-    const operations=pendingOperation(state);const includeTask=input.detail===true&&(!input.section||input.section==='task');
-    const pendingEvidenceRepair = state.status === 'evidence_pending' && /consumer|producer|materializ|GEOMETRY_DERIVED_INPUT_INVALID/i.test(String(state.evidence_error||'')) && state.pending_evidence;
-    const response={ ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,includeTask), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: state.status==='finished'?(state.final_evidence_path||''):evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? (state.revision_required && !state.revision_required.repair_evidence_id ? 'Submit the scoped corrective Ruby through the returned next_call; committed geometry is preserved.' : 'Inspect the latest review sheet and submit continue or revise.') : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : pendingEvidenceRepair ? '派生几何证据格式错误但几何已保留：可调用 sketchup_project_recover(action=abort_pending) 撤回当前未审阶段并保留审计，再修正输入；也可先重试取证。' : state.status === 'evidence_pending' ? '下一步调 sketchup_project_retry_evidence；若错误属于派生证据格式，可用 recover(action=abort_pending) 合法撤回当前未审阶段。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
-    if(input.section==='delivery') return {ok:true,project_id:state.project_id,status:state.status,output_path:response.output_path,final_evidence_id:response.final_evidence_id,evidence_path:response.evidence_path,review_sheet:response.review_sheet,quality:qualityReviewSummary(state),unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved,next_call:response.next_call};
-    if(input.section==='quality') return {ok:true,project_id:state.project_id,status:state.status,quality:qualityReviewSummary(state),validation_failed:response.validation_failed,unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved};
-    if(input.section==='constraints') return {ok:true,project_id:state.project_id,status:state.status,assistance:{active_constraints:response.assistance.active_constraints,task_text_ref:response.assistance.task_text_ref}};
-    if(input.section==='task') return {ok:true,project_id:state.project_id,status:state.status,assistance:assistanceSummary(state,true)};
-    return response;
+    if (input.section === 'task') return {...base, assistance:assistanceSummary(state, true)};
+    if (input.section === 'constraints') return {...base, assistance:assistanceSummary(state), requirements:state.task_profile || {}};
+    if (input.section === 'quality') return {...base, quality, ...(input.detail ? {history:state.quality_reviews || [], findings:validationIssues(state)} : {})};
+    if (input.section === 'delivery') return {...base, output_path:state.output_path || null, final_evidence_id:state.final_evidence_id || null, evidence_path:state.final_evidence_path || null, quality};
+    const phase = executionPlan(state)[state.step_index];
+    let evidence = null;
+    if (state.last_evidence_id && ['review_required','ready_to_finish'].includes(state.status)) {
+      const sealed = await this.verifyEvidenceIdentity(state, state.last_evidence_id, {verifyFiles:false});
+      if (!isModelEvidence(sealed.record)) throw this.stateError('EVIDENCE_KIND_INVALID', 'Current inspection pointer is not a model snapshot.');
+      evidence = {evidence_id:state.last_evidence_id, evidence_path:sealed.path, files:sealed.record.files, review_input:reviewAvailability(sealed.record.files)};
+    }
+    return {...base, mode:state.mode, assistance:assistanceSummary(state), execution_policy:policyFor(state),
+      work_unit:state.work_unit || null, work_units:Object.values(state.work_units || {}).map(u => ({id:u.id,name:u.name,revision:u.revision,persistent_id:u.persistent_id || null})),
+      ...(isExpert(state) ? {scene_revision:state.scene_revision} : {phase:state.phase,step_index:state.step_index}),
+      ...pendingOperation(state), evidence, evidence_error:state.evidence_error || null, quality,
+      output_path:state.output_path || null, final_evidence_id:state.final_evidence_id || null,
+      pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null,
+      task_card:phase && state.status !== 'finished' ? taskCard(state,phase,input.detail===true) : null};
   }
 
   async operationReceipt(input, bridge) {
@@ -2376,7 +2600,7 @@ class ManagedProjects {
     const operationId = String(input.operation_id || '').trim();
     if (!/^[0-9a-f-]{36}$/i.test(operationId)) throw this.stateError('OPERATION_ID_INVALID', 'operation_id must be a UUID returned by sketchup_project_step');
     const state = await this.loadState(projectId);
-    const journal = (Array.isArray(state.operation_journal) ? state.operation_journal : []).find((entry) => entry.operation_id === operationId);
+    const journal = await this.recordedOperation(state, operationId);
     if (!journal) throw this.stateError('OPERATION_NOT_FOUND', 'No operation with this ID is recorded for the project');
     let receipt = null;
     try {
@@ -2384,7 +2608,7 @@ class ManagedProjects {
     } catch (error) {
       receipt = { ok: false, code: error.code || 'RECEIPT_UNAVAILABLE', message: String(error.message || error) };
     }
-    return { ok: true, project_id: projectId, operation_id: operationId, journal: journal, receipt, retry_allowed: journal.status === 'completed' || journal.status === 'result_known' ? false : false, next_action: journal.status === 'result_unknown' ? 'Reconcile the recorded receipt or confirm not_executed/aborted; do not dispatch a new write.' : 'Use the recorded operation outcome; no automatic replay is permitted.' };
+    return { ok: true, project_id: projectId, operation_id: operationId, journal: journal, receipt, retry_allowed: false, next_action: journal.status === 'result_unknown' ? 'Reconcile the recorded receipt or confirm not_executed/aborted; do not dispatch a new write.' : 'Use the recorded operation outcome; no automatic replay is permitted.' };
   }
 }
 

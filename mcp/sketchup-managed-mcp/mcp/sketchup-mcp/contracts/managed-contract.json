@@ -143,27 +143,48 @@
       "primary_corrections",
       "facade_detail"
     ],
-    "adapter_version": "0.2.0",
+    "adapter_version": "0.2.1",
     "registration_requirements": {
-      "massing": ["projection_subjects"],
-      "roof_profile": ["roof_control_contract"],
-      "archetypes": ["archetypes", "visible_detail_systems"],
-      "primary_corrections": ["correction_targets"]
+      "massing": [
+        "projection_subjects"
+      ],
+      "roof_profile": [
+        "roof_control_contract"
+      ],
+      "archetypes": [
+        "archetypes",
+        "visible_detail_systems"
+      ],
+      "primary_corrections": [
+        "correction_targets"
+      ]
     },
     "verification": "Formal wrapper records source mappings and phase registrations; live SketchUp execution and visual review remain required."
   },
   "states": {
     "step_in_progress": {
       "implemented": true,
-      "next_actions": ["status", "operation_receipt", "recover:reconcile"]
+      "next_actions": [
+        "status",
+        "operation_receipt",
+        "recover:reconcile"
+      ]
     },
     "patch_in_progress": {
       "implemented": true,
-      "next_actions": ["status", "operation_receipt", "recover:inspect"]
+      "next_actions": [
+        "status",
+        "operation_receipt",
+        "recover:inspect"
+      ]
     },
     "write_in_progress": {
       "implemented": true,
-      "next_actions": ["status", "operation_receipt", "recover:inspect"]
+      "next_actions": [
+        "status",
+        "operation_receipt",
+        "recover:inspect"
+      ]
     },
     "ready_for_step": {
       "implemented": true

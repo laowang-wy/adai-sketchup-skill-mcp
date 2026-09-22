@@ -1,6 +1,6 @@
 # Managed SketchUp Ruby API
 
-Read before writing a managed phase file. The MCP owns transaction, project root, phase, evidence and save. The build file owns only geometry requested by `context['phase']`.
+Read before writing a managed build. The MCP owns transactions, identity, scope, evidence and save. Guided projects use phases; new expert projects use architectural work units. In expert projects `context['phase_group']` is the current system container, not a teaching-stage restriction. Registration examples below are reusable in a complete expert system; headings describe their role, not mandatory separate calls.
 
 ## Entry Point
 
@@ -60,7 +60,7 @@ PipClawManagedProject.register_visible_detail(context['phase_group'], {
   'kind'=>'recessed_window_and_mullion',
   'source_cue'=>'dark recessed glazing with narrow vertical divisions',
   'instances'=>6,
-  'prototype'=>'TypicalBalconyBay',
+  'prototype'=>'typical_balcony_bay',
   'host'=>'typical level'
 })
 ```
@@ -78,7 +78,7 @@ PipClawManagedProject.instantiate_archetype(
 )
 ```
 
-Create at least two true instances. Do not redraw the prototype, copy raw groups or add missing repeatable detail here. If an accepted prototype is wrong, call `sketchup_project_revise_from(project_id, target_phase, reason)` while the project is in an allowed state; it preserves a checkpoint and invalidates affected downstream phases. If the current operation is `evidence_pending` or `result_unknown`, finish the existing recovery chain first; do not replay the write.
+Use true instances where repetition is actually required. In guided replication, reuse the reviewed prototype rather than redrawing it; expert may create a complete prototype and instances in one authorized unit. For guided projects, if an accepted prototype is wrong, call `sketchup_project_revise_from(project_id, target_phase, reason)` while the project is in an allowed state; it preserves a checkpoint and invalidates affected downstream phases. If the current operation is `evidence_pending` or `result_unknown`, finish the existing recovery chain first; do not replay the write.
 
 ## Variants — Controlled Differences
 
@@ -137,3 +137,7 @@ On 2026-09-06 a live SketchUp 2019 diagnostic completed all managed phases, revi
 ## Phase-method task cards (2026-09-07)
 
 MCP task cards now include additive `method` fields with decisions, evidence checks, rejection conditions and a concise review-record schema. They are procedural guidance, not new tool arguments, automatic visual validation or permission to bypass phase restrictions. Project status also returns the current task card for resumed sessions. The runtime source is `modeling-method-cards.json` beside managed-project.js; SKILL's modeling-method-playbook.md supplies fuller explanations. The agent workbook remains outside signed evidence/state. Normal process reload is required for an already-running server to load code changes.
+
+## Expert system operations
+
+New expert projects may combine the above registrations and geometry methods in one system. Use `step` with existing `work_unit_id` or a descriptive `work_unit_name`; intent append/update/replace is bounded by the actual unit. A reviewed system may be edited again; capture and review the new result. Existing phase-based projects keep their saved strategy. See [expert operation](expert-operation.md) and [typed operations](scoped-operations.md).

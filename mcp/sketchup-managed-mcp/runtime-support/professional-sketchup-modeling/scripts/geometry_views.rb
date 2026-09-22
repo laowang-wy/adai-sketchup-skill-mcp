@@ -13,16 +13,19 @@ module PipClawManagedProject
   end
   bounds
  end
- def capture_geometry_views(project_id,phase_name,directory)
+ def capture_geometry_views(project_id,phase_name,directory,requested_json=nil)
   root=root_for(project_id,false);raise 'MANAGED_PROJECT_REQUIRED' unless root && root.valid?
   group=phase_group(root,phase_name);raise 'MANAGED_PHASE_REQUIRED' unless group
-  original=camera_state;view=model.active_view;records=[];visibility=[]
+  view=model.active_view;original=view.camera;records=[];visibility=[]
+  requested=requested_json.nil? ? nil : JSON.parse(requested_json)
+  supported=%w[perspective front side plan underside]
+  raise 'INVALID_GEOMETRY_VIEWS' if requested && (!requested.is_a?(Array) || (requested-supported).any? || requested.uniq.length!=requested.length)
   # Evidence isolates this managed root. Restore all external visibility in ensure.
   model.entities.each{|e|if e!=root && e.respond_to?(:hidden=);visibility<<[e,e.hidden?];e.hidden=true;end}
   root_bounds=drawable_bounds(root.entities,root.transformation)
   raise 'NO_DRAWABLE_GEOMETRY' unless root_bounds.valid?
   targets=[['whole',root_bounds]]
-  ids=JSON.parse(group.get_attribute('ADAI_GEOMETRY','expected_ids','[]'))
+  ids=requested ? [] : JSON.parse(group.get_attribute('ADAI_GEOMETRY','expected_ids','[]'))
   raise 'DIAGNOSTIC_ID_LIMIT' if ids.length>100
   matches=Hash.new{|h,k|h[k]=[]};walk=nil
   walk=lambda{|ents,tr|ents.each{|e|if e.is_a?(Sketchup::Group)||e.is_a?(Sketchup::ComponentInstance)
@@ -37,6 +40,7 @@ module PipClawManagedProject
    next unless bounds.valid?
    center=bounds.center;radius=[bounds.diagonal/2,1.0].max
    shots= label=='whole' ? [['perspective',[1,-1,0.7],true],['front',[0,-1,0],false],['side',[1,0,0],false],['plan',[0,0,1],false],['underside',[1,-1,-0.65],false]] : [['end',[1,-1,0.2],false],['underside',[0,-1,-0.7],false]]
+   shots=shots.select{|kind,_,_|requested.include?(kind)} if requested
    shots.each do |kind,offset,perspective|
     dir=Geom::Vector3d.new(*offset);dir.length=radius*4;up=kind=='plan' ? Y_AXIS : Z_AXIS
     camera=Sketchup::Camera.new(center+dir,center,up,perspective)
@@ -51,7 +55,7 @@ module PipClawManagedProject
   JSON.generate({'ok'=>true,'views'=>records,'omitted_closeups'=>[ids.length-8,0].max})
  ensure
   visibility.each{|e,hidden|e.hidden=hidden if e.valid?} if visibility
-  restore_camera(original) if original
+  view.camera=original if original && view
   view.refresh if view
  end
 end

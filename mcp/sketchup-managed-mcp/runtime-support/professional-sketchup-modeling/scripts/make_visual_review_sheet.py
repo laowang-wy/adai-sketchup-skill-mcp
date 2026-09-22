@@ -1,111 +1,147 @@
 #!/usr/bin/env python3
-"""Create a deterministic side-by-side source/candidate sheet for AI visual inspection.
+"""Full-frame reference comparisons; explicit crops never replace the originals.
 
-This script proves which files were compared and makes proportion comparison easier.
-It intentionally does not decide architectural similarity; the agent must open the sheet.
+Coordinates refer to EXIF-corrected display pixels. Comparison images are aids
+for human/model inspection, never an architectural similarity certificate.
 """
 from __future__ import annotations
-
 import argparse
 import hashlib
+import io
 import json
+import math
+import re
 from pathlib import Path
+from PIL import Image, ImageChops, ImageDraw, ImageOps
 
-try:
-    from PIL import Image, ImageDraw, ImageFont, ImageOps
-except ImportError as exc:
-    raise SystemExit("Pillow is required: python -m pip install Pillow") from exc
-
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+MAX_BYTES = 100_000_000
+MAX_PIXELS = 32_000_000
 
 
-def load(path: Path) -> Image.Image:
-    with Image.open(path) as image:
-        return ImageOps.exif_transpose(image).convert("RGB")
+def read_image(file: Path, expected: str | None = None):
+    if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_BYTES:
+        raise ValueError('IMAGE_FILE_INVALID_OR_TOO_LARGE')
+    data = file.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if expected and digest != expected.lower():
+        raise ValueError('SOURCE_CHANGED')
+    with Image.open(io.BytesIO(data)) as original:
+        if original.width * original.height > MAX_PIXELS:
+            raise ValueError('IMAGE_PIXEL_LIMIT')
+        size = list(original.size)
+        orientation = original.getexif().get(274, 1)
+        image = ImageOps.exif_transpose(original).convert('RGB')
+    return image, {'path': str(file.resolve()), 'sha256': digest, 'original_size': size,
+                   'display_size': list(image.size), 'exif_orientation': orientation,
+                   'coordinates': 'exif_transposed_display_pixels'}
 
 
-def fit_panel(image: Image.Image, width: int, height: int) -> tuple[Image.Image, tuple[int, int, int, int]]:
-    scale = min(width / image.width, height / image.height)
-    resized = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
-    panel = Image.new("RGB", (width, height), "#202328")
-    x = (width - resized.width) // 2
-    y = (height - resized.height) // 2
-    panel.paste(resized, (x, y))
-    return panel, (x, y, x + resized.width, y + resized.height)
-
-
-def add_grid(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], offset_x: int = 0) -> None:
+def crop_box(box, size):
+    if not isinstance(box, list) or len(box) != 4 or any(type(v) not in (int, float) or not math.isfinite(v) for v in box):
+        raise ValueError('REGION_BOX_INVALID')
     x0, y0, x1, y1 = box
-    x0 += offset_x
-    x1 += offset_x
-    for fraction in (0.25, 0.5, 0.75):
-        x = round(x0 + (x1 - x0) * fraction)
-        y = round(y0 + (y1 - y0) * fraction)
-        draw.line((x, y0, x, y1), fill="#ffcc3388", width=2)
-        draw.line((x0, y, x1, y), fill="#ffcc3388", width=2)
-    draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline="#ffffff", width=2)
+    if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+        raise ValueError('REGION_BOX_OUT_OF_BOUNDS')
+    pixels = tuple(round(v * size[i % 2]) for i, v in enumerate(box))
+    if pixels[0] >= pixels[2] or pixels[1] >= pixels[3]:
+        raise ValueError('REGION_BOX_ZERO_PIXELS')
+    return pixels
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--report", type=Path)
-    parser.add_argument("--panel-width", type=int, default=800)
-    parser.add_argument("--panel-height", type=int, default=900)
-    args = parser.parse_args()
+def compose(source, candidate, width=800, height=900):
+    scale = min(width/source.width, height/source.height, width/candidate.width, height/candidate.height, 1.0)
+    header, gap = 44, 12
+    sheet = Image.new('RGB', (width*2+gap, height+header), '#202328')
+    draw = ImageDraw.Draw(sheet)
+    maps = []
+    for i, (image, label) in enumerate(((source, 'SOURCE REFERENCE'), (candidate, 'CURRENT MODEL'))):
+        size = (max(1, round(image.width*scale)), max(1, round(image.height*scale)))
+        offset = (i*(width+gap)+(width-size[0])//2, header+(height-size[1])//2)
+        sheet.paste(image.resize(size, Image.Resampling.LANCZOS), offset)
+        draw.text((i*(width+gap)+12, 14), label, fill='white')
+        maps.append({'original_size': list(image.size), 'display_size': list(size),
+                     'scale_xy': [size[0]/image.width, size[1]/image.height], 'offset_xy': list(offset), 'cropped': False})
+    return sheet, maps
 
-    for field, path in (("source", args.source), ("candidate", args.candidate)):
-        if not path.is_file():
-            print(json.dumps({"ok": False, "error": f"{field} file not found", "path": str(path)}, ensure_ascii=False))
-            return 2
-    if args.source.resolve() == args.candidate.resolve():
-        print(json.dumps({"ok": False, "error": "source and candidate must be different files"}, ensure_ascii=False))
+
+def save_image(file, image):
+    with file.open('xb') as stream:
+        image.save(stream, format='PNG')
+    return {'path': str(file.resolve()), 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(),
+            'width': image.width, 'height': image.height}
+
+
+def make_sheet(source_file: Path, candidate_file: Path, output: Path, report_file: Path,
+               width=800, height=900, regions=None, aligned=False, expected_source=None):
+    if type(width) is not int or type(height) is not int or not (320 <= width <= 2048 and 320 <= height <= 2048):
+        raise ValueError('PANEL_DIMENSIONS_INVALID')
+    source, sm = read_image(source_file, expected_source)
+    candidate, cm = read_image(candidate_file)
+    inputs = {source_file.resolve(), candidate_file.resolve()}
+    if len(inputs) != 2 or output.resolve() in inputs or report_file.resolve() in inputs or output.resolve() == report_file.resolve():
+        raise ValueError('OUTPUT_COLLIDES_WITH_INPUT')
+    if type(aligned) is not bool or aligned and source.size != candidate.size:
+        raise ValueError('ALIGNED_COMPARISON_REQUIRES_EQUAL_PIXEL_FRAMES')
+    regions = [] if regions is None else regions
+    if not isinstance(regions, list) or len(regions) > 16:
+        raise ValueError('REGION_LIMIT')
+    prepared, names = [], set()
+    for region in regions:
+        if not isinstance(region, dict) or set(region) != {'name','source_box','candidate_box'}:
+            raise ValueError('REGION_FIELDS_INVALID')
+        name = region['name']
+        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,48}', name) or name.lower() in names:
+            raise ValueError('REGION_NAME_INVALID')
+        names.add(name.lower())
+        prepared.append((name, crop_box(region['source_box'], source.size), crop_box(region['candidate_box'], candidate.size)))
+    paths = [output, report_file] + [output.with_name(output.stem+'-region-'+name+'.png') for name,_,_ in prepared]
+    if aligned:
+        paths += [output.with_name(output.stem+'-'+suffix+'.png') for suffix in ('overlay','difference')]
+    if any(p.exists() or p.is_symlink() for p in paths):
+        raise ValueError('OUTPUT_EXISTS')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    sheet, maps = compose(source,candidate,width,height)
+    result = {'ok':True,'source':sm,'candidate':cm,'full_frame_maps':maps,
+              'review_sheet':save_image(output,sheet),'regions':[], 'additional_images':[],
+              'registration':'caller_declared_same_pixel_frame' if aligned else 'not_registered',
+              'architectural_verdict':'not_evaluated', 'warning':'No automatic crop, camera adjustment, similarity score or architectural approval.'}
+    for name, a, b in prepared:
+        image, mapping = compose(source.crop(a),candidate.crop(b),width,height)
+        item = save_image(output.with_name(output.stem+'-region-'+name+'.png'),image)
+        result['regions'].append({'name':name,'source_box_px':a,'candidate_box_px':b,'maps':mapping,'image':item})
+        result['additional_images'].append(item)
+    if aligned:
+        for suffix, image in [('overlay',Image.blend(source,candidate,0.5)),('difference',ImageChops.difference(source,candidate))]:
+            result['additional_images'].append(save_image(output.with_name(output.stem+'-'+suffix+'.png'),image))
+    with report_file.open('x',encoding='utf-8',newline='\n') as stream:
+        json.dump(result,stream,ensure_ascii=False,indent=2,allow_nan=False)
+    return result
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    for field in ('source','candidate','output'):
+        parser.add_argument('--'+field,type=Path,required=True)
+    parser.add_argument('--report',type=Path)
+    parser.add_argument('--panel-width',type=int,default=800)
+    parser.add_argument('--panel-height',type=int,default=900)
+    parser.add_argument('--regions-file',type=Path)
+    parser.add_argument('--aligned',action='store_true')
+    parser.add_argument('--source-sha256')
+    args=parser.parse_args()
+    try:
+        regions=None
+        if args.regions_file:
+            if args.regions_file.stat().st_size>100_000:raise ValueError('REGION_FILE_LIMIT')
+            regions=json.loads(args.regions_file.read_text(encoding='utf-8-sig'))
+        make_sheet(args.source,args.candidate,args.output,args.report or args.output.with_suffix('.json'),args.panel_width,args.panel_height,regions,args.aligned,args.source_sha256)
+        print(json.dumps({'ok':True,'output':str(args.output),'report':str(args.report or args.output.with_suffix('.json'))}))
+        return 0
+    except (ValueError,OSError) as error:
+        print(json.dumps({'ok':False,'code':'IMAGE_COMPARISON_FAILED','message':str(error)}))
         return 2
-    if args.panel_width < 320 or args.panel_height < 320:
-        print(json.dumps({"ok": False, "error": "panel dimensions must be >= 320"}, ensure_ascii=False))
-        return 2
-
-    source = load(args.source)
-    candidate = load(args.candidate)
-    header = 58
-    gap = 12
-    left, left_box = fit_panel(source, args.panel_width, args.panel_height)
-    right, right_box = fit_panel(candidate, args.panel_width, args.panel_height)
-    sheet = Image.new("RGB", (args.panel_width * 2 + gap, args.panel_height + header), "#111318")
-    sheet.paste(left, (0, header))
-    sheet.paste(right, (args.panel_width + gap, header))
-    draw = ImageDraw.Draw(sheet, "RGBA")
-    font = ImageFont.load_default()
-    draw.text((16, 18), "SOURCE REFERENCE", fill="white", font=font)
-    draw.text((args.panel_width + gap + 16, 18), "CURRENT SKETCHUP EXPORT", fill="white", font=font)
-    add_grid(draw, tuple(v + (header if i % 2 else 0) for i, v in enumerate(left_box)))
-    shifted_right = tuple(v + (header if i % 2 else args.panel_width + gap) for i, v in enumerate(right_box))
-    add_grid(draw, shifted_right)
-    draw.line((args.panel_width + gap // 2, 0, args.panel_width + gap // 2, sheet.height), fill="#ff5555", width=3)
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    sheet.save(args.output)
-    report = {
-        "ok": True,
-        "source": {"path": str(args.source.resolve()), "sha256": sha256(args.source), "width": source.width, "height": source.height},
-        "candidate": {"path": str(args.candidate.resolve()), "sha256": sha256(args.candidate), "width": candidate.width, "height": candidate.height},
-        "review_sheet": {"path": str(args.output.resolve()), "sha256": sha256(args.output), "width": sheet.width, "height": sheet.height},
-        "warning": "This packet proves file identity only. The agent must open the review sheet and judge architectural similarity.",
-    }
-    report_path = args.report or args.output.with_suffix(".json")
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
-    print(json.dumps({"ok": True, "output": str(args.output), "report": str(report_path)}, ensure_ascii=False))
-    return 0
 
 
-if __name__ == "__main__":
+if __name__=='__main__':
     raise SystemExit(main())

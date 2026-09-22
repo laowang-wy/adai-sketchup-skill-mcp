@@ -1,13 +1,23 @@
-# ADAI SketchUp 0.5.27
+# ADAI SketchUp 0.5.28 — 工程候选
 
-Build: `0.5.27-r3-c01-c06-visual-shorthand-20260922`
+Build: `0.5.28-rc1-expert-work-units-20260922`
 
-This release contains two independent runtime packages: `professional-sketchup-modeling` (Skill) and `sketchup-managed-mcp` (MCP). Install them separately in PipClaw or Codex; the MCP locates its bundled runtime support from its own package directory.
+基于用户确认的 `3a38143a54b1882ff0ac18aee3ff7aabf26e57e8` 源码直接修改。两个包独立安装；MCP 默认定位自身 runtime-support，不依赖 Skill 的绝对安装路径。
 
-- License: CPAL-1.0 (see `LICENSE`)
-- MCP entry: `launch.cjs`
-- Runtime baseline: Windows, Node.js 18+, Python 3.10+, SketchUp 2018/2019
-- REF packs are optional and are loaded through `sketchup_ref`; see the repository experience-pack guide.
+## 本轮实现
+- 新项目专家策略 v2：建筑系统工作单元、连续受管构造、按需当前取证、合并审核和成果交付。guided 与旧项目保留原策略。
+- 八种受管类型操作与自定义 Ruby／已有编译产物共用事务、回执和范围保护。
+- 提交后取证失败保留几何；返修、问题关闭、模型证据与事件记录、历史身份和当前新鲜度分开。
+- 视觉简写缺机器附件时程序标记未验证；已有附件不得用手填路径替换；真实视觉观察不可由程序代填。
+- 可选一次绑定的明确尺寸：有限预检＋实际本地轴/世界缩放读回。
+- 图像全幅和显式局部映射、可选配准叠图、只读审核资料投影；共同体量与构造经验按需使用。
 
-The distributable contains runtime sources and user documentation only. Development tests, evidence reports, temporary logs and model files are kept outside this package.
+## 边界
+本构建的真实 Windows/SketchUp 2018/2019、渲染、保存重开、建筑图像匹配、弱模型能力与 token 对照均为 **not_run**。Linux 的源模块、公开 MCP 协议及模拟 SU API 几何测试不是这些实机验收。
 
+范围按系统单元保护；跨单元共享定义修改、用户手改冲突保守拒绝。每次写入保守失效当前项目视觉结论。旧策略不静默迁移。显式尺寸暂不覆盖面积口径、任意构造关系或扫描图自动抽取。
+
+- MCP入口：`launch.cjs`
+- 运行兼容目标：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；本次测试环境见开发报告。
+- 现有许可、署名、完整品牌命令保持。
+- 运行ZIP仅含运行文件；开发代码、测试替身、报告留源码 `engineering/`。

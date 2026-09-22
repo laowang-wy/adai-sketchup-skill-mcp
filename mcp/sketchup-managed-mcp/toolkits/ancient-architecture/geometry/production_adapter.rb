@@ -14,6 +14,10 @@ module ADAIGeometryAdapter
  end
  def build(entities,context,data)
   start=Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  if context['execution_policy_version'] == 2
+   raise 'GEOMETRY_PHASE_UNSUPPORTED' unless ALLOWED_PHASES.include?(data['phase'])
+   context=context.merge('phase'=>data['phase']) # local algorithm role; does not alter the managed unit
+  end
   raise 'GEOMETRY_PHASE_MISMATCH' unless ALLOWED_PHASES.include?(context['phase']) && context['phase']==data['phase']
   raise 'GEOMETRY_PROJECT_MISMATCH' unless context['project_id']==data['project_id']
   ids=data['parts'].map{|p|p.fetch('semantic_id')};raise 'DUPLICATE_SEMANTIC_ID' unless ids.uniq.length==ids.length

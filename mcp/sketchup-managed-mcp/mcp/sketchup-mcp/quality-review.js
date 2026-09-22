@@ -54,7 +54,7 @@ async function assembleVisualReview(input,state,phase,evidence) {
     const draft=JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));
     if(draft.project_id!==state.project_id || draft.phase!==phase || draft.evidence_id!==input.evidence_id)throw new Error('Stale or unbound sealed review draft');
   }
-  return {...input,quality_review:{schema_version:1,project_id:state.project_id,phase,evidence_id:input.evidence_id,visual:input.visual_review,checks}};
+  return {...input,quality_review:{schema_version:1,project_id:state.project_id,phase,evidence_id:input.evidence_id,visual:{...input.visual_review,inspected_views:(input.visual_review?.inspected_views || []).map(value => files[value]?.path || value)},checks}};
 }
 
 function reviewAvailability(files={}) {
@@ -79,9 +79,22 @@ async function validateQualityReview(input, state, phase, skillRoot, sealedFiles
   if (!Array.isArray(q.checks) || q.checks.length !== 2)
     throw new Error('quality_review.checks must account for geometry and dependencies exactly once');
   const seen = new Set(), results = [];
-  for (const entry of q.checks) {
+  for (const supplied of q.checks) {
+    let entry = supplied;
     if (!object(entry) || typeof entry.kind !== 'string' || !Object.hasOwn(validators,entry.kind) || seen.has(entry.kind)) throw new Error('Invalid or duplicate quality check kind');
     seen.add(entry.kind);
+    if (sealedFiles) {
+      const file = sealedFiles[entry.kind === 'geometry' ? 'geometry_measurements' : 'geometry_dependencies'];
+      if (file?.path) {
+        if (entry.input_path && path.resolve(entry.input_path) !== path.resolve(file.path)) throw Object.assign(new Error('Review input must be the current sealed attachment'), {code:'EVIDENCE_INPUT_UNSEALED'});
+        // A legacy full report cannot bypass a delivered machine check by
+        // describing it as absent. The program already owns this information.
+        entry = {kind:entry.kind, input_path:file.path};
+      } else {
+        if (entry.input_path) throw Object.assign(new Error('Undelivered machine input cannot certify this evidence'), {code:'EVIDENCE_INPUT_UNSEALED'});
+        entry = {kind:entry.kind, state:'unverified', reason:'No sealed machine attachment was generated for this check.'};
+      }
+    }
     if (!Object.hasOwn(entry,'input_path')) {
       if (!['unverified','not_applicable'].includes(entry.state) || !text(entry.reason))
         throw new Error('Missing check input must be explicitly unverified/not_applicable with a reason; a claimed pass is not accepted');
@@ -113,10 +126,17 @@ async function validateQualityReview(input, state, phase, skillRoot, sealedFiles
     const data = JSON.parse(buffer.toString('utf8').replace(/^\uFEFF/,''));
     if (!object(data) || data.project_id !== state.project_id || data.phase !== phase || data.evidence_id !== input.evidence_id)
       throw new Error(`Stale or unbound ${entry.kind} input; project_id, phase and evidence_id must match`);
-    const report = await runValidator(entry.kind,buffer,skillRoot);
+    let report;
+    try { report = await runValidator(entry.kind,buffer,skillRoot); }
+    catch (error) {
+      // Hash/binding errors above remain fatal. A missing local validator is
+      // an unavailable machine check, not a reason to make the model retype it.
+      results.push({kind:entry.kind,state:'unverified',reason:String(error.message || error),scope:'validator_unavailable',input_path:entry.input_path,input_sha256:crypto.createHash('sha256').update(buffer).digest('hex')});
+      continue;
+    }
     if (!object(report) || !['pass','fail','invalid','needs_review','unverified'].includes(report.state)) throw new Error('Unexpected validator report');
     results.push({kind:entry.kind,state:report.state,input_path:entry.input_path,
-      input_sha256:crypto.createHash('sha256').update(buffer).digest('hex'),input_snapshot:data,report});
+      input_sha256:crypto.createHash('sha256').update(buffer).digest('hex'),report});
   }
   if (input.verdict === 'continue' && (visual.state !== 'pass' || results.some(x => ['fail','invalid','needs_review'].includes(x.state)))) {
     // Name the failing checks so the agent can fix inputs without a local rerun.

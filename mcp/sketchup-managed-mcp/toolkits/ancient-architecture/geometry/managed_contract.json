@@ -9,7 +9,7 @@
       "primary_corrections",
       "facade_detail"
     ],
-    "adapter_version": "0.2.0",
+    "adapter_version": "0.2.1",
     "registration_requirements": {
       "massing": [
         "projection_subjects"

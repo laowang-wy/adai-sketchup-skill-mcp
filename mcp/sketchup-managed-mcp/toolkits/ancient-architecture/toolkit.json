@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "ancient-architecture",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "author": "老王 / ADAI",
   "license": "See DISTRIBUTION.md and upstream asset terms",
   "runtime": "python",

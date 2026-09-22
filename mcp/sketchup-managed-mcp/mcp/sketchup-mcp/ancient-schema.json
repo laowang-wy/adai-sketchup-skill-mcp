@@ -1,6 +1,6 @@
 {
   "name": "sketchup_ancient_tool",
-  "description": "AncientArchitectureExperience 0.4: 12 bounded cards, 7 recipes, six roofs, source templates, bearing and eave diagnostics. Offline compile only; managed execution and real review remain required. family=geometry compiles explicit semantic parts through the shared guarded core for an exact project and phase; source fidelity still requires review. Runtime adapter 0.4.4 exposes all roof preset IDs and resolves recipe validation/compilation to source or roof.",
+  "description": "AncientArchitectureExperience 0.4: 12 bounded cards, 7 recipes, six roofs, source templates, bearing and eave diagnostics. Offline compile only; managed execution and real review remain required. family=geometry compiles explicit semantic parts through the shared guarded core for an exact project and phase; source fidelity still requires review. Runtime adapter 0.4.5 exposes all roof preset IDs and resolves recipe validation/compilation to source or roof.",
   "inputSchema": {
     "type": "object",
     "properties": {

@@ -33,3 +33,17 @@ The runtime reference set is loaded on demand. Links below are documentation rou
 - [SOURCE-DIAGNOSIS.md](SOURCE-DIAGNOSIS.md)
 - [trace-manifest-schema.md](trace-manifest-schema.md)
 - [weak-model-starter.md](weak-model-starter.md)
+
+- [shared-architectural-foundation](shared-architectural-foundation.md)
+- [expert-operation](expert-operation.md)
+- [guided-operation](guided-operation.md)
+- [scoped-operations](scoped-operations.md)
+- [source-reading-diagnostics](source-reading-diagnostics.md)
+- [form-feature-review](form-feature-review.md)
+- [assembly-review](assembly-review.md)
+- [camera-capture-review](camera-capture-review.md)
+- [independent-review](independent-review.md)
+- [materials-editability-review](materials-editability-review.md)
+
+- [source-dimensions.md](source-dimensions.md)：一次绑定的明确尺寸与实际对象读回。
+- [reference-comparison.md](reference-comparison.md)：全图、局部映射和可选只读复核资料。

@@ -60,15 +60,17 @@ def validate_phase_contract(data,ids):
   if not isinstance(details,list):raise ValueError('VISIBLE_DETAIL_SYSTEMS_REQUIRED')
   if not details:raise ValueError('VISIBLE_DETAIL_SYSTEMS_REQUIRED')
   required=task.get('required_detail_systems',[])
-  if required is None: required=[]
-  if not isinstance(required,list) or any(not isinstance(x,str) or not x.strip() for x in required):raise ValueError('REQUIRED_DETAIL_SYSTEMS_INVALID')
-  required=set(x.strip() for x in required)
+  if not isinstance(required,list) or len(required)>20 or any(not isinstance(x,str) or not x.strip() or len(x)>160 for x in required):raise ValueError('REQUIRED_DETAIL_SYSTEMS_INVALID')
+  normalized=[x.strip() for x in required]
+  if len(set(normalized))!=len(normalized):raise ValueError('REQUIRED_DETAIL_SYSTEMS_DUPLICATE')
+  required=set(normalized)
   detail_ids=set()
   for item in details:
    if not isinstance(item,dict) or item.get('archetype_id') not in seen or not all(isinstance(item.get(k),str) and item[k].strip() for k in ('id','kind','source_cue')) or type(item.get('instances')) is not int or item['instances']<1:
     raise ValueError('VISIBLE_DETAIL_MAPPING_INVALID')
-   if item['id'] in detail_ids:raise ValueError('DUPLICATE_VISIBLE_DETAIL_ID')
-   detail_ids.add(item['id'])
+   normalized_id=item['id'].strip()
+   if normalized_id in detail_ids:raise ValueError('DUPLICATE_VISIBLE_DETAIL_ID')
+   detail_ids.add(normalized_id)
   missing=required-detail_ids
   if missing:raise ValueError('VISIBLE_DETAIL_SYSTEMS_MISSING:'+','.join(sorted(missing)))
  if phase=='primary_corrections':
@@ -126,7 +128,7 @@ def compile_parts(data,output):
  payload=base64.b64encode(json.dumps(data,separators=(',',':')).encode()).decode()
  ruby+="\n# ADAI_COMPILED_PHASE: "+data['phase']+"\nmodule PipClawManagedBuild\n extend self\n def build(entities,context)\n ADAIGeometryAdapter.build(entities,context,JSON.parse(Base64.strict_decode64('"+payload+"')))\n end\nend\n"
  manifest={'schema_version':1,'kernel_version':VERSION,'adapter_version':ADAPTER_VERSION,'phase':data['phase'],'project_id':data['project_id'],'source_evidence':data['source_evidence'],'task_contract':data['task_contract'],'phase_contract':data['phase_contract'],'generator_recipe':data.get('generator_recipe'),'generator_sha256':data['generator_sha256'],'parameter_sha256':data['parameter_sha256'],'ruby_file':str(out/'build.rb'),'build_sha256':hashlib.sha256(ruby.encode()).hexdigest(),'compile_seconds':time.perf_counter()-start,'parts':[{'semantic_id':p['semantic_id'],'triangles':len(p['triangles']),'checks':p['compile_checks']} for p in data['parts']],'live_state':'unverified','visual_state':'unverified'}
- out.mkdir(parents=True);(out/'build.rb').write_text(ruby,encoding='utf8');(out/'parts.json').write_text(json.dumps(data,ensure_ascii=False),encoding='utf8');(out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8');return manifest
+ out.mkdir(parents=True);(out/'build.rb').write_text(ruby,encoding='utf8',newline='');(out/'parts.json').write_text(json.dumps(data,ensure_ascii=False),encoding='utf8');(out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8');return manifest
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('input',type=Path);p.add_argument('--output',required=True,type=Path);a=p.parse_args()
  try:print(json.dumps({'ok':True,'result':compile_parts(json.loads(a.input.read_text(encoding='utf-8-sig')),a.output)},ensure_ascii=False))

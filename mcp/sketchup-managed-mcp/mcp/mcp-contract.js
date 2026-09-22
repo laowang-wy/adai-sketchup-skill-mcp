@@ -29,9 +29,17 @@ const HIGH_RISK_TOOLS = new Set([
 function requestId() { return `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}` }
 function classifyError(error) {
   const message = error instanceof Error ? error.message : String(error ?? '工具调用失败')
-  const rule = ERROR_RULES.find((candidate) => candidate.pattern.test(message))
-  return { ok: false, code: error?.code || rule?.code || 'runtime_error', message, retryable: rule?.retryable ?? false, suggested_next_action: rule?.suggested_next_action || '检查服务日志与目标应用状态' }
+  // Stable domain codes take precedence. Message text is diagnostic only and
+  // cannot turn an unknown managed outcome into permission to replay it.
+  const rule = error?.code ? null : ERROR_RULES.find(candidate => candidate.pattern.test(message))
+  return { ok:false,code:error?.code || rule?.code || 'runtime_error',message,
+    retryable:error?.code ? false : (rule?.retryable ?? false),
+    suggested_next_action:error?.next_action || (error?.code ? '按当前项目状态处理；未知写入查询原回执，不自动重放。' : rule?.suggested_next_action || '检查服务日志与目标应用状态'),
+    ...(error?.operation_id ? {operation_id:error.operation_id} : {}),
+    ...(error?.committed !== undefined ? {committed:error.committed} : {}),
+    ...(error?.next_call !== undefined ? {next_call:error.next_call} : {})}
 }
+
 function redact(value) {
   if (value === undefined || value === null) return value
   if (typeof value === 'string') return value.replace(/(token|password|secret|authorization|api[_-]?key)([=:]\s*)[^\s,;]+/ig, '$1$2[REDACTED]')
@@ -72,17 +80,22 @@ function validateToolArguments(schema, args) {
   }
   const check = (node, v, pth) => {
     if (!node) return
-    if (node.anyOf) { if (!node.anyOf.some((candidate) => { const before = errors.length; check(candidate, v, pth); const passed = errors.length === before; errors.splice(before); return passed })) errors.push(issue('ARG_TYPE', 'value does not match any allowed schema', pth)); return }
+    const matches = (candidate) => { const before=errors.length; check(candidate,v,pth); const passed=errors.length===before; errors.splice(before); return passed }
+    if (node.anyOf && !node.anyOf.some(matches)) errors.push(issue('ARG_TYPE','value does not match any allowed schema',pth))
+    if (node.oneOf && node.oneOf.filter(matches).length !== 1) errors.push(issue('ARG_ONE_OF','value must match exactly one input alternative',pth))
+    if (node.not && matches(node.not)) errors.push(issue('ARG_EXCLUDED','mutually exclusive input is present',pth))
     const types = Array.isArray(node.type) ? node.type : (node.type ? [node.type] : [])
     if (types.length && !types.some((t) => typeMatches(v, t))) { errors.push(issue('ARG_TYPE', `expected ${types.join(' or ')}`, pth)); return }
     if (node.enum && !node.enum.includes(v)) errors.push(issue('ARG_ENUM', `must be one of: ${node.enum.join(', ')}`, pth))
+    if (typeof v === 'string' && node.pattern && !new RegExp(node.pattern).test(v)) errors.push(issue('ARG_PATTERN','value does not match the required pattern',pth))
+    if (Array.isArray(v) && node.uniqueItems && new Set(v.map(x=>JSON.stringify(x))).size!==v.length) errors.push(issue('ARG_UNIQUE','duplicate array item',pth))
     if (typeof v === 'string') { if (node.minLength !== undefined && v.length < node.minLength) errors.push(issue('ARG_MIN_LENGTH', `minimum length is ${node.minLength}`, pth)); if (node.maxLength !== undefined && v.length > node.maxLength) errors.push(issue('ARG_MAX_LENGTH', `maximum length is ${node.maxLength}`, pth)) }
     if (typeof v === 'number') { if (node.minimum !== undefined && v < node.minimum) errors.push(issue('ARG_MINIMUM', `minimum is ${node.minimum}`, pth)); if (node.maximum !== undefined && v > node.maximum) errors.push(issue('ARG_MAXIMUM', `maximum is ${node.maximum}`, pth)) }
     if (Array.isArray(v)) { if (node.minItems !== undefined && v.length < node.minItems) errors.push(issue('ARG_MIN_ITEMS', `minimum items is ${node.minItems}`, pth)); if (node.maxItems !== undefined && v.length > node.maxItems) errors.push(issue('ARG_MAX_ITEMS', `maximum items is ${node.maxItems}`, pth)); if (node.items) v.forEach((item, i) => check(node.items, item, `${pth}[${i}]`)) }
     if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      for (const req of node.required || []) if (!(req in v)) errors.push(issue('ARG_REQUIRED', `missing required argument: ${req}`, `${pth}.${req}`))
-      if (node.additionalProperties === false && node.properties) for (const key of Object.keys(v)) if (!(key in node.properties)) errors.push(issue('ARG_UNKNOWN', `unknown argument: ${key}`, `${pth}.${key}`))
-      for (const [key, child] of Object.entries(node.properties || {})) if (key in v) check(child, v[key], `${pth}.${key}`)
+      for (const req of node.required || []) if (!Object.hasOwn(v,req)) errors.push(issue('ARG_REQUIRED', `missing required argument: ${req}`, `${pth}.${req}`))
+      if (node.additionalProperties === false && node.properties) for (const key of Object.keys(v)) if (!Object.hasOwn(node.properties,key)) errors.push(issue('ARG_UNKNOWN', `unknown argument: ${key}`, `${pth}.${key}`))
+      for (const [key, child] of Object.entries(node.properties || {})) if (Object.hasOwn(v,key)) check(child, v[key], `${pth}.${key}`)
     }
   }
   check(schema, value, 'arguments')

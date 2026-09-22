@@ -4,6 +4,9 @@ require 'sketchup.rb'
 require 'json'
 require_relative 'geometry_guard'
 require 'digest'
+require 'fileutils'
+require_relative 'managed_unit_scope'
+require_relative 'source_dimensions'
 
 module PipClawManagedProject
   extend self
@@ -269,7 +272,7 @@ module PipClawManagedProject
         record['max_depth'] = depth
       else
         filtered_children = valid_children.reject do |child|
-          excluded_phase && child.is_a?(Sketchup::Group) && child.get_attribute(DICT, 'phase').to_s == excluded_phase.to_s
+          excluded_phase && mutable_member?(child, excluded_phase)
         end
         record['children'] = filtered_children.map { |child| entity_record(child, depth + 1, ignore_visibility_pids, excluded_phase, path + [key], cache) }
         record['incomplete'] = record['children'].any? { |child| child['incomplete'] == true }
@@ -299,7 +302,7 @@ module PipClawManagedProject
     external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
     protected_entities = if root
       root.entities.to_a.select { |entity| entity.valid? rescue false }.reject do |entity|
-        entity.is_a?(Sketchup::Group) && entity.get_attribute(DICT, 'phase').to_s == mutable_phase.to_s
+        mutable_member?(entity, mutable_phase)
       end
     else
       []
@@ -402,18 +405,12 @@ module PipClawManagedProject
     raise ArgumentError, 'phase_group must be a valid SketchUp group' unless phase_group && phase_group.valid?
     data = metadata.is_a?(String) ? JSON.parse(metadata) : metadata
     raise ArgumentError, 'detail metadata must be a Hash' unless data.is_a?(Hash)
-    required = %w[id kind source_cue instances]
-    missing = required.select { |key| data[key].nil? || data[key].to_s.strip.empty? }
-    raise ArgumentError, "detail metadata missing #{missing.join(', ')}" unless missing.empty?
-    raise ArgumentError, 'detail instances must be >= 1' unless data['instances'].to_i >= 1
-    systems = begin
-      JSON.parse(phase_group.get_attribute(DICT, 'visible_detail_systems_json', '[]').to_s)
-    rescue StandardError
-      []
-    end
+    raise ArgumentError, 'detail id, kind and source_cue must be nonempty strings' unless %w[id kind source_cue].all? { |key| data[key].is_a?(String) && !data[key].strip.empty? }
+    raise ArgumentError, 'detail instances must be a positive integer' unless data['instances'].is_a?(Integer) && data['instances'] >= 1
+    systems = phase_registry(phase_group, 'visible_detail_systems_json')
     normalized = {
-      'id'=>data['id'].to_s,
-      'kind'=>data['kind'].to_s,
+      'id'=>data['id'].strip,
+      'kind'=>data['kind'].strip,
       'source_cue'=>data['source_cue'].to_s,
       'instances'=>data['instances'].to_i,
       'prototype'=>(data['prototype'] || '').to_s,
@@ -426,9 +423,7 @@ module PipClawManagedProject
   end
 
   def phase_detail_systems(phase_group)
-    JSON.parse(phase_group.get_attribute(DICT, 'visible_detail_systems_json', '[]').to_s)
-  rescue StandardError
-    []
+    phase_registry(phase_group, 'visible_detail_systems_json')
   end
 
   # Records one-off source-visible detail that must not be propagated as part of
@@ -469,11 +464,7 @@ module PipClawManagedProject
     id = data['id'].to_s.strip
     role = data['role'].to_s.strip
     raise ArgumentError, 'projection subject needs id and role' if id.empty? || role.empty?
-    subjects = begin
-      JSON.parse(phase_group.get_attribute(DICT, 'projection_subjects_json', '[]').to_s)
-    rescue StandardError
-      []
-    end
+    subjects = phase_registry(phase_group, 'projection_subjects_json')
     item = { 'id'=>id, 'role'=>role, 'persistent_id'=>(subject_group.persistent_id rescue nil), 'name'=>subject_group.name.to_s }
     subjects.reject! { |existing| existing.is_a?(Hash) && existing['id'].to_s == id }
     subjects << item
@@ -482,15 +473,17 @@ module PipClawManagedProject
   end
 
   def phase_projection_subjects(phase_group)
-    JSON.parse(phase_group.get_attribute(DICT, 'projection_subjects_json', '[]').to_s)
-  rescue StandardError
-    []
+    phase_registry(phase_group, 'projection_subjects_json')
   end
 
   def phase_registry(phase_group, key)
-    JSON.parse(phase_group.get_attribute(DICT, key, '[]').to_s)
-  rescue StandardError
-    []
+    items = JSON.parse(phase_group.get_attribute(DICT, key, '[]').to_s)
+    unless items.is_a?(Array) && items.all? { |x| x.is_a?(Hash) && x['id'].is_a?(String) && !x['id'].strip.empty? }
+      raise "REGISTRY_INVALID: #{key}"
+    end
+    ids = items.map { |x| x['id'].strip }
+    raise "REGISTRY_DUPLICATE: #{key}" unless ids.uniq.length == ids.length
+    items
   end
 
   def write_phase_registry(phase_group, key, items)
@@ -565,11 +558,11 @@ module PipClawManagedProject
   end
 
   def find_archetype(project_root, archetype_id)
-    phase = phase_group(project_root, 'archetypes')
-    return nil unless phase && phase.valid?
-    item = phase_registry(phase, 'archetypes_json').find { |entry| entry['id'].to_s == archetype_id.to_s }
-    return nil unless item
-    entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i) rescue nil
+    entries = registered_groups(project_root).flat_map { |g| phase_registry(g, 'archetypes_json').select { |i| i['id'].to_s == archetype_id.to_s }.map { |i| [g,i] } }
+    raise 'ARCHETYPE_ID_AMBIGUOUS' if entries.length > 1
+    return nil if entries.empty?
+    group, item = entries.first
+    entity = find_entity_in_collection(group.entities, item['persistent_id'].to_i)
     entity if entity && entity.valid? && entity.respond_to?(:definition)
   end
 
@@ -669,16 +662,15 @@ module PipClawManagedProject
   end
 
   def structure_audit(root)
-    archetype_phase = phase_group(root, 'archetypes')
-    replication_phase = phase_group(root, 'replication')
-    variant_phase = phase_group(root, 'variants')
-    archetypes = archetype_phase ? phase_registry(archetype_phase, 'archetypes_json') : []
+    groups = registered_groups(root)
+    archetypes = groups.flat_map { |g| phase_registry(g, 'archetypes_json') }
     archetypes = archetypes.map do |item|
       entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i) rescue nil
       item.merge('valid'=>!!(entity && entity.valid?), 'counts'=>(entity && entity.valid? ? count_recursive(child_entities(entity)) : {}), 'bounds_inches'=>(entity && entity.valid? ? bounds_signature(entity) : []))
     end
-    replications = replication_phase ? phase_registry(replication_phase, 'replication_systems_json') : []
+    replications = groups.flat_map { |g| phase_registry(g, 'replication_systems_json').map { |r| r.merge('_owner_pid'=>g.persistent_id) } }
     replications = replications.map do |item|
+      replication_phase = groups.find { |g| g.persistent_id == item.delete('_owner_pid') }
       registered = (item['instance_pids'] || []).compact.map(&:to_i)
       unique_pids = registered.uniq
       duplicates = registered.group_by { |pid| pid }.select { |_pid, values| values.length > 1 }.keys
@@ -727,7 +719,7 @@ module PipClawManagedProject
         'valid'=>actual == unique_pids.length && actual > 0 && duplicates.empty? && placement_mismatches.empty? && path_mismatches.empty? && !expected_by_pid.empty? && expected_by_pid.keys.sort == unique_pids.sort
       )
     end
-    variants = variant_phase ? phase_registry(variant_phase, 'variants_json') : []
+    variants = groups.flat_map { |g| phase_registry(g, 'variants_json') }
     variants = variants.map do |item|
       entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i) rescue nil
       item.merge('valid'=>!!(entity && entity.valid?), 'bounds_inches'=>(entity && entity.valid? ? bounds_signature(entity) : []))
@@ -960,16 +952,24 @@ module PipClawManagedProject
   end
 
   def projection_subject_audit(root)
-    massing = phase_group(root, 'massing')
-    return [] unless massing && massing.valid?
-    phase_projection_subjects(massing).map do |item|
-      entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i) rescue nil
-      item.merge('bounds_inches'=>(entity ? bounds_signature(entity) : []), 'screen_bbox_normalized'=>(entity ? screen_bbox_normalized(entity) : []), 'valid'=>!!(entity && entity.valid?))
+    registered_groups(root).flat_map do |group|
+      phase_projection_subjects(group).map do |item|
+        entity = find_entity_in_collection(group.entities, item['persistent_id'].to_i)
+        item.merge('bounds_inches'=>(entity ? bounds_signature(entity) : []), 'screen_bbox_normalized'=>(entity ? screen_bbox_normalized(entity) : []), 'valid'=>!!(entity && entity.valid?))
+      end
     end
   end
 
-  def preflight_build_script(script_path)
-    source = File.binread(script_path.to_s)
+  def build_source(bytes)
+    header=bytes.lines.first(2).join
+    encoding=header.match(/(?:coding|encoding)\s*[=:]\s*([A-Za-z0-9_-]+)/)
+    source=bytes.dup.force_encoding(encoding ? Encoding.find(encoding[1]) : Encoding::UTF_8)
+    raise 'BUILD_ENCODING_INVALID' unless source.valid_encoding?
+    source
+  end
+
+  def preflight_build_script(script_path, source = nil)
+    source = build_source(source || File.binread(script_path.to_s))
     if defined?(RubyVM::InstructionSequence) && RubyVM::InstructionSequence.respond_to?(:compile)
       RubyVM::InstructionSequence.compile(source, script_path.to_s, script_path.to_s, 1)
     end
@@ -1050,23 +1050,17 @@ module PipClawManagedProject
     raise ArgumentError, 'operation_id is required' if operation_id.to_s.empty?
     target = operation_receipt_path(project_id, operation_id)
     binding = JSON.parse(model_identity)
-    operation_context = operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s)
-    raise ArgumentError, 'operation_context must be a JSON object' unless operation_context.is_a?(Hash)
-    intent = operation_context['intent'].to_s
-    raise ArgumentError, 'operation_context.intent must be append, update, or replace' unless intent.empty? || %w[append update replace].include?(intent)
-    unless operation_context.empty?
-      strategy = operation_context['strategy'].to_s
-      raise ArgumentError, 'operation_context.strategy must be expert_work_unit or guided_phase' unless %w[expert_work_unit guided_phase].include?(strategy)
-      version = operation_context['policy_version']
-      raise ArgumentError, 'operation_context.policy_version must be supported integer 1' unless (version.is_a?(Integer) || version.to_s == '1') && version.to_i == 1
-      if strategy == 'expert_work_unit' && operation_context['work_unit_id'].to_s.strip.empty?
-        raise ArgumentError, 'expert_work_unit requires work_unit_id'
-      end
-      if strategy == 'guided_phase' && !operation_context['work_unit_id'].to_s.strip.empty?
-        raise ArgumentError, 'guided_phase cannot carry expert work_unit_id'
-      end
+    begin
+      operation_context = operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s)
+      validate_operation_context(operation_context, operation_id)
+      source = File.binread(script_path.to_s)
+      expected = operation_context['expected_script_sha256']
+      raise 'SCRIPT_CHANGED_BEFORE_EXECUTION' if expected && Digest::SHA256.hexdigest(source) != expected
+      preflight_build_script(script_path, source)
+    rescue StandardError, SyntaxError => error
+      return JSON.generate({'ok'=>false, 'error'=>error.message, 'preflight'=>true, 'transaction_started'=>false, 'rollback_unconfirmed'=>false})
     end
-    request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.file(script_path).hexdigest, 'model_binding'=>binding, 'operation_context'=>operation_context}
+    request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.hexdigest(source), 'model_binding'=>binding, 'operation_context'=>operation_context}
     if File.file?(target)
       prior = JSON.parse(File.binread(target))
       raise 'OPERATION_ID_CONFLICT' unless prior['request'] == request
@@ -1077,7 +1071,7 @@ module PipClawManagedProject
     File.open(target, File::WRONLY | File::CREAT | File::EXCL, 0600) do |file|
       file.write(JSON.generate({'request'=>request, 'status'=>'started'})); file.flush; file.fsync
     end
-    result = execute_step(project_id, phase_name, step_index, script_path, projection_brief_json, request, operation_context)
+    result = execute_step(project_id, phase_name, step_index, script_path, projection_brief_json, request, operation_context, source)
     receipt = {'request'=>request, 'status'=>'completed', 'result'=>JSON.parse(result)}
     temporary = target + '.tmp'
     File.open(temporary, 'wb') { |file| file.write(JSON.generate(receipt)); file.flush; file.fsync }
@@ -1085,23 +1079,42 @@ module PipClawManagedProject
     result
   end
 
-  def execute_step(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_request = nil, operation_context = {})
+  def execute_step(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_request = nil, operation_context = {}, verified_source = nil)
     raise ArgumentError, 'project_id is required' if project_id.to_s.strip.empty?
     raise ArgumentError, 'phase_name is required' if phase_name.to_s.strip.empty?
     raise "Ruby build file not found: #{script_path}" unless File.file?(script_path.to_s)
     begin
-      preflight_build_script(script_path)
+      validate_operation_context(operation_context, operation_request && operation_request['operation_id']) unless operation_context.empty?
+      verified_source = build_source(verified_source || File.binread(script_path.to_s))
+      preflight_build_script(script_path, verified_source)
     rescue Exception => error
       raise if error.is_a?(Interrupt) || error.is_a?(SystemExit)
       return JSON.generate({'ok'=>false, 'error'=>"#{error.class}: #{error.message}", 'exception'=>exception_payload(error), 'preflight'=>true, 'transaction_started'=>false, 'rollback_unconfirmed'=>false})
     end
-    apply_runtime_render_profile
     existing_root = root_for(project_id, false)
+    new_expert = operation_context['policy_version'] == 2
+    scope = new_expert ? {'project_id'=>project_id.to_s, 'work_unit_id'=>operation_context.fetch('work_unit_id')} : phase_name
+    begin
+      if new_expert
+        selected = work_unit_group(existing_root, operation_context['work_unit_id'])
+        expected = operation_context['expected_fingerprint']
+        if selected
+          raise 'UNIT_SCOPE_CHANGED' unless expected && unit_fingerprint(selected) == expected && selected.persistent_id == operation_context['expected_pid']
+          raise 'UNIT_LOCKED' if selected.locked? || (existing_root && existing_root.locked?)
+        elsif expected || operation_context['intent'] == 'update'
+          raise 'UNIT_TARGET_MISSING'
+        end
+      end
+    rescue StandardError => error
+      return JSON.generate({'ok'=>false, 'error'=>error.message, 'transaction_started'=>false, 'rollback_unconfirmed'=>false})
+    end
+    apply_runtime_render_profile
     include_protected_root = !existing_root.nil?
     managed_visibility_pids = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }.map { |entity| (entity.persistent_id rescue entity.entityID).to_s }
     before_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
-    before = external_fingerprint(project_id, phase_name, managed_visibility_pids, include_protected_root)
+    before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root)
     rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__')
+    locked_before = new_expert ? locked_scope_fingerprint(existing_root) : nil
     started = false
     committed = false
     commit_attempted = false
@@ -1120,11 +1133,11 @@ module PipClawManagedProject
       expert = operation_context.is_a?(Hash) && operation_context['strategy'].to_s == 'expert_work_unit'
       intent = operation_context.is_a?(Hash) ? operation_context['intent'].to_s : 'replace'
       work_unit_id = operation_context['work_unit_id'].to_s
-      old = phase_group(root, phase_name, expert ? work_unit_id : nil)
+      old = new_expert ? work_unit_group(root, work_unit_id) : phase_group(root, phase_name, expert ? work_unit_id : nil)
       reusable = expert && intent != 'replace' && old && old.valid?
       old.erase! if old && old.valid? && !reusable
       phase = reusable ? old : root.entities.add_group
-      phase.name = format('%02d_%s', step_index.to_i + 1, phase_name) unless reusable
+      phase.name = new_expert ? operation_context.fetch('unit_name', 'Architectural system') : format('%02d_%s', step_index.to_i + 1, phase_name) unless reusable
       phase.set_attribute(DICT, 'project_id', project_id.to_s)
       phase.set_attribute(DICT, 'phase', phase_name.to_s)
       phase.set_attribute(DICT, 'step_index', step_index.to_i)
@@ -1139,7 +1152,9 @@ module PipClawManagedProject
       end
 
       Object.send(:remove_const, :PipClawManagedBuild) if Object.const_defined?(:PipClawManagedBuild)
-      load script_path.to_s
+      # Evaluate the exact bytes that were hashed/compiled, with the original
+      # file name so require_relative continues to resolve correctly.
+      eval(build_source(verified_source), TOPLEVEL_BINDING, File.expand_path(script_path.to_s), 1)
       unless Object.const_defined?(:PipClawManagedBuild) && PipClawManagedBuild.respond_to?(:build)
         raise 'Managed build file must define PipClawManagedBuild.build(entities, context)'
       end
@@ -1162,7 +1177,10 @@ module PipClawManagedProject
         'mm_to_inches'=>0.03937007874015748,
         'projection_brief'=>projection_brief,
         'operation_intent'=>operation_context['intent'].to_s,
-        'work_unit_id'=>operation_context['work_unit_id']
+        'work_unit_id'=>operation_context['work_unit_id'],
+        'execution_policy_version'=>operation_context['policy_version'],
+        'dimension_targets'=>operation_context['dimension_targets'] || [],
+        'execution_strategy'=>operation_context['strategy']
       }
       result = PipClawManagedBuild.build(phase.entities, context)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }
@@ -1171,13 +1189,15 @@ module PipClawManagedProject
         (entity.hidden? rescue false) != true
       end
       raise 'Managed isolation violation: tool-owned project roots must remain hidden during an isolated step' if visibility_violation
-      after = external_fingerprint(project_id, phase_name, managed_visibility_pids, include_protected_root)
+      after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root)
       unless before == after
         after_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
         debug_path = File.join(ENV['APPDATA'].to_s, 'SketchUpLiveMCP', 'last-isolation-diff.json')
         File.write(debug_path, JSON.generate({'project_id'=>project_id, 'before'=>before_records, 'after'=>after_records}))
         raise 'Managed isolation violation: geometry outside the project root changed; see last-isolation-diff.json'
       end
+      raise 'LOCKED_ENTITY_CHANGED' if new_expert && locked_before != locked_scope_fingerprint(root)
+      unit_result = new_expert ? unit_scope_record(phase) : nil
       counts = count_recursive(phase.entities)
       bounds = bounds_signature(phase)
       metrics = complexity_metrics(phase)
@@ -1192,7 +1212,8 @@ module PipClawManagedProject
         'complexity_metrics'=>metrics,
         'ok'=>true, 'project_id'=>project_id.to_s, 'phase'=>phase_name.to_s,
         'step_index'=>step_index.to_i, 'phase_pid'=>(phase.persistent_id rescue nil),
-        'counts'=>counts, 'bounds_inches'=>bounds, 'build_result'=>result
+        'counts'=>counts, 'bounds_inches'=>bounds, 'build_result'=>result,
+        'unit_scope'=>unit_result
       })
     rescue Exception => error
       propagate = error.is_a?(Interrupt) || error.is_a?(SystemExit) || error.is_a?(NoMemoryError)
@@ -1236,6 +1257,7 @@ module PipClawManagedProject
       started = true
       root = root_for(project_id, false)
       removed = 0
+      raise 'EXPERT_SCOPED_REPLACEMENT_REQUIRED' if phase_name == 'work_unit'
       if root
         target = phase_group(root, phase_name, work_unit_id)
         if target && target.valid?
@@ -1292,6 +1314,7 @@ module PipClawManagedProject
       removed = []
       normalized.each do |phase_name|
         unit_id = operation_request && operation_request.dig('operation_context','work_unit_id')
+        raise 'EXPERT_SCOPED_REPLACEMENT_REQUIRED' if phase_name == 'work_unit'
         target = phase_group(root, phase_name, unit_id)
         next unless target && target.valid?
         target.erase!
@@ -1343,16 +1366,22 @@ module PipClawManagedProject
       'up'=>c.up.to_a,
       'perspective'=>c.perspective?,
       'fov'=>(c.fov rescue nil),
-      'height'=>(c.height rescue nil)
+      'height'=>(c.height rescue nil),
+      'aspect_ratio'=>(c.aspect_ratio rescue 0.0),
+      'fov_is_height'=>(c.fov_is_height? rescue nil),
+      'two_point'=>(c.respond_to?(:is_2d?) ? c.is_2d? : false),
+      'viewport_pixels'=>[model.active_view.vpwidth,model.active_view.vpheight]
     })
   end
 
   def restore_camera(state_json)
     state = state_json.is_a?(String) ? JSON.parse(state_json) : state_json
+    raise 'TWO_POINT_CAMERA_RESTORE_UNSUPPORTED: retain the original Camera object instead of reconstructing it' if state['two_point'] == true
     eye = Geom::Point3d.new(*state['eye'])
     target = Geom::Point3d.new(*state['target'])
     up = Geom::Vector3d.new(*state['up'])
     camera = Sketchup::Camera.new(eye, target, up, !!state['perspective'])
+    camera.aspect_ratio = state['aspect_ratio'].to_f if state.key?('aspect_ratio') && camera.respond_to?(:aspect_ratio=)
     camera.fov = state['fov'].to_f if state['perspective'] && state['fov']
     camera.height = state['height'].to_f if !state['perspective'] && state['height'] && camera.respond_to?(:height=)
     model.active_view.camera = camera
@@ -1537,7 +1566,9 @@ module PipClawManagedProject
     root.entities.grep(Sketchup::Group).each_with_object({}) do |group, result|
       phase = group.get_attribute(DICT, 'phase').to_s
       next if phase.empty?
-      result[phase] = {'boundary'=>external_fingerprint(project_id, phase, visibility, true, cache), 'locked'=>Digest::SHA256.hexdigest(canonical_json(locked))}
+      scope = phase == 'work_unit' ? {'project_id'=>project_id.to_s,'work_unit_id'=>group.get_attribute(DICT,'work_unit_id')} : phase
+      key = phase == 'work_unit' ? group.get_attribute(DICT,'work_unit_id').to_s : phase
+      result[key] = {'boundary'=>external_fingerprint(project_id, scope, visibility, true, cache), 'locked'=>Digest::SHA256.hexdigest(canonical_json(locked))}
     end
   end
 
@@ -1555,7 +1586,8 @@ module PipClawManagedProject
         'persistent_id'=>(group.persistent_id rescue nil),
         'bounds_inches'=>bounds_signature(group),
         'counts'=>count_recursive(group.entities),
-        'visible_detail_systems'=>phase_detail_systems(group),
+        'work_unit_id'=>group.get_attribute(DICT, 'work_unit_id'),
+        'visible_detail_systems'=>audited_detail_systems(group),
         'unique_details'=>phase_registry(group, 'unique_details_json')
       }
     end
@@ -1581,6 +1613,7 @@ module PipClawManagedProject
         'geometry_summary'=>geometry_summary(root, nil, audit_cache)
       },
       'phases'=>phases,
+      'work_units'=>registered_groups(root).select { |g| g.get_attribute(DICT,'phase') == 'work_unit' }.map { |g| unit_scope_record(g) },
       'visible_detail_systems'=>detail_systems,
       'unique_details'=>unique_details,
       'projection_subjects'=>projection_subject_audit(root),
@@ -1715,8 +1748,11 @@ module PipClawManagedProject
     directory = File.dirname(output_path.to_s)
     Dir.mkdir(directory) unless Dir.exist?(directory)
     view = model.active_view
-    ok = view.write_image(output_path.to_s, 1600, 1200, true, 0.9)
-    JSON.generate({'ok'=>!!ok, 'path'=>output_path.to_s, 'width'=>view.vpwidth, 'height'=>view.vpheight})
+    ratio=view.camera.aspect_ratio.to_f rescue 0.0
+    ratio=view.vpwidth.to_f / [view.vpheight,1].max if ratio<=0
+    width=1600; height=[[ (width/ratio).round, 128].max, 4096].min
+    ok = view.write_image(output_path.to_s, width, height, true, 0.9)
+    JSON.generate({'ok'=>!!ok, 'path'=>output_path.to_s, 'width'=>width, 'height'=>height, 'viewport_width'=>view.vpwidth, 'viewport_height'=>view.vpheight, 'camera'=>JSON.parse(camera_state)})
   end
   # Camera preparation only. OS viewport capture occurs AFTER this request returns.
   def viewport_plan(project_id, phase_name)

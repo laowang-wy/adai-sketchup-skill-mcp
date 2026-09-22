@@ -1,75 +1,42 @@
-# 受管阶段的结构化质量审查
+# 当前成果审核：模型判断，程序维护记录
 
-适用本机方法卡版本 2026-09-07.5、quality_review_contract.version=1。这是受管审查的输入核验层；没有新增实际 SU 几何导出器，也不能认证照片相似度或用户声明的测量真实性。
+两种策略共用成果要求。guided按当前阶段；新expert在有意义的建筑成果节点取证，多笔构造合并核对。不要把本文件变成逐步证明表。
 
-## 调用顺序
+## 正常入口
 
-1. 按既有流程 step，取得当前 project_id、phase、evidence_id 和 review_sheet。
-2. 实际打开审查图，记录本阶段具体观察。准备真实测量/依赖输入，放在普通工作目录。
-3. 输入文件根写入与本次一致的 project_id、phase、evidence_id。几何格式见 [quality-check-contract.md](quality-check-contract.md)，依赖格式见 [parameter-dependency-contract.md](parameter-dependency-contract.md)。
-4. review 的生产 continue 必须提交 quality_review。MCP 读取最多 4 MiB 的 JSON 快照，核验绑定，调用当前安装的 Python 校验器；不信任自填的报告 pass。
-5. visual 不是 pass，或检查结果 fail/invalid/needs_review 时拒绝推进，且不写阶段决定和状态。检查器不可用也拒绝推进。修正实际问题后重试，或使用 revise；不会代替代理重建几何。
-
-## 参数示例（格式示意，必须替换为实际记录）
+实际打开当前图后，提交：
 
 ```json
 {
-  "project_id": "YourProject",
-  "evidence_id": "CURRENT_EVIDENCE_ID",
-  "verdict": "continue",
-  "quality_review": {
-    "schema_version": 1,
-    "project_id": "YourProject",
-    "phase": "archetypes",
-    "evidence_id": "CURRENT_EVIDENCE_ID",
-    "visual": {
-      "state": "pass",
-      "observations": "填写真实观察、来源对应关系、尺寸或局部缺陷检查结论；不要照抄本占位文字",
-      "inspected_views": ["实际打开的原型、宿主、邻接视图"]
-    },
-    "checks": [
-      {"kind":"geometry", "input_path":"C:/your-project/measurements.json"},
-      {"kind":"dependencies", "input_path":"C:/your-project/dependency-graph.json"}
-    ]
+  "project_id":"项目返回的ID",
+  "evidence_id":"当前成果返回的ID",
+  "verdict":"continue",
+  "visual_review":{
+    "state":"pass",
+    "observations":"实际观察到的来源对应、装配关系和仍需说明的限制；不得照抄占位文字",
+    "inspected_views":["reference"]
   }
 }
 ```
 
-visual.inspected_views 与 observations 是代理声明，不能证明图像已被工具独立检验。只有实际检查后才填写 pass。每次 continue 必须恰好说明 geometry、dependencies 两类检查，不可重复或省略。
+`inspected_views`可以使用已返回的图片键或路径，只列实际查看过的图片。产生、返回或下载图片不证明已经看图。`revise`用于指出真实缺陷；无完整判断时不要写pass。
 
-没有适用数据时，某个 check 可使用 `{"kind":"dependencies","state":"unverified","reason":"具体缺少的记录或能力及影响"}`；确实不适用时用 not_applicable 并说明原因。不允许仅用 `state:pass` 替代输入。已知失败不能删除输入后改写为“不适用”来绕过检查；必须修复或 revise。关键质量约束仍未核实时，应继续检查或 revise，不因接口允许记录未知项就声称通过质量验收。
+程序自动绑定项目、单元/阶段、证据、操作与附件。已有机器附件校验归属与原始字节后运行检查；确实未生成的附件自动记为`unverified`，无需模型再填写缺失原因或完整quality_review。附件损坏、篡改、错误项目不会降级为普通缺失；已知失败不能用“不适用”绕过。
 
-## 证据与兼容
+已有目标尺寸绑定时，源尺寸与实际对象测量由程序比较，详见[已确认尺寸](source-dimensions.md)。未验证的明确尺寸会阻止最终交付。没有绑定时不编造数值，也不声称程序已经自动证明所有任务条件。
 
-- MCP 把输入快照、原始字节 SHA256、校验结果、视觉声明写入既有受管决定证据；调用者不得手动修改签名证据。
-- 未知项以 accepted_with_unverified_items 保留在阶段历史；两类声明检查都通过才是 declared_checks_pass，始终保留 geometry_readback=unverified。
-- finish 返回并记录本版本开始累计的 quality_review_history；没有记录的早期阶段仍未验证，不能推断整段历史都通过。
-- revise 可不提交报告，以保持纠错路径；test 模式可省略，仅证明诊断流程。生产模式旧版仅传 note 的 continue 会被明确拒绝，原状态保持；这是有意加强的接口要求，不是自动迁移旧验收。
-- Python 解释器默认 python，可设置 PIPCLAW_PYTHON 为解释器可执行文件路径；SDK 环境与 Python 环境相互独立。每个校验器最长 30 秒、无窗口运行，临时输入/报告在 finally 清理。
-- 常驻 MCP 可能仍加载旧模块。检查当前工具 schema 的 quality_review 或任务卡 quality_review_contract，不能仅凭磁盘文件宣称运行时已更新。无需为维护关闭/重启 SketchUp。
+## 返修与有效性
 
-## 验证范围
+专家在授权单元修正对象或明确替换该单元。已提交成果不会因为截图、派生材料或质量检查失败被自动删除。新成果覆盖同一问题且确实通过时，由程序关闭旧问题；无关问题继续保留。引导模式使用当前阶段返修及`revise_from`，不要另起项目规避失败。
 
-`scripts/test_quality_review.mjs` 使用真实 Python 校验器，并以只读替身调用实际 ManagedProjects.review，检查拒绝时状态不变、成功时决定载荷包含结果。没有调用 SU 桥接或真实模型写入；没有冒称完成 live readback。真实重开、表面接触、照片轮廓与自动模型依赖提取仍待专项实现和受管试验。
+事件链尾与当前模型证据分开；审核决定不是可以重新审核的模型图片。历史记录验证来源与签名，当前结果还要验证状态、附件和现场。新expert当前采用保守的整项目视觉失效：任何写入后需要新结果图，再据实际问题选择补充视角；不假装已有完整细粒度遮挡依赖图。
 
+通过、失败、未验证分开；`accepted_with_unverified_items`不能对外宣传为全部机器检查通过。实际模型与来源符合性仍需要专业判断，闭合、数量与名字不能替代。
 
-## 审查草稿与报错定位（2026-09-07）
+## 兼容接口与维护工具
 
-`python scripts/scaffold_quality_review.py --step-result STEP_RESULT.json --out NEW_REVIEW.json`
+旧`quality_review`接口保留，但普通建模不需要手工重写绑定、文件路径、哈希或两项机器检查。同次不能同时提供quality_review与visual_review；完整接口也不能用自选未封存输入替代当前附件。
 
-只生成工作区草稿，不调用 MCP、不提交审查、不修改签名证据；已有输出拒绝覆盖。自动复制项目/阶段/证据绑定。默认 visual=unverified、observations 为空、inspected_views 为空，两类检查的 reason 为空，因此原样提交会被现有门禁拒绝。查看真实图片后填写观察与实际 inspected_views；`--view` 只解析图片路径，不证明图片已查看。可用 `--geometry-input` / `--dependencies-input` 指向真实输入；本工具不会生成测量、期望值或通过结论，也不认证结果文件是否为最新，最终仍由 MCP 核对。
+`scaffold_quality_review.py`仅为旧项目维护辅助，不是当前模型的必走步骤。声明的依赖/测量图不是SU现场事实，不得抄新哈希到旧几何记录冒充重建。正式判断使用当前封存附件、独立实际读回与真实观察。
 
-禁止把辅助工具写成默认 visual=pass，或自动给所有阶段套用固定的 unverified 理由。缺少自动提取不代表无法记录已知依赖；依赖图只有 parameter 时不覆盖构件消费关系。数值检查暂不支持表面接触，也不代表实例位置/变换等现有检查全部不适用。逐阶段说明已查范围、缺失范围及其对验收的影响，关键缺陷不能改写为未知后继续。
-
-MCP 拒绝检查时现在返回 visual 与每类检查状态，并附首个带 reason 的失败项（限长）。据此定位输入错误，不必为简单格式问题反复读服务器源码。矩阵错误明确要求每个链元素为嵌套 4×4，不是平铺 16 项；这是格式提示，不提供默认“正确”矩阵。
-
-Windows PowerShell 调用辅助 Python 优先使用 `.py` 文件或 here-string 管道，不使用 Bash 的 `python - <<PY`。回放/截断/读回等工具协议问题保留证据单独诊断，不能通过伪造读回数据来补齐审查。
-
-## 本次变更的复查范围
-
-按 [局部复查](change-focused-review.md) 将对象、来源约束、本次变化和实际复查写入既有 observations / defect_regressions，不新增必填 JSON 字段。先复用本次证据，必要时补局部及装配图；旧图只作历史比较。检查器输入通过不代表视觉通过。
-# 同一 review 的视觉简写
-
-当 step/status 返回 `review_input.visual_review_available=true`，可提交 `visual_review:{state,observations,inspected_views}`，同时明确 `project_id/evidence_id/verdict`。机械输入由程序从该证据的封存附件取出并以同一字节快照运行原校验器；可用状态是 `pending_validation`，不代表检查通过。视觉判断仍需实际查看本次图像。
-
-原完整 `quality_review` 保留；两者同时提供会拒绝。缺少封存测量、依赖或草稿时，简写返回缺失项；完整输入可以按原规则明确写 unverified/not_applicable 与原因，不能把未知写成通过。`revise` 仍可不提供报告，但不会绕过保护范围核对。重新取证不会把旧测量改名当新读回。
+第一次使用新构建先确认活动MCP进程版本；文件已替换不等于运行模块已更新。未运行真机重开、材质或编辑测试必须明确说明。

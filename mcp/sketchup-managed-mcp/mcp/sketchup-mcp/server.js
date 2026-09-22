@@ -18,12 +18,12 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.27',
+  version: '0.5.28',
   build_id: require('../../manifest.json').build_id,
 };
 
-// Guided mode receives the bounded starter card; autonomous mode only reduces
-// repeated method exposition. Neither mode changes permissions or quality gates.
+// Startup is shared. The project selects either guided phases or real expert
+// work units; both retain transaction, identity and evidence integrity checks.
 let startupSatisfied = !require('./agent-profile').agentProfile(APP_DATA_DIR).starter_required;
 function requiresStartup(name) {
   return name.startsWith('sketchup_') && !['sketchup_runtime', 'sketchup_ref'].includes(name);
@@ -83,14 +83,14 @@ const tools = [
         mode: { type: 'string', enum: ['single_image', 'cad', 'freeform', 'refinement', 'test', 'attribution'] },
         source_image: { type: 'string', description: 'Required for single_image mode.' },
         attribution_command:{type:'string',enum:['显源'],description:'Required for attribution mode; only explicit user command.'},
-        projection_brief: { type: 'object', description: 'Required for single_image mode: 1-8 source key-subject screen boxes with id, role and normalized bbox [x0,y0,x1,y1].' },
+        projection_brief: { type: 'object', description: 'Guided single-image tasks require key-subject boxes. Expert may omit these boxes and use actual visual comparison; omitted boxes are not machine-verified.' },
         output_directory: { type: 'string' },
         project_id: { type: 'string' },
         assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'Saved per-project assistance preference. auto is compatibility-only and resolves to guided.' },
         task_text: { type: 'string', description: 'Optional original task text. Only an exact first non-empty line command selects autonomous/guided; the remainder is retained.' },
         work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$', description: 'Optional autonomous work-unit label. It groups related managed operations without bypassing phase, evidence, or transaction guards.' },
         detail: { type: 'boolean', description: 'Return the original task text in the response; default false returns only a hash and readable reference.' },
-      task_profile: { type: 'object', description: 'Optional bounded task routing hints. Use matching topics/features or explicitly choose roof_route=custom for a legitimate alternative construction. omit_phases is fixed at begin and can remove only irrelevant optional nodes; quality, evidence and transaction gates remain active for every route. required_detail_systems expresses source/task obligations; it is not a minimum-count requirement.', properties: { topics: { type: 'array', maxItems: 20, items: { type: 'string' } }, features: { type: 'array', maxItems: 20, items: { type: 'string' } }, roof_route:{type:'string',enum:['auto','ancient_roof','custom']}, method_family:{type:'string',maxLength:64,pattern:'^[A-Za-z0-9_.-]*$'}, omit_phases:{type:'array',maxItems:8,items:{type:'string',enum:['roof_profile','archetypes','replication','variants','facade_detail']}}, repetition:{type:'string',enum:['present','none']}, repetition_reason:{type:'string',maxLength:1000}, required_detail_systems:{type:'array',maxItems:20,items:{type:'string',minLength:1}} }, additionalProperties: false },
+      task_profile: { type: 'object', description: 'Optional bounded task routing hints. Use matching topics/features or explicitly choose roof_route=custom for a legitimate alternative construction. omit_phases is fixed at begin and can remove only irrelevant optional nodes; quality, evidence and transaction gates remain active for every route. required_detail_systems expresses source/task obligations; it is not a minimum-count requirement.', properties: { topics: { type: 'array', maxItems: 20, items: { type: 'string' } }, features: { type: 'array', maxItems: 20, items: { type: 'string' } }, roof_route:{type:'string',enum:['auto','ancient_roof','custom']}, method_family:{type:'string',maxLength:64,pattern:'^[A-Za-z0-9_.-]*$'}, omit_phases:{type:'array',maxItems:8,items:{type:'string',enum:['roof_profile','archetypes','replication','variants','facade_detail']}}, repetition:{type:'string',enum:['present','none']}, repetition_reason:{type:'string',maxLength:1000}, required_detail_systems:{type:'array',maxItems:20,items:{type:'string',minLength:1}}, dimension_targets:{type:'array',maxItems:32,description:'Optional confirmed source dimensions, bound once. Only unique objects and local axis extents with world scaling are supported; no inferred area/grid relationships.',items:{type:'object',properties:{object:{type:'string',minLength:1,maxLength:160},axis:{type:'string',enum:['x','y','z']},expected_mm:{type:'number'},tolerance_mm:{type:'number',minimum:0},source:{type:'string',minLength:1,maxLength:1000}},required:['object','axis','expected_mm','tolerance_mm','source'],additionalProperties:false}} }, additionalProperties: false },
       },
       required: ['mode', 'output_directory'],
       additionalProperties: false,
@@ -98,11 +98,12 @@ const tools = [
   },
   {
     name: 'sketchup_project_step',
-    description: 'Execute one managed modeling step from a Ruby file. Guided uses the saved phase route; autonomous may append/update a bounded work unit and merge its evidence. Every write still uses the same transaction, receipt, identity and evidence protections.',
+    description: 'Execute one recoverable write. Guided rebuilds its current phase; new expert projects append/update/replace a named architectural system without phase gates. Use a Ruby file or supported typed operations. Expert captures evidence separately when ready to inspect.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, next_phase: { type: 'string', description: 'Autonomous work unit only: later phase already in the saved plan; previous evidence remains unreviewed and is merged at the next review.' }, operation_intent: { type: 'string', enum: ['append','update','replace'], description: 'Autonomous operation meaning. Defaults to append; replace is an explicit managed scope replacement.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
-      required: ['project_id', 'ruby_file'],
+      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, operations: {type:'array',minItems:1,maxItems:128,items:{type:'object'},description:'Expert only: box, wall, set_wall_openings, window_frame, instance, translate, material, mesh. Exact fields are documented in scoped-operations.md; mm throughout; same managed transaction.'}, work_unit_name:{type:'string',minLength:1,maxLength:160,description:'Optional architectural system name; reuse an existing name or create a new system. Otherwise continue the current system.'}, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Compatibility only for legacy version-1 expert projects. New expert projects continue directly, without this flag.' }, next_phase: { type: 'string', description: 'Compatibility only for legacy phase projects. Not accepted by new expert projects.' }, operation_intent: { type: 'string', enum: ['append','update','replace'], description: 'Autonomous operation meaning. Defaults to append; replace is an explicit managed scope replacement.' }, abstraction_note: { type: 'string', description: 'Optional concise diagnostic note. No word-count or repeated-failure proof obligation.' } },
+      required: ['project_id'],
+      oneOf:[{required:['ruby_file'],not:{required:['operations']}},{required:['operations'],not:{required:['ruby_file']}}],
       additionalProperties: false,
     },
   },
@@ -112,7 +113,7 @@ const tools = [
     inputSchema: {
       type: 'object',
       properties: { project_id: { type: 'string' }, evidence_id: { type: 'string' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, verdict: { type: 'string', enum: ['continue', 'revise'] }, note: { type: 'string' },
-        visual_review: {type:'object',description:'Optional shorthand when this evidence seals machine inputs. The engine assembles and reruns checks from immutable attachments. Never combine with quality_review; visual judgment remains yours.',properties:{state:{type:'string',enum:['pass','fail','unverified']},observations:{type:'string'},inspected_views:{type:'array',items:{type:'string'}}},required:['state','observations','inspected_views'],additionalProperties:false},
+        visual_review: {type:'object',description:'Preferred review input. The engine validates available sealed machine attachments and records actual missing inputs as unverified. Supply real observations and viewed file keys/paths; never combine with quality_review.',properties:{state:{type:'string',enum:['pass','fail','unverified']},observations:{type:'string'},inspected_views:{type:'array',items:{type:'string'}}},required:['state','observations','inspected_views'],additionalProperties:false},
         quality_review: { type: 'object', description: 'Full compatible review input; use this or visual_review for production continue. Schema version 1 binds project_id, phase, evidence_id and visual; checks account for geometry and dependencies with absolute input_path or explicit unverified/not_applicable reason. See managed-quality-review.md.', properties: { schema_version: {type:'integer',enum:[1]}, project_id:{type:'string'}, phase:{type:'string'}, evidence_id:{type:'string'}, visual:{type:'object'}, checks:{type:'array'} }, required:['schema_version','project_id','phase','evidence_id','visual','checks'] } },
       required: ['project_id', 'evidence_id', 'verdict'],
       additionalProperties: false,
@@ -141,8 +142,8 @@ const tools = [
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore', 'abort_pending'] }, reason: {type:'string', minLength:8, description:'Required for abort_pending: withdraw only the current frozen unreviewed phase, retaining its audit history.'} }, required: ['project_id'], additionalProperties: false },
   },
   {
-    name:'sketchup_project_retry_evidence',description:'Retry incomplete desktop viewport evidence without rerunning geometry. Verifies pending checkpoint, source hash and live audit, then requires normal visual review.',
-    inputSchema:{type:'object',properties:{project_id:{type:'string'}},required:['project_id'],additionalProperties:false},
+    name:'sketchup_project_retry_evidence',description:'Capture current evidence for a new expert project or retry incomplete legacy evidence, without rebuilding geometry. Expert chooses complementary views; evidence creation never grants visual approval.',
+    inputSchema:{type:'object',properties:{project_id:{type:'string'},comparison:{type:'object',properties:{aligned:{type:'boolean'},regions:{type:'array',maxItems:16,items:{type:'object'}}},additionalProperties:false,description:'Optional source-image comparison: explicit aligned pixel frames or named normalized source/candidate crop pairs. Original full frames are always retained.'},views:{type:'array',minItems:1,maxItems:6,uniqueItems:true,items:{type:'string',enum:['reference','perspective','front','side','plan','underside']},description:'New expert only. Default current reference view; choose complementary views by the current question.'}},required:['project_id'],additionalProperties:false},
   },
   {
     name: 'sketchup_project_diagnose_viewport',
@@ -153,7 +154,7 @@ const tools = [
   {
     name: 'sketchup_project_status',
     description: 'Return the current managed project status and only the next action the agent needs.',
-    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, detail:{type:'boolean',description:'Include the full phase method guidance.'}, section:{type:'string',enum:['delivery','quality','task','constraints'],description:'Read one bounded section; delivery/quality/constraints never include the original task text.'} }, required: ['project_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, question:{type:'string',minLength:1,maxLength:1000}, detail:{type:'boolean',description:'Include the full phase method guidance.'}, section:{type:'string',enum:['delivery','quality','task','constraints','review_packet'],description:'Read one bounded section; delivery/quality/constraints never include the original task text.'} }, required: ['project_id'], additionalProperties: false },
   },
   {
     name: 'sketchup_project_operation_receipt',
@@ -417,6 +418,18 @@ function asToolContent(value) {
 async function handleToolCall(name, input = {}, context = {}) {
   const bridge = (command, args = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => bridgeClient.call(command, args, timeoutMs, context.signal);
   assertStartup(name);
+  const managed = async method => {
+    try { return asToolContent(await managedProjects[method](input,bridge)); }
+    catch(error) {
+      if(input.project_id) {
+        try {
+          const current=await managedProjects.status({project_id:input.project_id});
+          error.next_call=current.next_call; error.next_action=current.next_action;
+        } catch { /* Preserve the original failure; untrusted state grants no action. */ }
+      }
+      throw error;
+    }
+  };
   if (managedProjects.isRawWriteTool(name) && !managedProjects.unsafeDiagnosticEnabled()) {
     const error = new Error(`Raw SketchUp write tool '${name}' is locked. Begin a managed project and use sketchup_project_step; diagnostic bypass requires SKETCHUP_MCP_UNSAFE_DIAGNOSTIC=true.`);
     error.code = 'MANAGED_PROJECT_REQUIRED';
@@ -473,29 +486,29 @@ async function handleToolCall(name, input = {}, context = {}) {
       return asToolContent({ ok: result.ok, validator: 'trace-manifest', ...result });
     }
     case 'sketchup_project_begin':
-      return asToolContent(await managedProjects.begin(input, bridge));
+      return managed('begin');
     case 'sketchup_project_step':
-      return asToolContent(await managedProjects.step(input, bridge));
+      return managed('step');
     case 'sketchup_project_review':
-      return asToolContent(await managedProjects.review(input, bridge));
+      return managed('review');
     case 'sketchup_project_revise_from':
-      return asToolContent(await managedProjects.reviseFrom(input, bridge));
+      return managed('reviseFrom');
     case 'sketchup_project_patch':
       throw Object.assign(new Error('PATCH_NOT_RELEASED: patch remains closed pending complete recovery and shared-path acceptance; use the managed revision workflow.'), { code: 'PATCH_NOT_RELEASED' });
     case 'sketchup_project_finish':
-      return asToolContent(await managedProjects.finish(input, bridge));
+      return managed('finish');
     case 'sketchup_project_recover':
-      return asToolContent(await managedProjects.recover(input, bridge));
+      return managed('recover');
     case 'sketchup_project_retry_evidence':
-      return asToolContent(await managedProjects.retryEvidence(input,bridge));
+      return managed('retryEvidence');
     case 'sketchup_project_diagnose_viewport':
       return asToolContent(await managedProjects.diagnoseViewport(input, bridge));
     case 'sketchup_project_geometry_diagnose':
       return asToolContent(await managedProjects.geometryDiagnose(input,bridge));
     case 'sketchup_project_status':
-      return asToolContent(await managedProjects.status(input));
+      return managed('status');
     case 'sketchup_project_operation_receipt':
-      return asToolContent(await managedProjects.operationReceipt(input, bridge));
+      return managed('operationReceipt');
 
     case 'sketchup_ping':
       return asToolContent(await bridge('ping'));

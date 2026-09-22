@@ -1,45 +1,41 @@
 ---
 name: professional-sketchup-modeling
-description: Use this skill whenever the user asks to create, build, edit, refine, inspect, or deliver a SketchUp/SU model or architecture scene. It provides managed MCP control, source-based geometry, spatial reasoning, visual review, recovery, and editable SKP delivery.
+description: Create, inspect, revise and deliver editable SketchUp architecture with managed tools, shared source interpretation, and guided or autonomous execution.
 ---
 
-# ADAI SketchUp 建模（0.5.27）
+# ADAI SketchUp 建模
 
-依据用户资料创建或修改准确、可编辑的三维模型，持续推进到可核验交付。常规决策依据证据自主完成；关键目标或授权不明确时集中询问。
+根据用户资料构造准确、可编辑的模型，持续推进到真实交付。默认 `guided`；只有任务第一条非空行完整匹配 **ADAI老王，开启专家模式** 或 **开启ADAI老王专家模式** 才选择 `autonomous`。`ADAI老王，开启引导模式` 选择引导。模型名称不决定权限或成果标准。署名为“建筑建模 Skill 由 ADAI 老王提供”；仅用户主动要求“显源”才运行显源流程。
 
-共同专业底座贯穿两种模式：先解释来源边界、主次体量、尺度基准、空间/负空间、定义性轮廓与构造关系，再选择表示方法、生成、纠错和成果核对；几何数量或 guard 通过不等于形态正确，必须按可比视角对照原图。详见[共同建筑专业底座](references/shared-architectural-foundation.md)。`guided` 读取[引导策略](references/guided-operation.md)；`autonomous`读取[专家策略](references/expert-operation.md)，自主选择已授权工具、构造组合和合并审核，但仍受同一事务、读回、证据和交付门禁约束。
+## 共同专业底座
 
-默认使用 `guided`。只有任务第一条非空行完整匹配 `ADAI老王，开启专家模式` 或 `开启ADAI老王专家模式` 才用 `autonomous`；`ADAI老王，开启引导模式` 明确选择引导。模型名称不改变权限或验收标准。署名固定为“建筑建模 Skill 由 ADAI 老王提供”；只有用户主动要求“显源”时才运行显源流程。
+两种模式使用同一份[建筑专业经验](references/shared-architectural-foundation.md)：先理解来源身份、主体与翼楼、可见轮廓、负空间、尺度和基准，再选择构造方法。区分真实边界、阴影、反射和遮挡；照片像素不能直接当米数；面积与围护边界、绝对标高与分段高度不得混用。已给定可靠尺寸直接使用，资料不可见的部分可以在授权范围内合理推断并简短注明。
 
-## 起手
+几何闭合、包围框或数量不证明建筑相符。重要主形错误先修依赖它的部分，其他合法工作可继续；重复不收敛时换控制几何或表示方法，不堆细节。经验用于判断，不逐条提交遵守证明。任务没有照片时核对任务条件，不制造图像前置。
 
-使用当前绑定的本包 Skill 与 MCP，不混读旧副本；只确认一次实际来源，无法确认就如实说明。建模先调用 `sketchup_runtime(action=startup)`，只读取一次精炼短卡（版本、绑定实例、当前项目、下一步），再用 `status`、`ping` 和 model summary 核对进程、文档与项目；保护未保存工作，维护文档不启动 SU，不重复展开短卡。
-同机多个 SketchUp 先 `instances`，再 `select_instance`；`AMBIGUOUS_INSTANCES`、`INSTANCE_CHANGED`、`INSTANCE_MISMATCH` 时重新选择，不重试原请求。打开模型用 `sketchup_open_model` 和绝对路径；未绑定程序只接受用户给出的快捷方式或绝对路径。
-多实例本身不代表冲突；已选目标反复消失或身份变化时停止写入，按[接入说明](references/HOST-ENABLEMENT.md)核对一次，不反复起停 SU、换项目或重试抢桥。工具缺失时也只读该接入说明。
+## 接入与策略
 
-## 观察与构造
+首次激活调用 `sketchup_runtime(action=startup)`，只读一次短指导；已有确定绑定和当前状态直接复用。多实例需要选择目标；实例或文档改变、结果未知时再确认。保护未保存工作，不反复启动SU。工具不可见时只查[接入说明](references/HOST-ENABLEMENT.md)。
 
-实际打开来源，区分事实、推导、假设和未知；先判定形制与结构依据，再动手。中式古建、楼阁/塔或图片重建遇到对应问题时，按需读[古建规则](references/chinese-ancient-architecture-rules.md)、[塔类图片建模](references/chinese-tower-image-modeling.md)、[方法手册](references/modeling-method-playbook.md)和[单图分阶段模板](references/image-to-su-staged-template.md)；现代建筑或表皮重建在体量通过后读[来源图表皮复核](references/facade-skin-review.md)。不为普通任务加载整套资料。用已知构件、重复模数或图注推导关键比例，透视像素不能直接当尺寸。先平面边界、剖面、体量、开敞空间、表面连接和上下承接，再做构件与细节；不同层屋盖不默认缩放同一模型，控制线不代替实体，通用模板不代替用户资料。
-写 Ruby 前读[受管 API](references/managed-ruby-api.md)和[最小示例](references/minimal-managed-example.md)，使用 `PipClawManagedBuild.build(entities,context)`，只写获准阶段；不在脚本中保存文件、切换文档或篡改状态。
+调用 `sketchup_project_begin` 后，以保存策略和工具实际返回为准：
 
-Ruby 只承担当前阶段的实体构造：先建立所属 group/definition，再用真实面、曲线和变换生成主形；尺寸统一用 `.mm`，法向和闭合性在读回中核对。脚本返回简短结果和必要 `geometry_readback`，不以名称、计数或注释代替实体；已编译的 `ruby_file` 直接交给 `step`，不搬运或重写生成物。没有匹配配方时可用自定义受管 Ruby，但仍必须经过同一事务、读回、视图复核和 finish 门禁。可运行样例见[受管 Ruby 示例](references/examples/ruby/representative-and-batch.rb)。
+- **guided**：阅读[引导操作](references/guided-operation.md)，沿当前阶段得到方法、样板及具体纠错。阶段指导不阻止提前推演整体空间与接口。
+- **autonomous**：阅读[专家操作](references/expert-operation.md)。新项目按建筑系统组织连续操作，自选构造与看图节点，不套六阶段，不固定每笔五图。旧项目保持其原策略，不静默改变历史写入语义。
 
-## 执行与复核
+## 构造、观察与纠错
 
-按 MCP 当前阶段执行 `begin → step → 实际看图 → review → 下一阶段 → ready_to_finish → finish`；普通新建六阶段，古建按条件保留 `roof_profile`，局部修改沿用原路线。阶段限制本次几何提交和证据范围，不限制提前推演整体体量、空间及接口；每步只说明改什么、依据和预期视图变化，然后执行。
-按当前问题读相关契约：主形比例查[投影说明](references/projection-brief-guide.md)，复制查[实例契约](references/instance-layout-contract.md)；同版本已读内容复用，具体错误解释不足时再定向读源码，不全目录扫描。
-guided 按当前阶段执行；例如 `MASSING` 只做主形与空间，不提前做瓦片、斗拱、门窗或装饰。autonomous 在明确 `work_unit_id` 后可用 `continue_work_unit=true`，并以 `next_phase` 进入同一工作单元的后续既有阶段（例如先墙体再窗），保留每笔 operation 与证据，最后合并审核；不能以此跳过来源、读回、事务或对象保护。Ruby 先写入文件，再把路径作为 `ruby_file` 调用 `sketchup_project_step`；不在聊天输出完整 Ruby，不一次编写整栋无边界脚本。没有成功的 step 返回、实际查看的证据图及合并审核结果，不得宣称完成或交付；输出截断时先查执行状态，不重放未知写入。
-主形、空间关系和连接通过后，先做完整开间或转角样板，局部和接缝通过才复制；检查首、中、末、对侧和转角。用户认可的主形和参数锁定，一轮只改一个问题及其最小范围；镜像用同一母型和中轴，保留回退点。
-严禁把“几何检查通过”当作“形态正确”。几何、拓扑和数量检查只是必要条件；造型验收必须在对应视角下对照原图，判断主次体量、宽高比例、层间关系、轮廓及开敞空间是否一致。体量关系不符，即使全部机械检查通过也必须返修；来源不足则标为未验证，不能判通过。
-每轮实际核对参考图及 geometry-whole-perspective/front/side/plan/underside 五视图；优先看 review sheet，缺图或细节不清再打开对应原图，不设张数上限。最多抓三个主要缺陷并比较是否改善；连续两轮无改善就回查形制、比例、拓扑、坐标或接口，改变方法，关键主形错误不能用细节掩盖。
-完整证据保留在文件；大 JSON 只取相关字段和错误摘要。沿用工具已返回的项目、阶段、证据和下一步，不重复查询或另填状态表；超时、目标变化或新错误时再刷新。
-保留真实读回、结构检查、对象保护和证据归属。工具成功、造型合格、视觉通过和交付完成分别判断；未知结果先查状态，不原样重放，`evidence_pending` 只 `retry_evidence`。读取源码只为修输入和阶段脚本，不修改引擎、门槛、签名或状态。
+使用当前绑定的Skill/MCP，不混读旧副本。已有生成器的文件直接提交；无匹配配方可用合法受管Ruby。Ruby先落文件，以 `PipClawManagedBuild.build(entities,context)` 构造；毫米与SU内部英寸转换按[受管API](references/managed-ruby-api.md)处理。不得在脚本中保存/打开文档、改变内核或嵌套事务。
 
-## 经验与交付
+专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
-REF 按当前问题定向 list/match/read，冲突时选定包并记录版本；没有匹配经验也可自主构造，不降低验收标准。古建运行包 0.4.4、REF 1.4.0 随附；preset 不是来源实测，诊断入口不能绕过生产门禁。普通建模不触发“显源”流程。
-只有 `finish` 返回 `finished`、实际 SKP 存在且最终证据已检查，才报告交付；说明文件、主要证据、假设、缺陷和未验证项，未重开则明确注明。`sketchup_project_patch` 正式入口关闭，直接调用应返回 `PATCH_NOT_RELEASED`。详细契约按需读取[几何守卫](references/geometry-guard.md)、[审查](references/managed-quality-review.md)和[恢复](references/managed-recovery.md)。
+看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。只加载当前相关章节，古建REF与生成器按需使用。
 
-本次动作后只简短汇报实际执行、观察、阻碍和下一步，不制作运行时表单。
+明确的用户尺寸可按[尺寸核对](references/source-dimensions.md)一次绑定，程序预检与实际测量；没有可靠目标不编造。需要局部图或叠图时查[图像辅助](references/reference-comparison.md)，不为每次任务加载。
 
+执行成功、形态正确、实际看图通过、文件交付是不同结论。未知写入先查询原 `operation_id` 并恢复，不能换ID重放；已提交但取证失败只补证，不重建。真实缺陷通过授权修改修正，不让Agent手工清失败标记或重签历史。运行时不填写回执表、关闭表或审核覆盖矩阵。
 
+## 交付
+
+`finish` 根据当前成果审核并保存，只有返回 `finished` 且实际文件存在才报告交付。保留有意义的组件与参数、资源和必要视图；[材质与可编辑性](references/materials-editability-review.md)按任务检查。未做重开/实际编辑的维度明确未测；不追加用户未要求的固定渲染图数量。公共任意对象patch仍关闭，不以裸写绕过。
+
+默认只汇报实际变化、关键观察、当前阻碍及必要下一步。完整日志、网格、历史留文件；共享经验和独立包版本复用，不全库重读。
