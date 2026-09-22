@@ -1,6 +1,2 @@
-7abeb3acb9bb3f3844698d151126d66ae252c41dc2bf488146841c7260d45f1  dist/professional-sketchup-modeling-0.5.27-r3-c01-c06.zip
-16a4cae7f2ba636c3002b185a1ab9bd6d571d11854ca05860392c091ddd108ee  dist/sketchup-managed-mcp-0.5.27-r3-c01-c06.zip
-597fd53453468b5f7e71cea983859495f1b4aeb4544eda8e4d48aa1a941902ba  dist/professional-sketchup-modeling-0.5.28-rc1-expert-work-units-20260922.zip
-6d32df220d73253af6746304c07f1ed0b2699378fa54ff7413dfd5cb31f43e58  dist/sketchup-managed-mcp-0.5.28-rc1-expert-work-units-20260922.zip
-597fd53453468b5f7e71cea983859495f1b4aeb4544eda8e4d48aa1a941902ba  dist\professional-sketchup-modeling-0.5.28-rc1-expert-work-units-20260922.zip
-6d32df220d73253af6746304c07f1ed0b2699378fa54ff7413dfd5cb31f43e58  dist\sketchup-managed-mcp-0.5.28-rc1-expert-work-units-20260922.zip
+333dcb78bba8ab7c9652355a9672364a99a805f02a33ed831606979e744dd2d1  dist\professional-sketchup-modeling-0.5.28-rc1-expert-work-units-20260922.zip
+73e942f9900fe27d29a8350e2e6df1ef26a54fb52ea4904999637c2da42fefaa  dist\sketchup-managed-mcp-0.5.28-rc1-expert-work-units-20260922.zip

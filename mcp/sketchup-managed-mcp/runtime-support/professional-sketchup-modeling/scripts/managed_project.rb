@@ -114,6 +114,20 @@ module PipClawManagedProject
     [(entity.typename.to_s rescue ''), (entity.persistent_id rescue entity.entityID rescue 0).to_i, (entity.name.to_s rescue '')]
   end
 
+  # Face-me components legitimately rotate with the camera.  Their placement
+  # origin, scale and vertical axis remain model facts; the camera-facing
+  # rotation is viewport state and must not invalidate a protected-scene
+  # fingerprint during evidence capture.
+  def face_camera_component?(entity)
+    entity.is_a?(Sketchup::ComponentInstance) &&
+      entity.respond_to?(:definition) && entity.definition &&
+      entity.definition.respond_to?(:behavior) &&
+      entity.definition.behavior.respond_to?(:always_face_camera?) &&
+      entity.definition.behavior.always_face_camera?
+  rescue StandardError
+    false
+  end
+
   def geometry_leaf_signature(entity)
     if entity.is_a?(Sketchup::Face)
       uv = []
@@ -152,7 +166,16 @@ module PipClawManagedProject
         'pid'=>(entity.persistent_id rescue entity.entityID rescue nil),
         # Group/ComponentInstance state is part of the audited model even when
         # it does not change the outer bounds or face/edge counts.
-        'transform'=>(entity.transformation.to_a.map { |value| value.to_f.round(7) } rescue nil),
+        'transform'=>(if face_camera_component?(entity)
+          t = entity.transformation
+          {
+            'origin'=>t.origin.to_a.map { |value| value.to_f.round(7) },
+            'axis_lengths'=>[t.xaxis.length, t.yaxis.length, t.zaxis.length].map { |value| value.to_f.round(7) },
+            'zaxis'=>t.zaxis.to_a.map { |value| value.to_f.round(7) }
+          }
+        else
+          (entity.transformation.to_a.map { |value| value.to_f.round(7) } rescue nil)
+        end),
         'hidden'=>(entity.hidden? rescue nil),
         'locked'=>(entity.respond_to?(:locked?) ? entity.locked? : false),
         'material'=>material_signature(entity.respond_to?(:material) ? entity.material : nil),
@@ -253,7 +276,7 @@ module PipClawManagedProject
     end
     # Face-camera entourage changes its displayed world bounds when the camera
     # moves. Fingerprint definition geometry + placement, not its rendered AABB.
-    if entity.is_a?(Sketchup::ComponentInstance) && entity.definition.behavior.always_face_camera?
+    if face_camera_component?(entity)
       record['bounds'] = bounds_signature(entity.definition)
       record['always_face_camera'] = true
     end

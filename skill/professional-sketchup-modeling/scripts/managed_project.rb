@@ -114,6 +114,20 @@ module PipClawManagedProject
     [(entity.typename.to_s rescue ''), (entity.persistent_id rescue entity.entityID rescue 0).to_i, (entity.name.to_s rescue '')]
   end
 
+  # Face-me components legitimately rotate with the camera.  Their placement
+  # origin, scale and vertical axis remain model facts; the camera-facing
+  # rotation is viewport state and must not invalidate a protected-scene
+  # fingerprint during evidence capture.
+  def face_camera_component?(entity)
+    entity.is_a?(Sketchup::ComponentInstance) &&
+      entity.respond_to?(:definition) && entity.definition &&
+      entity.definition.respond_to?(:behavior) &&
+      entity.definition.behavior.respond_to?(:always_face_camera?) &&
+      entity.definition.behavior.always_face_camera?
+  rescue StandardError
+    false
+  end
+
   def geometry_leaf_signature(entity)
     if entity.is_a?(Sketchup::Face)
       uv = []
@@ -152,7 +166,16 @@ module PipClawManagedProject
         'pid'=>(entity.persistent_id rescue entity.entityID rescue nil),
         # Group/ComponentInstance state is part of the audited model even when
         # it does not change the outer bounds or face/edge counts.
-        'transform'=>(entity.transformation.to_a.map { |value| value.to_f.round(7) } rescue nil),
+        'transform'=>(if face_camera_component?(entity)
+          t = entity.transformation
+          {
+            'origin'=>t.origin.to_a.map { |value| value.to_f.round(7) },
+            'axis_lengths'=>[t.xaxis.length, t.yaxis.length, t.zaxis.length].map { |value| value.to_f.round(7) },
+            'zaxis'=>t.zaxis.to_a.map { |value| value.to_f.round(7) }
+          }
+        else
+          (entity.transformation.to_a.map { |value| value.to_f.round(7) } rescue nil)
+        end),
         'hidden'=>(entity.hidden? rescue nil),
         'locked'=>(entity.respond_to?(:locked?) ? entity.locked? : false),
         'material'=>material_signature(entity.respond_to?(:material) ? entity.material : nil),
@@ -253,7 +276,7 @@ module PipClawManagedProject
     end
     # Face-camera entourage changes its displayed world bounds when the camera
     # moves. Fingerprint definition geometry + placement, not its rendered AABB.
-    if entity.is_a?(Sketchup::ComponentInstance) && entity.definition.behavior.always_face_camera?
+    if face_camera_component?(entity)
       record['bounds'] = bounds_signature(entity.definition)
       record['always_face_camera'] = true
     end
@@ -342,6 +365,21 @@ module PipClawManagedProject
       next false unless group.valid? && group.get_attribute(DICT, 'phase') == phase_name.to_s
       work_unit_id.nil? || group.get_attribute(DICT, 'work_unit_id').to_s == work_unit_id.to_s
     end
+  end
+
+  def model_binding_matches?(expected, actual)
+    return false unless expected.is_a?(Hash) && actual.is_a?(Hash)
+    expected_path = expected['path'].to_s
+    actual_path = actual['path'].to_s
+    if !expected_path.empty? || !actual_path.empty?
+      return false unless !expected_path.empty? && !actual_path.empty? && File.expand_path(expected_path).casecmp(File.expand_path(actual_path)).zero?
+    end
+    if expected['object_id'] != nil
+      return false unless actual['object_id'] != nil && expected['object_id'].to_i == actual['object_id'].to_i
+    end
+    true
+  rescue StandardError
+    false
   end
 
   def count_recursive(entities, counts = Hash.new(0), depth = 0)
@@ -1053,6 +1091,10 @@ module PipClawManagedProject
     begin
       operation_context = operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s)
       validate_operation_context(operation_context, operation_id)
+      expected_binding = operation_context['expected_model_binding']
+      if expected_binding && !model_binding_matches?(expected_binding, binding)
+        return JSON.generate({'ok'=>false, 'error'=>'DOCUMENT_BINDING_CHANGED', 'code'=>'DOCUMENT_BINDING_CHANGED', 'transaction_started'=>false, 'rollback_unconfirmed'=>false, 'request_model_binding'=>expected_binding, 'current_model_binding'=>binding})
+      end
       source = File.binread(script_path.to_s)
       expected = operation_context['expected_script_sha256']
       raise 'SCRIPT_CHANGED_BEFORE_EXECUTION' if expected && Digest::SHA256.hexdigest(source) != expected
@@ -1197,7 +1239,11 @@ module PipClawManagedProject
         raise 'Managed isolation violation: geometry outside the project root changed; see last-isolation-diff.json'
       end
       raise 'LOCKED_ENTITY_CHANGED' if new_expert && locked_before != locked_scope_fingerprint(root)
-      unit_result = new_expert ? unit_scope_record(phase) : nil
+      # SketchUp may finalize group/definition bookkeeping when the operation
+      # commits. Compute the expert scope after commit so the fingerprint
+      # stored in the operation result is the same representation later used
+      # by project audits and checkpoint recovery.
+      unit_result = nil
       counts = count_recursive(phase.entities)
       bounds = bounds_signature(phase)
       metrics = complexity_metrics(phase)
@@ -1208,6 +1254,7 @@ module PipClawManagedProject
       commit_result = model.commit_operation
       raise 'commit_operation returned false' if commit_result == false
       committed = true
+      unit_result = new_expert ? unit_scope_record(phase) : nil
       JSON.generate({
         'complexity_metrics'=>metrics,
         'ok'=>true, 'project_id'=>project_id.to_s, 'phase'=>phase_name.to_s,
