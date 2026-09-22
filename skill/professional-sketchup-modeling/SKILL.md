@@ -30,7 +30,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
-看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。涉及古建、楼阁、塔或古建照片时，写主形前先读取 `references/chinese-tower-image-modeling.md`、`references/yellow-crane-tower-lessons.md` 及相关 REF；若有 `sketchup_ref`，实际执行 list/match/read，query 使用“楼阁”“屋顶”“斗拱”等短关键词分别匹配，再决定生成器或自定义 Ruby。未完成这次定向读取不得开始古建主形。普通任务仍按需读取相关章节。
+看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。涉及古建、楼阁、塔或古建照片时，写主形前先读取 `references/chinese-tower-image-modeling.md`、`references/yellow-crane-tower-lessons.md` 及相关 REF；若有 `sketchup_ref`，实际执行 list/match/read，query 使用“楼阁”“屋顶”“斗拱”等短关键词分别匹配，再决定生成器或自定义 Ruby。未完成这次定向读取不得开始古建主形。`sketchup_ancient_tool` 的 `family=geometry` 才是可进入受管阶段的编译路线；`source/bearing/eave/measured` 只作诊断或校验，不能当成直接写入SU的结果。普通任务仍按需读取相关章节。
 
 明确的用户尺寸可按[尺寸核对](references/source-dimensions.md)一次绑定，程序预检与实际测量；没有可靠目标不编造。需要局部图或叠图时查[图像辅助](references/reference-comparison.md)，不为每次任务加载。
 

@@ -529,7 +529,18 @@ function expertMethodFocus(state) {
       reject_if: Array.isArray(card.reject_if) ? card.reject_if.slice(0, 2) : [],
     };
   }).filter(Boolean);
-  return focus.length ? { source: 'existing_modeling_method_cards', cards: focus } : null;
+  return focus.length ? {
+    source: 'existing_modeling_method_cards',
+    cards: focus,
+    // Keep the route boundary beside the method cards so an expert chooses a
+    // construction path before a large low-level batch.  This names existing
+    // capabilities; it does not prescribe a new recipe or judge the shape.
+    construction_route: {
+      ancient_tool: 'Compile is offline; use family=geometry only when its parts match the current managed phase. Other family results must be inspected/adapted through a managed step, never treated as direct SketchUp writes.',
+      managed_step: 'Use typed operations for bounded massing/supporting primitives; use a managed Ruby file for source-matched roofs and repeated timber, then execute through sketchup_project_step.',
+      visual_boundary: 'A successful compile, entity count, or detail registration does not prove the source silhouette; compare the captured reference and decisive views before review.'
+    }
+  } : null;
 }
 function abstractionRecheckNeeded(state, phaseName) {
   const attempts=Number(state?.revision_attempts?.[phaseName] || 0);
