@@ -31,5 +31,5 @@ The runtime reference set is loaded on demand. Links below are documentation rou
 - [ref-pack-guide.md](ref-pack-guide.md)
 - [ruby-snippets.md](ruby-snippets.md)
 - [SOURCE-DIAGNOSIS.md](SOURCE-DIAGNOSIS.md)
-- [trace-manifest-schema.md](trace-manifest-schema.md)
 - [weak-model-starter.md](weak-model-starter.md)
+

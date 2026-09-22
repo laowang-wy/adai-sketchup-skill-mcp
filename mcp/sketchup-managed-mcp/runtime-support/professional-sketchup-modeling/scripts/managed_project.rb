@@ -334,9 +334,10 @@ module PipClawManagedProject
     Digest::SHA256.hexdigest(canonical_json(payload))
   end
 
-  def phase_group(root, phase_name)
+  def phase_group(root, phase_name, work_unit_id = nil)
     root.entities.grep(Sketchup::Group).find do |group|
-      group.valid? && group.get_attribute(DICT, 'phase') == phase_name.to_s
+      next false unless group.valid? && group.get_attribute(DICT, 'phase') == phase_name.to_s
+      work_unit_id.nil? || group.get_attribute(DICT, 'work_unit_id').to_s == work_unit_id.to_s
     end
   end
 
@@ -1049,7 +1050,10 @@ module PipClawManagedProject
     raise ArgumentError, 'operation_id is required' if operation_id.to_s.empty?
     target = operation_receipt_path(project_id, operation_id)
     binding = JSON.parse(model_identity)
-    operation_context = begin; operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s); rescue StandardError; {}; end
+    operation_context = operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s)
+    raise ArgumentError, 'operation_context must be a JSON object' unless operation_context.is_a?(Hash)
+    intent = operation_context['intent'].to_s
+    raise ArgumentError, 'operation_context.intent must be append, update, or replace' unless intent.empty? || %w[append update replace].include?(intent)
     request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.file(script_path).hexdigest, 'model_binding'=>binding, 'operation_context'=>operation_context}
     if File.file?(target)
       prior = JSON.parse(File.binread(target))
@@ -1101,9 +1105,10 @@ module PipClawManagedProject
         other.hidden = other != root
       end
       root.hidden = false
-      old = phase_group(root, phase_name)
       expert = operation_context.is_a?(Hash) && operation_context['strategy'].to_s == 'expert_work_unit'
       intent = operation_context.is_a?(Hash) ? operation_context['intent'].to_s : 'replace'
+      work_unit_id = operation_context['work_unit_id'].to_s
+      old = phase_group(root, phase_name, expert ? work_unit_id : nil)
       reusable = expert && intent != 'replace' && old && old.valid?
       old.erase! if old && old.valid? && !reusable
       phase = reusable ? old : root.entities.add_group
@@ -1111,7 +1116,7 @@ module PipClawManagedProject
       phase.set_attribute(DICT, 'project_id', project_id.to_s)
       phase.set_attribute(DICT, 'phase', phase_name.to_s)
       phase.set_attribute(DICT, 'step_index', step_index.to_i)
-      phase.set_attribute(DICT, 'work_unit_id', operation_context['work_unit_id'].to_s) if expert
+      phase.set_attribute(DICT, 'work_unit_id', work_unit_id) if expert
       phase.set_attribute(DICT, 'created_at', Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')) unless reusable
       # Keep a single hidden anchor for a newly created unit; append/update reuses
       # the existing container and therefore preserves prior wall/window objects.

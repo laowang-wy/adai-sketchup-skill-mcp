@@ -13,6 +13,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { resolveMethodBinding } = require('./toolkit-registry');
+const { applyCommittedProgress, pendingExecution, classifyEvidenceFailure } = require('./operation-outcome');
 
 // These are deliberately narrow production scales. A model may not jump from a
 // reference image to a finished tower in one Ruby call: each scale is evidence
@@ -1221,7 +1222,8 @@ class ManagedProjects {
       }
     }
     if (state.work_unit && input.work_unit_id && String(input.work_unit_id) !== state.work_unit.id) throw new Error('WORK_UNIT_MISMATCH');
-    if (state.work_unit && !input.work_unit_id) input.work_unit_id = state.work_unit.id;
+    // Work-unit identity is derived for the operation; never mutate the
+    // caller's input object while preparing a write.
     await this.assertModelBinding(state, bridge);
     const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
     const phase = phasePlan[continuationTarget];
@@ -1242,40 +1244,47 @@ class ManagedProjects {
       if(state.attribution_command!=='显源' || manifest.command!=='显源' || manifest.user_requested!==true || path.resolve(manifest.ruby_file)!==path.resolve(scriptPath) || manifest.build_sha256!==crypto.createHash('sha256').update(scriptSource).digest('hex'))throw new Error('ATTRIBUTION_BUILD_MISMATCH');
     }
     validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile);
-    if (continueWorkUnit && state.last_evidence_id) {
-      state.pending_unit_reviews = [...new Set([...(state.pending_unit_reviews || []), state.last_evidence_id])];
-      state.step_index = continuationTarget;
-      state.phase = phase.name;
-      state.status = 'ready_for_step';
-    }
     const scriptHash = await hashFile(scriptPath);
-    const intent = state.assistance_mode === 'autonomous' ? (['append','update','replace'].includes(input.operation_intent) ? input.operation_intent : 'append') : 'replace';
-    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: state.step_index, work_unit_id: state.work_unit?.id || null, intent, dispatched_at: new Date().toISOString(), status: 'dispatched' };
+    const requestedIntent = input.operation_intent == null ? 'append' : String(input.operation_intent).trim();
+    if (!['append','update','replace'].includes(requestedIntent)) throw this.stateError('OPERATION_INTENT_INVALID', 'operation_intent must be append, update, or replace');
+    const intent = state.assistance_mode === 'autonomous' ? requestedIntent : 'replace';
+    const priorStatus = state.status;
+    const progress = { phase: phase.name, step_index: continuationTarget,
+      ...(continueWorkUnit && state.last_evidence_id ? { previous_evidence_id: state.last_evidence_id } : {}),
+      ...(abstractionRecheckRecord ? { abstraction_recheck: abstractionRecheckRecord } : {}) };
+    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: continuationTarget, work_unit_id: state.work_unit?.id || null, intent, status: 'prepared', prior_status: priorStatus, progress };
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
-    const operationContext = { strategy: state.assistance_mode === 'autonomous' ? 'expert_work_unit' : 'guided_phase', work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id };
-    const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, state.step_index, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
-    if (abstractionRecheckRecord) state.abstraction_rechecks={...(state.abstraction_rechecks||{}),[phase.name]:abstractionRecheckRecord};
-    state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation].slice(-32);
-    state.status = 'step_in_progress';
-    state.updated_at = new Date().toISOString();
-    await this.saveState(state);
+    const operationContext = { strategy: state.assistance_mode === 'autonomous' ? 'expert_work_unit' : 'guided_phase', work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id, progress };
+    operation.operation_context = operationContext;
+    operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
+    const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
     let response;
+    let dispatched = false;
     try {
       response = await this.withDocumentWriteLock(operation.model_binding, async () => {
+        // All checks above are preparatory. Re-check the live binding and
+        // unresolved writes after the document lock, then persist progress
+        // immediately before dispatch. A lock refusal therefore cannot move
+        // the project cursor or create a new stage record.
+        const currentBinding = await this.assertModelBinding(state, bridge);
         const other = await this.unresolvedDocumentOperation(operation.model_binding, state.project_id);
         if (other) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `Document write blocked by project ${other.project_id}`);
+        if (await hashFile(scriptPath) !== scriptHash) throw this.stateError('SCRIPT_CHANGED_BEFORE_DISPATCH', 'Ruby build file changed after preparation; no geometry was dispatched');
+        operation.model_binding = currentBinding;
+        operation.request.model_binding = currentBinding;
+        operation.dispatched_at = new Date().toISOString();
+        operation.status = 'dispatched';
+        state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation].slice(-32);
+        state.status = 'step_in_progress';
+        state.updated_at = new Date().toISOString();
+        await this.saveState(state);
+        dispatched = true;
         return bridge('run_ruby', { code: ruby, file: scriptPath }, input.timeout_ms || 120000);
       });
     } catch (error) {
-      if (['DOCUMENT_WRITE_BUSY','DOCUMENT_WRITE_UNCERTAIN'].includes(error.code)) {
-        operation.status = 'not_dispatched';
-        operation.error = error.message;
-        state.status = 'ready_for_step';
-        await this.saveState(state);
-        throw error;
-      }
+      if (!dispatched) throw error;
       operation.status = 'result_unknown';
       operation.completed_at = new Date().toISOString();
       operation.error = String(error.message || error);
@@ -1296,7 +1305,8 @@ class ManagedProjects {
       if (managed && !managed.rollback_unconfirmed && !managed.commit_unconfirmed && (managed.transaction_started===false || managed.rollback_confirmed===true)) {
         operation.status = 'failed_confirmed';
         operation.result = managed;
-        state.status = 'ready_for_step';
+        operation.error = error.message;
+        state.status = priorStatus;
         await this.saveState(state);
         throw error;
       }
@@ -1324,15 +1334,18 @@ class ManagedProjects {
     }
     operation.status = 'result_known';
     operation.completed_at = new Date().toISOString();
-    operation.result = { ok: true };
-    state.pending_execution = { phase: phase.name, script_path: scriptPath, script_hash: scriptHash, build_result: buildResult, operation_id: operation.operation_id };
+    operation.result = buildResult;
+    applyCommittedProgress(state, operation);
+    state.pending_execution = pendingExecution(operation, buildResult);
     state.status = 'evidence_pending';
     await this.saveState(state);
+    let evidenceStage = 'validation';
     try {
       state.complexity_warning = validatePhaseOutput(state, phase, buildResult) || null;
       let evidence;
-      try { evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult); }
+      try { evidenceStage = 'evidence'; evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult); }
       catch (e) { e.capturePending = !!state.pending_evidence; throw e; }
+      evidenceStage = 'validation';
       const needsAudit = ['massing', 'archetypes', 'replication', 'facade_detail'].includes(phase.name);
       const audit = needsAudit ? JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8')) : null;
       if (phase.name === 'massing' && state.mode === 'single_image') {
@@ -1355,25 +1368,26 @@ class ManagedProjects {
       return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
     } catch (error) {
       if (error.capturePending && state.pending_evidence) {
-        state.status='evidence_pending';state.evidence_error=error.message;
+        const category = classifyEvidenceFailure(error, 'evidence');
+        state.status='evidence_pending';state.evidence_error=category;
         await this.saveState(state);
         throw new Error(`Geometry preserved, visual evidence is incomplete: ${error.message}. 下一步只能调 sketchup_project_retry_evidence；禁止重放建模。`);
       }
       if (state.status === 'recovery_required') throw error;
-      try {
-        const rollback = await this.dispatchAuxiliaryWrite(state, 'remove_phase', [state.project_id, phase.name], bridge);
-        parseManagedResult(rollback);
-      } catch (rollbackError) {
-        state.status = 'recovery_required';
-        state.recovery_error = String(rollbackError.message || rollbackError);
-        state.updated_at = new Date().toISOString();
-        await this.saveState(state);
-        throw new Error(`Automatic evidence failed and rollback is UNCONFIRMED: ${error.message}; ${state.recovery_error}. Preserve the last checkpoint and inspect the active document before retrying.`);
-      }
-      state.status = 'ready_for_step';
+      // Geometry is already committed. Evidence/validation failure records a
+      // blocked result and retains the cumulative expert work; automatic
+      // remove_phase is only legal for an explicit, scoped compensation call.
+      const category = classifyEvidenceFailure(error, evidenceStage);
+      state.evidence_error = category;
+      if (category.stage === 'validation') state.validation_failed = category;
+      state.status = 'evidence_pending';
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      throw new Error(`Automatic evidence failed; the phase was rolled back: ${error.message}`);
+      const blocked = new Error(`Geometry committed, but ${category.code} prevents review until evidence is repaired: ${category.message}`);
+      blocked.code = category.code;
+      blocked.committed = true;
+      blocked.operation_id = operation.operation_id;
+      throw blocked;
     }
   }
 
@@ -1639,6 +1653,18 @@ class ManagedProjects {
     }
     if (verdict === 'revise') {
       state.revision_attempts={...(state.revision_attempts||{}),[phase.name]:Number(state.revision_attempts?.[phase.name]||0)+1};
+      if (state.assistance_mode === 'autonomous') {
+        // A work-unit review cannot erase the whole phase container: it may
+        // include accepted wall/window objects from earlier appends. Keep the
+        // committed scene and require a scoped update/replace operation on the
+        // next call. The existing patch/revise_from routes remain explicit
+        // alternatives when their write scope is proven.
+        state.revision_required = { phase: phase.name, evidence_id: input.evidence_id, reason: String(input.note || 'review requested revision'), requested_at: new Date().toISOString() };
+        state.status = 'review_required';
+        state.updated_at = new Date().toISOString();
+        await this.saveState(state);
+        return { ok: true, project_id: state.project_id, status: state.status, phase: phase.name, revision_required: state.revision_required, next_action: 'Submit a scoped autonomous update or replace for this work unit; no committed geometry was deleted.' };
+      }
       const response = await this.dispatchAuxiliaryWrite(state, 'remove_phase', [state.project_id, phase.name], bridge);
       parseManagedResult(response);
       if (phase.name === 'archetypes') delete state.visible_detail_systems;
@@ -1652,10 +1678,18 @@ class ManagedProjects {
     }
     const mergedEvidenceIds=[...(state.pending_unit_reviews || []), input.evidence_id];
     const mergedCoverage=[];
+    const historyGaps=[];
     for (const evidenceId of mergedEvidenceIds) {
-      try { const item=JSON.parse(await fs.readFile(path.join(this.projectDir(state.project_id),'evidence',`${evidenceId}.json`),'utf8')); if(item.phase) mergedCoverage.push({phase:item.phase,evidence_id:evidenceId}); } catch { /* historical association remains in mergedEvidenceIds */ }
+      try {
+        const item = (evidenceId === input.evidence_id)
+          ? sealedEvidence.record
+          : (await this.verifyEvidence(state, evidenceId, null, { verifyFiles: false })).record;
+        if (item.phase) mergedCoverage.push({ phase: item.phase, evidence_id: evidenceId, provenance: evidenceId === input.evidence_id ? 'current' : 'verified_history' });
+      } catch (error) {
+        historyGaps.push({ evidence_id: evidenceId, code: error.code || 'HISTORY_UNAVAILABLE', message: String(error.message || error) });
+      }
     }
-    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, history_gaps: historyGaps, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
     delete state.pending_unit_reviews;
     delete state.complexity_warning;
     state.step_index += 1;
@@ -2183,7 +2217,8 @@ class ManagedProjects {
           return {ok:true,project_id:state.project_id,status:state.status,reconciled:true,result:'committed_receipt',can_retry_write:false,operation_id:unresolved.operation_id,next_action:state.pending_delivery?'Call sketchup_project_finish to finish evidence for the confirmed file; do not save again.':state.status==='evidence_pending'?'Call sketchup_project_retry_evidence; do not rebuild.':'Continue at the recovered phase. The auxiliary write was not replayed.'};
         }
         if (unresolved.kind !== 'geometry_step' || !unresolved.script_path) throw this.stateError('RECOVERY_KIND_UNSUPPORTED', 'This receipt requires a supported action-specific recovery adapter; no write is unlocked');
-        state.pending_execution = { phase: unresolved.phase, script_path: unresolved.script_path, script_hash: unresolved.script_hash, build_result: unresolved.result, operation_id: unresolved.operation_id };
+        applyCommittedProgress(state, unresolved);
+        state.pending_execution = pendingExecution(unresolved, unresolved.result);
         state.status = 'evidence_pending';
         delete state.recovery_error;
         await this.saveState(state);

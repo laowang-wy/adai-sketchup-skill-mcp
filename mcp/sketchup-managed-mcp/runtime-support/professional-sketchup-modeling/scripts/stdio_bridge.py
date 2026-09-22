@@ -137,7 +137,7 @@ def _gate_message(hits: list) -> str:
         + '），但工作区里没有找到建模脚本 .py。\n'
         '按 SKILL.md「开工闸门」：新建任何几何一律走脚本载体。请改为：\n'
         '1. 用 FileIO_Write 把建模逻辑写成 [AI工作区]/<项目>/build_model.py'
-        '（骨架见 references/ruby-snippets.md 末尾，用 probe_api.Rpc 连 127.0.0.1:9876）；\n'
+        '（通过公开 managed MCP 入口执行，不直接连接固定端口）；\n'
         '2. 用 py_compile 过一遍语法；\n'
         '3. 用私有 python 执行该脚本完成建模。\n'
         '只读查询、改材质/图层/名称、移动或删除已存在对象、保存、截图、设相机 '
@@ -413,3 +413,4 @@ if __name__ == '__main__':
     except Exception as exc:
         _log(f'Fatal error: {exc}')
         sys.exit(1)
+

@@ -7,7 +7,7 @@
 ## 当前版本
 
 - 版本：`0.5.27`
-- 构建：`0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921`
+- 构建：`0.5.27-r2-q01-q05-committed-outcome-unit-scope-20260922`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。
@@ -46,7 +46,7 @@ ADAI老王，开启专家模式
 
 ## 后续版本更新
 
-后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。保留旧版本目录和校验值，不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
+后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。每次发行使用新的构建标识和校验值；不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
 
 本构建已通过离线回归与独立包冷启动检查；本构建的真实 SketchUp 建模、建筑来源对照和第二台机器验收仍为 `not_run`。
 
@@ -55,4 +55,5 @@ ADAI老王，开启专家模式
 ## Attribution
 
 建筑建模 Skill 由 ADAI 老王提供。ADAI 标识只用于许可要求的归属，不写入 SKP 几何或隐藏模型属性。
+
 

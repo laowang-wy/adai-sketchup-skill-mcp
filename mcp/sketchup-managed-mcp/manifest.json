@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.27",
-  "build_id": "0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921",
+  "build_id": "0.5.27-r2-q01-q05-committed-outcome-unit-scope-20260922",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -64,7 +64,6 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.27-engineering",
+  "codeBaseline": "0.5.27-r2",
   "engineeringVersion": "0.5.27"
 }
-
