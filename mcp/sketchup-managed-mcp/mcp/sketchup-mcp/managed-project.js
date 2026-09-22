@@ -977,7 +977,7 @@ class ManagedProjects {
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
     if (assistance.command_required) throw this.stateError('ASSISTANCE_COMMAND_REQUIRED', 'autonomous requires an exact first non-empty task line: ADAI老王，开启专家模式 or 开启ADAI老王专家模式');
-    const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode);
+    const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode) || (assistance.mode === 'autonomous' ? { id: `unit_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`, strategy: 'autonomous_work_unit' } : null);
     const response = await bridge('run_ruby', { code: this.rubyCall('begin_project', [projectId]), file: this.helperPath });
     parseManagedResult(response);
     const modelBinding = await this.modelIdentity(bridge);
@@ -1210,32 +1210,29 @@ class ManagedProjects {
     const state = await this.loadState(safeId(input.project_id));
     const continueWorkUnit = state.status === 'review_required' && state.assistance_mode === 'autonomous' && state.work_unit && input.continue_work_unit === true;
     if (state.status !== 'ready_for_step' && !continueWorkUnit) throw new Error(state.status === 'evidence_pending' ? '下一步只能调 sketchup_project_retry_evidence；禁止重放建模。' : `Project is ${state.status}; review the current evidence before another geometry step`);
+    let continuationTarget = state.step_index;
     if (continueWorkUnit && state.last_evidence_id) {
-      state.pending_unit_reviews = [...new Set([...(state.pending_unit_reviews || []), state.last_evidence_id])].slice(-16);
+      const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
       if (input.next_phase) {
-        const plan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
         const target = plan.findIndex((item) => item.name === String(input.next_phase).trim());
-        if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'next_phase must be a later planned phase in the same autonomous work unit');
         if (target < 0) throw this.stateError('WORK_UNIT_PHASE_UNKNOWN', 'next_phase is not in the saved project plan');
-        state.step_index = target;
-        state.phase = plan[target].name;
+        if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'next_phase must be a later planned phase in the same autonomous work unit');
+        continuationTarget = target;
       }
-      state.status = 'ready_for_step';
-      await this.saveState(state);
     }
     if (state.work_unit && input.work_unit_id && String(input.work_unit_id) !== state.work_unit.id) throw new Error('WORK_UNIT_MISMATCH');
     if (state.work_unit && !input.work_unit_id) input.work_unit_id = state.work_unit.id;
     await this.assertModelBinding(state, bridge);
     const phasePlan = state.phase_plan || PHASE_PLANS[state.mode] || PHASES;
-    const phase = phasePlan[state.step_index];
+    const phase = phasePlan[continuationTarget];
     if (!phase) throw new Error('All managed phases are complete; call sketchup_project_finish');
     const unresolved = await this.unresolvedDocumentOperation(state.model_binding || { path: state.model_path, object_id: null }, state.project_id);
     if (unresolved) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `The bound SketchUp document has an unresolved write for project ${unresolved.project_id}; reconcile operation ${unresolved.operation?.operation_id || '<unknown>'} before any new project can write`);
+    let abstractionRecheckRecord = null;
     if (abstractionRecheckNeeded(state, phase.name)) {
       const note=String(input.abstraction_note || '').trim();
       if (note.length < 20) throw new Error(`After ${state.revision_attempts?.[phase.name]} revisions of ${phase.name}, the next step must provide abstraction_note (at least 20 characters) explaining the source evidence re-read and the changed or defended geometric abstraction.`);
-      state.abstraction_rechecks={...(state.abstraction_rechecks||{}),[phase.name]:{attempt:Number(state.revision_attempts?.[phase.name]||0),note,recorded_at:new Date().toISOString()}};
-      await this.saveState(state);
+      abstractionRecheckRecord={attempt:Number(state.revision_attempts?.[phase.name]||0),note,recorded_at:new Date().toISOString()};
     }
     const scriptPath = path.resolve(input.ruby_file || '');
     if (!fsSync.existsSync(scriptPath)) throw new Error(`Ruby build file not found: ${scriptPath}`);
@@ -1245,12 +1242,21 @@ class ManagedProjects {
       if(state.attribution_command!=='显源' || manifest.command!=='显源' || manifest.user_requested!==true || path.resolve(manifest.ruby_file)!==path.resolve(scriptPath) || manifest.build_sha256!==crypto.createHash('sha256').update(scriptSource).digest('hex'))throw new Error('ATTRIBUTION_BUILD_MISMATCH');
     }
     validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile);
+    if (continueWorkUnit && state.last_evidence_id) {
+      state.pending_unit_reviews = [...new Set([...(state.pending_unit_reviews || []), state.last_evidence_id])];
+      state.step_index = continuationTarget;
+      state.phase = phase.name;
+      state.status = 'ready_for_step';
+    }
     const scriptHash = await hashFile(scriptPath);
-    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: state.step_index, work_unit_id: state.work_unit?.id || null, dispatched_at: new Date().toISOString(), status: 'dispatched' };
+    const intent = state.assistance_mode === 'autonomous' ? (['append','update','replace'].includes(input.operation_intent) ? input.operation_intent : 'append') : 'replace';
+    const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: state.step_index, work_unit_id: state.work_unit?.id || null, intent, dispatched_at: new Date().toISOString(), status: 'dispatched' };
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
-    const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, state.step_index, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id]);
+    const operationContext = { strategy: state.assistance_mode === 'autonomous' ? 'expert_work_unit' : 'guided_phase', work_unit_id: state.work_unit?.id || null, intent, operation_id: operation.operation_id };
+    const ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, state.step_index, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
+    if (abstractionRecheckRecord) state.abstraction_rechecks={...(state.abstraction_rechecks||{}),[phase.name]:abstractionRecheckRecord};
     state.operation_journal = [...(Array.isArray(state.operation_journal) ? state.operation_journal : []), operation].slice(-32);
     state.status = 'step_in_progress';
     state.updated_at = new Date().toISOString();
@@ -1644,7 +1650,12 @@ class ManagedProjects {
       await this.saveState(state);
       return { ok: true, project_id: state.project_id, status: state.status, task_card: taskCard(state, phase), next_action: `Rebuild ${phase.name}. ${phase.hint}` };
     }
-    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: [...(state.pending_unit_reviews || []), input.evidence_id], work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+    const mergedEvidenceIds=[...(state.pending_unit_reviews || []), input.evidence_id];
+    const mergedCoverage=[];
+    for (const evidenceId of mergedEvidenceIds) {
+      try { const item=JSON.parse(await fs.readFile(path.join(this.projectDir(state.project_id),'evidence',`${evidenceId}.json`),'utf8')); if(item.phase) mergedCoverage.push({phase:item.phase,evidence_id:evidenceId}); } catch { /* historical association remains in mergedEvidenceIds */ }
+    }
+    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
     delete state.pending_unit_reviews;
     delete state.complexity_warning;
     state.step_index += 1;

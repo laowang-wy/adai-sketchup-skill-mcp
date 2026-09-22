@@ -98,10 +98,10 @@ const tools = [
   },
   {
     name: 'sketchup_project_step',
-    description: 'Execute exactly one managed modeling step from a Ruby file. The MCP isolates the write, runs one transaction, generates signed evidence and blocks further geometry until review.',
+    description: 'Execute one managed modeling step from a Ruby file. Guided uses the saved phase route; autonomous may append/update a bounded work unit and merge its evidence. Every write still uses the same transaction, receipt, identity and evidence protections.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, next_phase: { type: 'string', description: 'Autonomous work unit only: later phase already in the saved plan; previous evidence remains unreviewed and is merged at the next review.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
+      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Autonomous only: permit another bounded managed write in the same work unit before merged review; evidence and transaction guards remain active.' }, next_phase: { type: 'string', description: 'Autonomous work unit only: later phase already in the saved plan; previous evidence remains unreviewed and is merged at the next review.' }, operation_intent: { type: 'string', enum: ['append','update','replace'], description: 'Autonomous operation meaning. Defaults to append; replace is an explicit managed scope replacement.' }, abstraction_note: { type: 'string', description: 'Required after each third revise of the same phase: source evidence re-read and changed/defended geometric abstraction.' } },
       required: ['project_id', 'ruby_file'],
       additionalProperties: false,
     },
@@ -137,7 +137,7 @@ const tools = [
   },
   {
     name: 'sketchup_project_recover',
-    description: 'Verify an already opened signed phase checkpoint and rebind the existing managed project after a restart. Does not open files, build geometry or grant visual approval.',
+    description: 'Inspect/reconcile/restore a signed checkpoint, or abort only the current frozen unreviewed phase after live scope verification. Recovery never grants visual approval or replays geometry.',
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore', 'abort_pending'] }, reason: {type:'string', minLength:8, description:'Required for abort_pending: withdraw only the current frozen unreviewed phase, retaining its audit history.'} }, required: ['project_id'], additionalProperties: false },
   },
   {

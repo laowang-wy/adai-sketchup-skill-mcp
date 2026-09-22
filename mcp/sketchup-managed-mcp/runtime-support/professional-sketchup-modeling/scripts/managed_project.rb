@@ -1045,11 +1045,12 @@ module PipClawManagedProject
     JSON.generate(result)
   end
 
-  def execute_step_with_receipt(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_id = nil)
+  def execute_step_with_receipt(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_id = nil, operation_context_json = nil)
     raise ArgumentError, 'operation_id is required' if operation_id.to_s.empty?
     target = operation_receipt_path(project_id, operation_id)
     binding = JSON.parse(model_identity)
-    request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.file(script_path).hexdigest, 'model_binding'=>binding}
+    operation_context = begin; operation_context_json.to_s.empty? ? {} : JSON.parse(operation_context_json.to_s); rescue StandardError; {}; end
+    request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.file(script_path).hexdigest, 'model_binding'=>binding, 'operation_context'=>operation_context}
     if File.file?(target)
       prior = JSON.parse(File.binread(target))
       raise 'OPERATION_ID_CONFLICT' unless prior['request'] == request
@@ -1060,7 +1061,7 @@ module PipClawManagedProject
     File.open(target, File::WRONLY | File::CREAT | File::EXCL, 0600) do |file|
       file.write(JSON.generate({'request'=>request, 'status'=>'started'})); file.flush; file.fsync
     end
-    result = execute_step(project_id, phase_name, step_index, script_path, projection_brief_json, request)
+    result = execute_step(project_id, phase_name, step_index, script_path, projection_brief_json, request, operation_context)
     receipt = {'request'=>request, 'status'=>'completed', 'result'=>JSON.parse(result)}
     temporary = target + '.tmp'
     File.open(temporary, 'wb') { |file| file.write(JSON.generate(receipt)); file.flush; file.fsync }
@@ -1068,7 +1069,7 @@ module PipClawManagedProject
     result
   end
 
-  def execute_step(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_request = nil)
+  def execute_step(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_request = nil, operation_context = {})
     raise ArgumentError, 'project_id is required' if project_id.to_s.strip.empty?
     raise ArgumentError, 'phase_name is required' if phase_name.to_s.strip.empty?
     raise "Ruby build file not found: #{script_path}" unless File.file?(script_path.to_s)
@@ -1101,19 +1102,24 @@ module PipClawManagedProject
       end
       root.hidden = false
       old = phase_group(root, phase_name)
-      old.erase! if old && old.valid?
-      phase = root.entities.add_group
-      phase.name = format('%02d_%s', step_index.to_i + 1, phase_name)
+      expert = operation_context.is_a?(Hash) && operation_context['strategy'].to_s == 'expert_work_unit'
+      intent = operation_context.is_a?(Hash) ? operation_context['intent'].to_s : 'replace'
+      reusable = expert && intent != 'replace' && old && old.valid?
+      old.erase! if old && old.valid? && !reusable
+      phase = reusable ? old : root.entities.add_group
+      phase.name = format('%02d_%s', step_index.to_i + 1, phase_name) unless reusable
       phase.set_attribute(DICT, 'project_id', project_id.to_s)
       phase.set_attribute(DICT, 'phase', phase_name.to_s)
       phase.set_attribute(DICT, 'step_index', step_index.to_i)
-      phase.set_attribute(DICT, 'created_at', Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ'))
-      # SketchUp can erase a truly empty Group. Keep a hidden tool-owned anchor
-      # so phase registries remain attached even when build geometry is hosted by
-      # component definitions or registered child objects elsewhere in the root.
-      anchor = phase.entities.add_cpoint(ORIGIN)
-      anchor.hidden = true if anchor.respond_to?(:hidden=)
-      anchor.set_attribute(DICT, 'phase_anchor', true)
+      phase.set_attribute(DICT, 'work_unit_id', operation_context['work_unit_id'].to_s) if expert
+      phase.set_attribute(DICT, 'created_at', Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')) unless reusable
+      # Keep a single hidden anchor for a newly created unit; append/update reuses
+      # the existing container and therefore preserves prior wall/window objects.
+      unless reusable
+        anchor = phase.entities.add_cpoint(ORIGIN)
+        anchor.hidden = true if anchor.respond_to?(:hidden=)
+        anchor.set_attribute(DICT, 'phase_anchor', true)
+      end
 
       Object.send(:remove_const, :PipClawManagedBuild) if Object.const_defined?(:PipClawManagedBuild)
       load script_path.to_s
@@ -1137,7 +1143,9 @@ module PipClawManagedProject
         'working_units'=>'mm',
         'meters_to_inches'=>39.37007874015748,
         'mm_to_inches'=>0.03937007874015748,
-        'projection_brief'=>projection_brief
+        'projection_brief'=>projection_brief,
+        'operation_intent'=>operation_context['intent'].to_s,
+        'work_unit_id'=>operation_context['work_unit_id']
       }
       result = PipClawManagedBuild.build(phase.entities, context)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }
