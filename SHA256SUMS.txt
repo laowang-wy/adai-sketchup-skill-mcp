@@ -1,2 +1,2 @@
-333dcb78bba8ab7c9652355a9672364a99a805f02a33ed831606979e744dd2d1  dist\professional-sketchup-modeling-0.5.28-rc1-expert-work-units-20260922.zip
-73e942f9900fe27d29a8350e2e6df1ef26a54fb52ea4904999637c2da42fefaa  dist\sketchup-managed-mcp-0.5.28-rc1-expert-work-units-20260922.zip
+f44a9b304fcd95f70d9e34c54fa86cfb11896e5b08c6fb6fec9735e6c629ece3  dist\professional-sketchup-modeling-0.5.29-context-projection-ref-routing-20260923.zip
+42cde50e437b0c7831625ee9ee7b46e258b9d0ffe2556929f959ebe789fabb6c  dist\sketchup-managed-mcp-0.5.29-context-projection-ref-routing-20260923.zip

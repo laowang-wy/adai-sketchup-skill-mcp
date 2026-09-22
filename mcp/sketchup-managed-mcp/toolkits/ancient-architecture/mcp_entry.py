@@ -68,6 +68,12 @@ def validate(family,p):
   from source_templates.compiler import number
   number(p['width_mm'],'EAVE_SAMPLE_WIDTH_RANGE_900_1800',900,1800)
  else:raise ValueError('FAMILY_REQUIRED')
+def validation_summary(family,p):
+ if family=='geometry':
+  parts=p.get('parts') if isinstance(p.get('parts'),list) else []
+  return {'family':family,'project_id':p.get('project_id'),'phase':p.get('phase'),'parts_count':len(parts),'semantic_ids_sample':[str(x.get('semantic_id')) for x in parts[:16] if isinstance(x,dict) and x.get('semantic_id')]}
+ keys=sorted(str(k) for k in p.keys()) if isinstance(p,dict) else []
+ return {'family':family,'keys':keys[:32],'key_count':len(keys)}
 def main(a):
  action=a['action'];family=a.get('family')
  if action=='list':
@@ -103,7 +109,13 @@ def main(a):
  if action=='validate' and family=='geometry':
   from geometry_tool import compile_parts
   with tempfile.TemporaryDirectory(prefix='adai-geometry-validate-') as temp:compile_parts(p,Path(temp)/'compile')
- if action=='validate':return {'parameters':p,'resolved_family':family,'scope':'input and supported-range contract only; not live geometry acceptance'}
+ if action=='validate':
+  summary=validation_summary(family,p)
+  summary['parameter_sha256']=hashlib.sha256(json.dumps(p,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')).hexdigest()
+  result={'validated':True,'resolved_family':family,'requested_family':requested_family,'validation_summary':summary,'scope':'input and supported-range contract only; not live geometry acceptance'}
+  if a.get('detail') is True: result['parameters']=p
+  else: result['detail_available']='Call sketchup_ancient_tool(action=validate, detail=true) to retrieve the full validated parameter object.'
+  return result
  out=Path(a['output_directory'])
  if not out.is_absolute():raise ValueError('ABSOLUTE_OUTPUT_REQUIRED')
  out=out.resolve();asset=ROOT.parents[1]

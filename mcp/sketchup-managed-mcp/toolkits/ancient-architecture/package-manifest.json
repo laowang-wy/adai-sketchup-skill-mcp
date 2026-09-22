@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "integration_version": "0.5.28",
+  "integration_version": "0.5.29",
   "files": {
     "bearing/managed_bearing.rb": "57fdf71b1858e4616edd949b6f8887461b43edcedda8136a7fbee6cfb6062418",
     "bearing/README.md": "89f5e78aea444e9e30307e897b8e044e39f40f6d9c73708666e8408e9cca835b",
@@ -55,13 +55,13 @@
     "geometry/production_adapter.rb": "bd20ebe089e49b09682ef428844ab0afcae35432c0470aeddca3c4daced7c2bc",
     "geometry_tool.py": "b45b92458a5f4f56ac7fd3f158f3ebbf6f1c0aea8e4ad87527d49f9687a224bb",
     "INSTALL.md": "4aaba569d7f3b0781b8d0bf3b317e588b36eaba31bfb4e13806352c520415583",
-    "mcp_entry.py": "fbca0076b351df666fc3604f1c04810b3a5008e95e197f09ed5468be0c20c762",
+    "mcp_entry.py": "1fa03b810641142657a91fbb0ccf4d33cb6a57bbf6dbe705833b7e0732b7cbd4",
     "NORMALIZATION.json": "4e409e238574ec3365b0cf3d7c63279fe4176ceba8aeeff55b4cf6812ac8188c",
     "PACKAGE-GUIDE.md": "fa710f3f6aeb55abcf9f1338c8fc84a6dfa0eb99f402e239b9f919db4dcfee12",
     "prepare_measured_loft.py": "684778b5ad814b271ddff4d14146ee486acbce189a7397958883cc030570597b",
     "prepare_roof_build.py": "1f60776a483abe8056f2a5d9170358fa5ed594746873d0b1e50172f90822c6d4",
     "README.md": "cd7be5316cd0a38be76167135241ccd1cd914acd8b91483a75d023f1bd131dda",
-    "ref-pack/REF.md": "6ba8001ef059073d982383b1e0ec3e84cff787e5daa87ad6031d886fe18eee2f",
+    "ref-pack/REF.md": "280bb3eeeefcb8509630bfd3d68bc0197177229c184725db3cf13f6604382885",
     "requirements.txt": "db6c2090e7788f8d3313a6e5a74f07907c309e9e1a1d1e1364e3286a9da37e59",
     "roof-types.json": "77b3c754b4b51876adf5f7f90c274536c6c627feb3b3d330c27728d8464d28ac",
     "roof_tool.py": "551dba42c40b41c04a39006bcd4360cd06b9107cb7576402afffff602bb5e737",

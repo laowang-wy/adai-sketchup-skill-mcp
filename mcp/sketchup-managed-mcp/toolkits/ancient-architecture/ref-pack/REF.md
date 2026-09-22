@@ -22,7 +22,7 @@ attribution: 本古建 SketchUp 建模经验包由老王开发，ADAI 整理与�
 
 ## [massing|roof_profile|archetypes|replication] 古建0.4模块调用
 
-由老王开发，ADAI整理。一个古建总包，12张卡按需读取，7份配方分别校验。知识入口sketchup_ref；工具入口sketchup_toolkit(toolkit_id=ancient-architecture)或兼容sketchup_ancient_tool。list → read当前卡 → preset → validate → compile；一次只读取1—2张卡。
+由老王开发，ADAI整理。一个古建总包，12张卡按需读取，7份配方分别校验。知识入口sketchup_ref；工具入口sketchup_toolkit(toolkit_id=ancient-architecture)或兼容sketchup_ancient_tool。list → read当前卡 → preset → validate → compile；一次只读取1—2张卡。`validate` 默认返回摘要和参数哈希，只有需要逐项复核时才传 `detail=true`；它仍不代表真实 SU 或视觉验收。
 family=roof为六类参数屋面；source为5个保留源比例样板；bearing为柱斗拱梁承托诊断；eave为完整檐口诊断；recipe仅用于preset读取已登记配方，再按返回参数schema选择source或roof。
 编译只生成受管诊断Ruby。用返回execution_contract的test/massing及项目前缀执行，实际SU读回与看图后才能复用，不直接称为最终建筑。
 所有生成器分别维护参数范围、离线结果、SU记录和外观状态；一种通过不推广至其他类型、参数或版本。上游歇山detailed样板记录封山、六交点与四翼角切瓦；盔顶为带来源推定的候选，非实测还原；完整檐口135点来自A轮，B轮平滑取证未完成。新集成版本尚无SU实机验收。

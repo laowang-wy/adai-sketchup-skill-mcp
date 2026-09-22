@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.28',
+  version: '0.5.29',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -44,8 +44,8 @@ const tools = [
   {name:'sketchup_runtime',description:'Call action=startup once at SKILL activation/model change for bounded anti-hallucination guidance; no SU access. If sketchup_* tools are not visible in the host session, use host_enablement (installed does not mean enabled) instead of scanning disks or reading MCP source; client_binding writes the bounded fallback entry file. Other actions inspect user-provided shortcuts without launching. Baseline 2018/2019.',inputSchema:{type:'object',properties:{action:{type:'string',enum:['startup','status','capabilities','host_enablement','client_binding','inspect_shortcut','bind_shortcut','instances','select_instance']},process_id:{type:'integer',minimum:1},shortcut_path:{type:'string'},user_provided:{type:'boolean'}},required:['action'],additionalProperties:false}},
   {
     name:'sketchup_read_instance_layout',
-    description:'Read-only bounded occurrence hierarchy and full world transforms of the active saved document. Requires expected_path; never opens/saves/changes geometry. scope_path is a root-to-container persistent-ID string array. Repeated definitions are expanded per occurrence; truncated results cannot certify full coverage. Returns decoded JSON directly, never parse result_inspect. transport.complete means intact transfer only; check truncated separately.',
-    inputSchema:{type:'object',properties:{expected_path:{type:'string'},scope_path:{type:'array',items:{type:'string'}},max_instances:{type:'integer',minimum:1,maximum:5000},max_depth:{type:'integer',minimum:1,maximum:32}},required:['expected_path'],additionalProperties:false}
+    description:'Read-only bounded occurrence hierarchy and full world transforms of the active saved document. Requires expected_path; never opens/saves/changes geometry. scope_path is a root-to-container persistent-ID string array. Repeated definitions are expanded per occurrence; truncated results cannot certify full coverage. Default returns a bounded count/sample projection; detail=true returns the decoded full JSON. Never parse result_inspect. transport.complete means intact transfer only; check truncated separately.',
+    inputSchema:{type:'object',properties:{expected_path:{type:'string'},scope_path:{type:'array',items:{type:'string'}},max_instances:{type:'integer',minimum:1,maximum:5000},max_depth:{type:'integer',minimum:1,maximum:32},detail:{type:'boolean',description:'Default false returns a bounded count/sample projection. Set true when full occurrence records are required for a specific check; transport and traversal integrity are unchanged.'}},required:['expected_path'],additionalProperties:false}
   },
   {
     name: 'get_health', description: 'Return local MCP process, dependency, policy, and request health.', inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -101,7 +101,7 @@ const tools = [
     description: 'Execute one recoverable write. Guided rebuilds its current phase; new expert projects append/update/replace a named architectural system without phase gates. Use a Ruby file or supported typed operations. Expert captures evidence separately when ready to inspect.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, operations: {type:'array',minItems:1,maxItems:128,items:{type:'object'},description:'Expert only: box, wall, set_wall_openings, window_frame, instance, translate, material, mesh. Exact fields are documented in scoped-operations.md; mm throughout; same managed transaction.'}, work_unit_name:{type:'string',minLength:1,maxLength:160,description:'Optional architectural system name; reuse an existing name or create a new system. Otherwise continue the current system.'}, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Compatibility only for legacy version-1 expert projects. New expert projects continue directly, without this flag.' }, next_phase: { type: 'string', description: 'Compatibility only for legacy phase projects. Not accepted by new expert projects.' }, operation_intent: { type: 'string', enum: ['append','update','replace'], description: 'Autonomous operation meaning. Defaults to append; replace is an explicit managed scope replacement.' }, abstraction_note: { type: 'string', description: 'Optional concise diagnostic note. No word-count or repeated-failure proof obligation.' } },
+      properties: { project_id: { type: 'string' }, ruby_file: { type: 'string' }, operations: {type:'array',minItems:1,maxItems:128,items:{type:'object'},description:'Expert only: box, wall, set_wall_openings, window_frame, instance, translate, material, mesh. Exact fields are documented in scoped-operations.md; mm throughout; same managed transaction.'}, work_unit_name:{type:'string',minLength:1,maxLength:160,description:'Optional architectural system name; reuse an existing name or create a new system. Otherwise continue the current system.'}, timeout_ms: { type: 'number' }, work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$' }, continue_work_unit: { type: 'boolean', description: 'Compatibility only for legacy version-1 expert projects. New expert projects continue directly, without this flag.' }, next_phase: { type: 'string', description: 'Compatibility only for legacy phase projects. Not accepted by new expert projects.' }, operation_intent: { type: 'string', enum: ['append','update','replace'], description: 'Autonomous operation meaning. Defaults to append; replace is an explicit managed scope replacement.' }, abstraction_note: { type: 'string', description: 'Optional concise diagnostic note. No word-count or repeated-failure proof obligation.' }, detail: { type: 'boolean', description: 'Default false returns counts, scope and a bounded object sample. Set true only when full object rows are needed.' } },
       required: ['project_id'],
       oneOf:[{required:['ruby_file'],not:{required:['operations']}},{required:['operations'],not:{required:['ruby_file']}}],
       additionalProperties: false,
@@ -159,7 +159,7 @@ const tools = [
   {
     name: 'sketchup_project_operation_receipt',
     description: 'Read the recorded receipt for one managed geometry operation. Unknown results stay blocked until this receipt is inspected.',
-    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, operation_id: { type: 'string' } }, required: ['project_id', 'operation_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, operation_id: { type: 'string' }, detail: { type: 'boolean', description: 'Default false returns a compact receipt summary. Set true for the signed journal and full bridge receipt.' } }, required: ['project_id', 'operation_id'], additionalProperties: false },
   },
   {
     name: 'sketchup_ping',
@@ -415,6 +415,20 @@ function asToolContent(value) {
   };
 }
 
+function instanceLayoutSummary(data) {
+  const rows = Array.isArray(data?.instances) ? data.instances : [];
+  const sample = rows.slice(0, 12).map(item => {
+    if (!item || typeof item !== 'object') return item;
+    const out = {};
+    for (const key of ['path','persistent_id','definition_guid','name','hidden','origin','axes','determinant']) {
+      if (item[key] !== undefined && item[key] !== null) out[key] = item[key];
+    }
+    return Object.keys(out).length ? out : { value_type: Array.isArray(item) ? 'array' : 'object' };
+  });
+  const {instances, ...meta} = data;
+  return {...meta, instances_summary:{count:rows.length, sample, truncated:rows.length > sample.length}, detail_available:'Call sketchup_read_instance_layout with detail=true for full occurrence records.'};
+}
+
 async function handleToolCall(name, input = {}, context = {}) {
   const bridge = (command, args = {}, timeoutMs = DEFAULT_TIMEOUT_MS) => bridgeClient.call(command, args, timeoutMs, context.signal);
   assertStartup(name);
@@ -580,7 +594,7 @@ async function handleToolCall(name, input = {}, context = {}) {
       // stdout is captured by the existing bridge; keep the evaluated result nil.
       const ruby="require 'base64'; require 'json'; require 'digest'; load Base64.strict_decode64('"+script64+"'); (lambda do; data=JSON.generate(PipClawInstanceReadback.run(JSON.parse(Base64.strict_decode64('"+payload+"')))); raise 'Instance readback exceeds 32 MiB; narrow scope_path/max_instances' if data.bytesize > "+MAX_BYTES+"; $stdout.write('"+marker+":'+data.bytesize.to_s+':'+Digest::SHA256.hexdigest(data)+':'+Base64.strict_encode64(data)+\"\\n\"); nil; end).call";
       const result=decodeInstanceReadback(await bridge('run_ruby',{code:ruby,file:script},30000),marker,input);
-      return asToolContent(result);
+      return asToolContent(input.detail === true ? result : instanceLayoutSummary(result));
     }
 
     case 'sketchup_get_model_summary':

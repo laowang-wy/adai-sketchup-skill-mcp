@@ -9,7 +9,7 @@ description: Create, inspect, revise and deliver editable SketchUp architecture 
 
 ## 共同专业底座
 
-两种模式使用同一份[建筑专业经验](references/shared-architectural-foundation.md)：先理解来源身份、主体与翼楼、可见轮廓、负空间、尺度和基准，再选择构造方法。区分真实边界、阴影、反射和遮挡；照片像素不能直接当米数；面积与围护边界、绝对标高与分段高度不得混用。已给定可靠尺寸直接使用，资料不可见的部分可以在授权范围内合理推断并简短注明。
+两种模式每个任务都先加载同一份[建筑专业底座](references/shared-architectural-foundation.md)和[图片一致性底座](references/source-reading-diagnostics.md、references/form-feature-review.md、references/reference-comparison.md、references/progressive-image-reconstruction.md)，再理解来源身份、主体与翼楼、可见轮廓、负空间、尺度和基准，选择构造方法。它们是建模依据，不是交付表单；只读取当前来源相关章节。区分真实边界、阴影、反射和遮挡；照片像素不能直接当米数；面积与围护边界、绝对标高与分段高度不得混用。已给定可靠尺寸直接使用，资料不可见的部分可以在授权范围内合理推断并简短注明。
 
 几何闭合、包围框或数量不证明建筑相符。重要主形错误先修依赖它的部分，其他合法工作可继续；重复不收敛时换控制几何或表示方法，不堆细节。经验用于判断，不逐条提交遵守证明。任务没有照片时核对任务条件，不制造图像前置。
 
@@ -19,8 +19,8 @@ description: Create, inspect, revise and deliver editable SketchUp architecture 
 
 调用 `sketchup_project_begin` 后，以保存策略和工具实际返回为准：
 
-- **guided**：阅读[引导操作](references/guided-operation.md)，沿当前阶段得到方法、样板及具体纠错。阶段指导不阻止提前推演整体空间与接口。
-- **autonomous**：阅读[专家操作](references/expert-operation.md)。新项目按建筑系统组织连续操作，自选构造与看图节点，不套六阶段，不固定每笔五图。旧项目保持其原策略，不静默改变历史写入语义。
+- **guided**：阅读[引导操作](references/guided-operation.md)，严格按 MCP 返回的当前阶段推进，完成当前阶段的主形、样板、取证和审核后才能正常进入下一阶段；不得跳阶段、合并阶段或提前制作后续构件。后续阶段发现上游缺项时，可按 `revise_from` 或当前返修入口回到对应阶段修改，只失效受影响的下游审核并保留已正确成果；不能用回退重做整栋。可以提前推演整体空间与接口，但不能提前写入后续阶段几何。
+- **autonomous**：阅读[专家操作](references/expert-operation.md)，并把六阶段经验当作建筑判断地图：先理解当前系统涉及的阶段目标、构造顺序和检查重点，再按建筑系统合并连续操作或审核；可以合并调用，不能跳过相关阶段内容或质量检查，不固定每笔五图。旧项目保持其原策略，不静默改变历史写入语义。
 
 ## 构造、观察与纠错
 
@@ -28,7 +28,7 @@ description: Create, inspect, revise and deliver editable SketchUp architecture 
 
 专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
-看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。只加载当前相关章节，古建REF与生成器按需使用。
+看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。涉及古建、楼阁、塔或古建照片时，写主形前先读取 `references/chinese-tower-image-modeling.md`、`references/yellow-crane-tower-lessons.md` 及相关 REF；若有 `sketchup_ref`，实际执行 list/match/read，query 使用“楼阁”“屋顶”“斗拱”等短关键词分别匹配，再决定生成器或自定义 Ruby。未完成这次定向读取不得开始古建主形。普通任务仍按需读取相关章节。
 
 明确的用户尺寸可按[尺寸核对](references/source-dimensions.md)一次绑定，程序预检与实际测量；没有可靠目标不编造。需要局部图或叠图时查[图像辅助](references/reference-comparison.md)，不为每次任务加载。
 

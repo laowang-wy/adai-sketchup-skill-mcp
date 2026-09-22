@@ -1,6 +1,6 @@
-# ADAI SketchUp 0.5.28 — 工程候选
+# ADAI SketchUp 0.5.29 — 工程候选
 
-Build: `0.5.28-rc1-expert-work-units-20260922`
+Build: `0.5.29-context-projection-ref-routing-20260923`
 
 基于用户确认的 `3a38143a54b1882ff0ac18aee3ff7aabf26e57e8` 源码直接修改。两个包独立安装；MCP 默认定位自身 runtime-support，不依赖 Skill 的绝对安装路径。
 

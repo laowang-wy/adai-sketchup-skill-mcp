@@ -24,6 +24,74 @@ const { requiredSystems, validateDetails } = require('./detail-contract');
 const MANAGED_CONTRACT = require('./contracts/managed-contract.json');
 const PHASES = MANAGED_CONTRACT.mode_plans.single_image;
 
+// Tool replies are an agent-facing projection, not the source of truth.  Keep
+// complete journals and readbacks in the signed state/files, but return the
+// small set of fields needed for the next decision by default.  Callers that
+// need forensic detail can opt in with detail=true.
+function summarizeObjects(objects, sampleLimit = 12) {
+  const rows = Array.isArray(objects) ? objects : [];
+  const sample = rows.slice(0, sampleLimit).map(item => {
+    if (!item || typeof item !== 'object') return item;
+    const out = {};
+    for (const key of ['id','semantic_id','persistent_id','name','kind','operation']) {
+      if (item[key] !== undefined && item[key] !== null) out[key] = item[key];
+    }
+    return Object.keys(out).length ? out : { value_type: Array.isArray(item) ? 'array' : 'object' };
+  });
+  return { count: rows.length, sample, truncated: rows.length > sample.length };
+}
+
+function summarizeWorkUnits(units, activeId = null) {
+  const rows = Array.isArray(units) ? units : [];
+  const sample = rows.slice(0, 16).map(u => ({
+    id: u.id, name: u.name, revision: u.revision,
+    persistent_id: u.persistent_id || null,
+  }));
+  return { count: rows.length, active_id: activeId, sample, truncated: rows.length > sample.length };
+}
+
+function summarizeOperationJournal(journal) {
+  if (!journal || typeof journal !== 'object') return null;
+  return {
+    operation_id: journal.operation_id,
+    kind: journal.kind || null,
+    status: journal.status || null,
+    phase: journal.phase || null,
+    work_unit_id: journal.work_unit_id || journal.unit?.id || null,
+    intent: journal.intent || journal.context?.intent || null,
+    prior_status: journal.prior_status || null,
+    dispatched_at: journal.dispatched_at || null,
+    completed_at: journal.completed_at || null,
+    error: journal.error || null,
+    input_sha256: journal.input_sha256 || null,
+  };
+}
+
+function summarizeReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') return receipt;
+  const out = {};
+  for (const key of ['ok','found','operation_id','status','committed','commit_confirmed','rollback_confirmed','result_unknown','request_published','delivery_state','transaction_started','write_attempted','code','message']) {
+    if (receipt[key] !== undefined) out[key] = receipt[key];
+  }
+  const recorded = receipt.receipt && typeof receipt.receipt === 'object' ? receipt.receipt : receipt;
+  for (const key of ['status','operation_id','request_published','delivery_state','commit_confirmed','rollback_confirmed','result_unknown']) {
+    if (recorded[key] !== undefined) out[key] = recorded[key];
+  }
+  const result = recorded.result && typeof recorded.result === 'object' ? recorded.result : null;
+  if (result) {
+    out.result = {
+      ok: result.ok,
+      status: result.status,
+      operation_id: result.operation_id,
+      commit_confirmed: result.commit_confirmed,
+      rollback_confirmed: result.rollback_confirmed,
+      result_unknown: result.result_unknown,
+      code: result.code,
+    };
+  }
+  return Object.keys(out).length ? out : { available: true };
+}
+
 const ROOF_PROFILE_PHASE = {
   name: 'roof_profile',
   hint: 'Build and review one source-matched roof control prototype before broad components: shared ridge, body section, eave guide and corner-lift section; include one body bay and one corner condition. Do not copy all tiers yet.',
@@ -1546,7 +1614,11 @@ class ManagedProjects {
       try { commitUnit(state, operation, buildResult); }
       catch (error) { state.status = 'recovery_required'; state.recovery_error = error.message; await this.saveState(state); throw error; }
       await this.saveState(state);
-      return { ok: true, committed: true, project_id: state.project_id, status: state.status, operation_id: operation.operation_id, work_unit: state.work_unit, scene_revision: state.scene_revision, result: { counts: buildResult.counts, bounds_inches: buildResult.bounds_inches, unit_scope: buildResult.unit_scope, objects: buildResult.build_result?.objects || [] }, ...describeActions(state) };
+      const objects = buildResult.build_result?.objects || [];
+      const result = { counts: buildResult.counts, bounds_inches: buildResult.bounds_inches, unit_scope: buildResult.unit_scope,
+        objects_summary: summarizeObjects(objects) };
+      if (input.detail === true) result.objects = objects;
+      return { ok: true, committed: true, project_id: state.project_id, status: state.status, operation_id: operation.operation_id, work_unit: state.work_unit, scene_revision: state.scene_revision, result, ...describeActions(state) };
     }
     state.status = 'evidence_pending';
     await this.saveState(state);
@@ -2450,7 +2522,10 @@ class ManagedProjects {
       && ['save_copy', 'remove_phase', 'remove_phases'].includes(unresolved.kind);
     if (state.status !== 'recovery_required' && !pendingAuxiliaryWrite && !(state.status === 'step_in_progress' && unresolved?.kind === 'geometry_step')) throw this.stateError('RECOVERY_NOT_REQUIRED', 'Reconcile is only available while recovery is required or a dispatched auxiliary receipt is pending');
     if (unresolved) {
-      const receiptResult = await this.operationReceipt({ project_id: state.project_id, operation_id: unresolved.operation_id }, bridge);
+      // Recovery is an internal forensic consumer; it must request the full
+      // signed receipt explicitly rather than relying on the compact agent
+      // projection returned by the public tool.
+      const receiptResult = await this.operationReceipt({ project_id: state.project_id, operation_id: unresolved.operation_id, detail: true }, bridge);
       const receipt = receiptResult.receipt;
       if (receipt?.found) {
         const request = receipt.receipt?.request;
@@ -2684,8 +2759,10 @@ class ManagedProjects {
       if (!isModelEvidence(sealed.record)) throw this.stateError('EVIDENCE_KIND_INVALID', 'Current inspection pointer is not a model snapshot.');
       evidence = {evidence_id:state.last_evidence_id, evidence_path:sealed.path, files:sealed.record.files, review_input:reviewAvailability(sealed.record.files)};
     }
+    const workUnits = Object.values(state.work_units || {}).map(u => ({id:u.id,name:u.name,revision:u.revision,persistent_id:u.persistent_id || null}));
     return {...base, mode:state.mode, assistance:assistanceSummary(state), execution_policy:policyFor(state),
-      work_unit:state.work_unit || null, work_units:Object.values(state.work_units || {}).map(u => ({id:u.id,name:u.name,revision:u.revision,persistent_id:u.persistent_id || null})),
+      work_unit:state.work_unit || null,
+      ...(input.detail === true ? { work_units: workUnits } : { work_units_summary: summarizeWorkUnits(workUnits, state.work_unit?.id || null) }),
       ...(isExpert(state) ? {scene_revision:state.scene_revision} : {phase:state.phase,step_index:state.step_index}),
       ...pendingOperation(state), evidence, evidence_error:state.evidence_error || null, quality,
       output_path:state.output_path || null, final_evidence_id:state.final_evidence_id || null,
@@ -2706,7 +2783,15 @@ class ManagedProjects {
     } catch (error) {
       receipt = { ok: false, code: error.code || 'RECEIPT_UNAVAILABLE', message: String(error.message || error) };
     }
-    return { ok: true, project_id: projectId, operation_id: operationId, journal: journal, receipt, retry_allowed: false, next_action: journal.status === 'result_unknown' ? 'Reconcile the recorded receipt or confirm not_executed/aborted; do not dispatch a new write.' : 'Use the recorded operation outcome; no automatic replay is permitted.' };
+    const nextAction = journal.status === 'result_unknown'
+      ? 'Reconcile the recorded receipt or confirm not_executed/aborted; do not dispatch a new write.'
+      : 'Use the recorded operation outcome; no automatic replay is permitted.';
+    const response = { ok: true, project_id: projectId, operation_id: operationId,
+      journal_summary: summarizeOperationJournal(journal), receipt_summary: summarizeReceipt(receipt),
+      retry_allowed: false, next_action: nextAction,
+      detail_available: 'Call sketchup_project_operation_receipt with detail=true for the signed journal and full receipt.' };
+    if (input.detail === true) { response.journal = journal; response.receipt = receipt; }
+    return response;
   }
 }
 

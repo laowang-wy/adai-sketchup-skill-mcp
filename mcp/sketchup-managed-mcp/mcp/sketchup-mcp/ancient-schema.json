@@ -55,6 +55,10 @@
           "markdown"
         ],
         "description": "read only; markdown returns the complete upstream 0.4 card with path and SHA256; default json is the adapted runtime card."
+      },
+      "detail": {
+        "type": "boolean",
+        "description": "For validate, default false returns a bounded validation summary without echoing large geometry parameters. Set true when the full validated parameter object is needed."
       }
     },
     "required": [
