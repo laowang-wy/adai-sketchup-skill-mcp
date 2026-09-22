@@ -9,8 +9,15 @@
 
 ## 同构建包
 
-- Skill ZIP: `dist/professional-sketchup-modeling-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`\n  - SHA256 `044ca1936c10626acd2be42c22cff68821d452840666c3af73ebf5de29ece96f`
-- MCP ZIP: `dist/sketchup-managed-mcp-0.5.27-s1-s6-cpal-skill-card-ruby-tower-isolated-host-brief-recovery-cold-cycle-context-v2-20260921.zip`\n  - SHA256 `af6f5bbbb644da392cd95950bc5b5bb116094d6a15f9c2b97e25f81e6c3ec629`
+- Skill ZIP: `dist/professional-sketchup-modeling-0.5.27-r3-c01-c06.zip`\n  - SHA256 `7abeb3acb9bb3f3844698d151126d66ae252c41dc2bf488146841c7260d45f1a`
+- MCP ZIP: `dist/sketchup-managed-mcp-0.5.27-r3-c01-c06.zip`\n  - SHA256 `16a4cae7f2ba636c3002b185a1ab9bd6d571d11854ca05860392c091ddd108ee`
+
+## 本轮 C01-C06 收尾
+
+- 细部系统按任务要求核对：合法单系统可通过，明确要求的系统缺失、重复或空条目拒绝；Node/Python 同步。
+- 失败修复按阶段/工作单元范围更新，审查决定不覆盖当前模型证据指针；历史记录只做身份链核验。
+- 视觉简写由程序自动整理机器附件缺失为 `unverified`；Agent 仍必须提供真实观察和实际查看的视图。
+- 显式 operation context 校验策略、版本和专家单元；删除入口按已有单元上下文收敛。
 
 ## 验证
 

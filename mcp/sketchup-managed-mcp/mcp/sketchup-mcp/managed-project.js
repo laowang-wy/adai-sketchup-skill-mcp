@@ -35,9 +35,11 @@ function normalizedProfile(value) {
   const optionalPhases = new Set(['roof_profile','archetypes','replication','variants','facade_detail']);
   if (omitPhases.length > 8 || omitPhases.some((name)=>!optionalPhases.has(name))) throw new Error('omit_phases may contain only optional implemented phase names');
   const repetition = profile.repetition === 'none' ? 'none' : profile.repetition === 'present' ? 'present' : 'unspecified';
+  const requiredDetailSystems = Array.isArray(profile.required_detail_systems)
+    ? [...new Set(profile.required_detail_systems.map((x)=>String(x).trim()).filter(Boolean))].slice(0,20) : [];
   const rationale=String(profile.repetition_reason||'').trim().slice(0,1000);
-  if(repetition==='none' && rationale.length<20)throw new Error('Non-repeating route requires source-based repetition_reason (at least 20 characters).');
-  return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale};
+  if(repetition==='none' && !rationale)throw new Error('Non-repeating route requires a short source-based repetition_reason.');
+  return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale,required_detail_systems:requiredDetailSystems};
 }
 function ancientRoofRoute(profile) {
   if (profile?.roof_route === 'custom') return false;
@@ -486,6 +488,7 @@ function nextCallForState(state) {
     }
     return {tool:'sketchup_project_retry_evidence',arguments:{project_id:id},required_fields:[]};
   }
+  if(status==='review_required' && state.revision_required && !state.revision_required.repair_evidence_id) return {tool:'sketchup_project_step',arguments:{project_id:id,continue_work_unit:true,operation_intent:'update'},required_fields:['ruby_file']};
   if(status==='review_required'&&state.last_evidence_id) return {tool:'sketchup_project_review',arguments:{project_id:id,evidence_id:state.last_evidence_id},required_fields:['verdict','visual_review_or_quality_review']};
   if(status==='ready_to_finish') return {tool:'sketchup_project_finish',arguments:{project_id:id},required_fields:[]};
   if(status==='finished') return null;
@@ -499,8 +502,10 @@ function qualityReviewSummary(state) {
   const latest=new Map(history.map(item=>[item.phase,item]));
   const phases=plan.map(phase=>{const item=latest.get(phase);return {phase,state:item?.state||'unreviewed',evidence_id:item?.evidence_id||null,checks:(item?.checks||[]).map(c=>({kind:c.kind,state:c.state}))};});
   const unverified=[];for(const row of phases)for(const check of row.checks)if(['unverified','not_applicable','unsupported'].includes(check.state))unverified.push({phase:row.phase,kind:check.kind,state:check.state});
-  const unresolved=[];for(const key of ['validation_failed','structure_error','recovery_recapture_required'])if(state?.[key])unresolved.push({kind:key,value:key==='recovery_recapture_required'?true:state[key]});
-  return {reviewed_phases:phases.filter(p=>p.state!=='unreviewed').length,total_phases:plan.length,phases,unverified,unresolved};
+  const unresolved=[];for(const key of ['validation_failed','revision_required','structure_error','recovery_recapture_required'])if(state?.[key])unresolved.push({kind:key,value:key==='recovery_recapture_required'?true:state[key]});
+  const history_gaps=history.flatMap(item=>Array.isArray(item.history_gaps)?item.history_gaps:[]).slice(-20);
+  if(history_gaps.length) unresolved.push({kind:'history_gaps',value:history_gaps});
+  return {reviewed_phases:phases.filter(p=>p.state!=='unreviewed').length,total_phases:plan.length,phases,unverified,unresolved,history_gaps};
 }
 
 function validateRoofControlContract(state, phase, buildResult) {
@@ -537,14 +542,63 @@ function validatePhaseOutput(state, phase, buildResult) {
 
 function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
-  const systems = Array.isArray(audit?.visible_detail_systems) ? audit.visible_detail_systems : [];
-  const valid = systems.filter((item) => item && typeof item.id === 'string' && item.id.trim());
-  // The shared Python geometry adapter requires two independently registered
-  // visible detail systems. Keep the public Node gate identical; a source
-  // that truly has only one system must declare a different route rather than
-  // silently weakening this production contract.
-  if (valid.length < 2) throw new Error('Managed audit requires two registered visible detail systems.');
-  return valid;
+  const systems = audit?.visible_detail_systems;
+  if (!Array.isArray(systems)) throw new Error('VISIBLE_DETAIL_SYSTEMS_REQUIRED');
+  const required = Array.isArray(state.task_profile?.required_detail_systems)
+    ? state.task_profile.required_detail_systems.map(String).filter(Boolean) : [];
+  const seen = new Set();
+  for (const item of systems) {
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id.trim()) throw new Error('VISIBLE_DETAIL_MAPPING_INVALID');
+    const id = item.id.trim();
+    if (seen.has(id)) throw new Error('DUPLICATE_VISIBLE_DETAIL_ID');
+    seen.add(id);
+  }
+  if (!systems.length) throw new Error('VISIBLE_DETAIL_SYSTEMS_REQUIRED');
+  const missing = required.filter(id => !seen.has(id));
+  if (missing.length) throw new Error(`VISIBLE_DETAIL_SYSTEMS_MISSING: ${missing.join(',')}`);
+  return systems;
+}
+
+// Internal findings are keyed by the check and its audited phase/unit scope.
+// Agent input does not carry evidence lineage or issue bookkeeping.
+function validationIssues(state) {
+  const issues = [...(state.validation_issues || [])];
+  if (state.validation_failed && !issues.some(x => canonical(x) === canonical(state.validation_failed))) issues.push(state.validation_failed);
+  return issues;
+}
+function applyValidationResult(state, phase, check, error = null, evidenceId = null) {
+  const unit = state.work_unit?.id || null;
+  const covered = item => item.phase === phase && (item.work_unit_id || null) === unit &&
+    (item.check || (item.kind === 'structure' ? 'phase_audit' : null)) === check;
+  const issues = validationIssues(state).filter(item => !covered(item));
+  if (error) issues.push({phase,work_unit_id:unit,check,kind:check,code:error.code || 'VALIDATION_FAILED',message:String(error.message || error),evidence_id:evidenceId,operation_id:state.pending_execution?.operation_id || null});
+  state.validation_issues = issues;
+  if (issues.length) state.validation_failed = issues[0];
+  else { delete state.validation_failed; delete state.structure_error; }
+}
+function validateCurrentOutput(state, phase, result) {
+  try { state.complexity_warning = validatePhaseOutput(state,phase,result) || null; }
+  catch(error) { applyValidationResult(state,phase.name,'phase_output',error); throw error; }
+  applyValidationResult(state,phase.name,'phase_output');
+}
+function validateCurrentAudit(state, phase, audit, evidenceId) {
+  try {
+    validateAuditReadback(audit);
+    if(phase.name === 'massing' && state.mode === 'single_image') {
+      state.projection_subjects=validateProjectionAudit(state,audit);
+      state.massing_summary=validateAntiSlabTowerAudit(state,audit);
+      state.source_camera=audit.camera;
+    }
+    const structure=validateStructureAudit(state,phase,audit);
+    if(structure)state.structure={...(state.structure||{}),...structure};
+    if(phase.name==='archetypes')state.visible_detail_systems=validateDetailAudit(state,audit);
+    if(phase.name==='facade_detail')state.unique_details=validateUniqueDetailAudit(state,audit);
+  } catch(error) { applyValidationResult(state,phase.name,'phase_audit',error,evidenceId); throw error; }
+  applyValidationResult(state,phase.name,'phase_audit',null,evidenceId);
+}
+function revisionMatches(state, phase) {
+  const revision=state.revision_required;
+  return !!revision && revision.phase===phase && (revision.work_unit_id||null)===(state.work_unit?.id||null);
 }
 
 function validateUniqueDetailAudit(state, audit) {
@@ -919,11 +973,14 @@ class ManagedProjects {
     const target = path.join(dir, `${clean.evidence_id}.json`);
     await fs.writeFile(target, JSON.stringify(clean, null, 2), 'utf8');
     state.last_record_hash = clean.record_hash;
-    state.last_evidence_id = clean.evidence_id;
+    // The record chain includes decisions and diagnostics.  Only a record
+    // carrying a sealed model audit is the current model evidence pointer;
+    // review decisions must never become the next review input.
+    if (clean.files?.audit?.path) state.last_evidence_id = clean.evidence_id;
     return { record: clean, path: target };
   }
 
-  async verifyEvidence(state, evidenceId, currentModel = null, options = {}) {
+  async verifyEvidenceIdentity(state, evidenceId, options = {}) {
     const target = path.join(this.projectDir(state.project_id), 'evidence', `${evidenceId}.json`);
     const record = JSON.parse(await fs.readFile(target, 'utf8'));
     const signature = record.signature;
@@ -938,6 +995,11 @@ class ManagedProjects {
     if (recordHash !== expectedHash) throw new Error('Evidence record hash verification failed');
     if (record.project_id !== state.project_id || record.evidence_id !== evidenceId) throw new Error('Evidence does not belong to this project');
     if (options.verifyFiles !== false) await verifyEvidenceFiles(record);
+    return { record, path: target };
+  }
+
+  async verifyEvidence(state, evidenceId, currentModel = null, options = {}) {
+    const { record, path: target } = await this.verifyEvidenceIdentity(state, evidenceId, options);
     if (!options.restoringCheckpoint && record.model_binding && state.model_binding && !sameModelBinding(record.model_binding, state.model_binding)) {
       throw this.stateError('EVIDENCE_MODEL_BINDING_MISMATCH', 'Evidence is bound to a different SketchUp document or session');
     }
@@ -1253,7 +1315,7 @@ class ManagedProjects {
     let abstractionRecheckRecord = null;
     if (abstractionRecheckNeeded(state, phase.name)) {
       const note=String(input.abstraction_note || '').trim();
-      if (note.length < 20) throw new Error(`After ${state.revision_attempts?.[phase.name]} revisions of ${phase.name}, the next step must provide abstraction_note (at least 20 characters) explaining the source evidence re-read and the changed or defended geometric abstraction.`);
+      if (!note) throw new Error(`After ${state.revision_attempts?.[phase.name]} revisions of ${phase.name}, the next step must provide a short abstraction_note explaining the source evidence re-read and the changed or defended geometric abstraction.`);
       abstractionRecheckRecord={attempt:Number(state.revision_attempts?.[phase.name]||0),note,recorded_at:new Date().toISOString()};
     }
     const scriptPath = path.resolve(input.ruby_file || '');
@@ -1363,26 +1425,15 @@ class ManagedProjects {
     await this.saveState(state);
     let evidenceStage = 'validation';
     try {
-      state.complexity_warning = validatePhaseOutput(state, phase, buildResult) || null;
+      validateCurrentOutput(state, phase, buildResult);
       let evidence;
       try { evidenceStage = 'evidence'; evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult); }
       catch (e) { e.capturePending = !!state.pending_evidence; throw e; }
       evidenceStage = 'validation';
-      const needsAudit = ['massing', 'archetypes', 'replication', 'facade_detail'].includes(phase.name);
-      const audit = needsAudit ? JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8')) : null;
-      if (phase.name === 'massing' && state.mode === 'single_image') {
-        state.projection_subjects = validateProjectionAudit(state, audit);
-        state.massing_summary = validateAntiSlabTowerAudit(state, audit);
-        state.source_camera = evidence.camera_state;
-      }
-      const structure = validateStructureAudit(state, phase, audit);
-      if (structure) state.structure = { ...(state.structure || {}), ...structure };
-      if (phase.name === 'archetypes') {
-        state.visible_detail_systems = validateDetailAudit(state, audit);
-      }
-      if (phase.name === 'facade_detail') {
-        state.unique_details = validateUniqueDetailAudit(state, audit);
-      }
+      const audit = JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8'));
+      validateCurrentAudit(state,phase,audit,evidence.evidence_id);
+      if (revisionMatches(state,phase.name) && ['update','replace'].includes(operation.intent)) state.revision_required.repair_evidence_id=evidence.evidence_id;
+      delete state.evidence_error;
       state.status = 'review_required';
       delete state.pending_evidence;
       state.updated_at = new Date().toISOString();
@@ -1401,7 +1452,7 @@ class ManagedProjects {
       // remove_phase is only legal for an explicit, scoped compensation call.
       const category = classifyEvidenceFailure(error, evidenceStage);
       state.evidence_error = category;
-      if (category.stage === 'validation') state.validation_failed = category;
+      // The failing validator recorded its precise scope; do not overwrite it with an unscoped category.
       state.status = 'evidence_pending';
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
@@ -1432,19 +1483,11 @@ class ManagedProjects {
       if (!phase || phase.name !== execution.phase) throw this.stateError('RECOVERY_PHASE_MISMATCH', 'Receipt phase does not match current project');
       const evidence = await this.automaticEvidence(state, phase.name, execution.script_path, execution.script_hash, bridge, execution.build_result);
       try {
-        state.complexity_warning = validatePhaseOutput(state, phase, execution.build_result) || null;
-        const audit = JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8'));
-        if (phase.name === 'massing' && state.mode === 'single_image') { state.projection_subjects = validateProjectionAudit(state, audit); state.massing_summary = validateAntiSlabTowerAudit(state, audit); state.source_camera = evidence.camera_state; }
-        const structure = validateStructureAudit(state, phase, audit);
-        if (structure) state.structure = { ...(state.structure || {}), ...structure };
-        if (phase.name === 'archetypes') state.visible_detail_systems = validateDetailAudit(state, audit);
-        if (phase.name === 'facade_detail') state.unique_details = validateUniqueDetailAudit(state, audit);
-        delete state.validation_failed;
-        delete state.structure_error;
-      } catch (error) {
-        state.validation_failed = { phase: phase.name, kind: 'structure', evidence_id: evidence.evidence_id, message: error.message };
-        state.structure_error = error.message;
-      }
+        validateCurrentOutput(state,phase,execution.build_result);
+        const audit=JSON.parse(await fs.readFile(evidence.files.audit.path,'utf8'));
+        validateCurrentAudit(state,phase,audit,evidence.evidence_id);
+        if(revisionMatches(state,phase.name) && ['update','replace'].includes(execution.intent)) state.revision_required.repair_evidence_id=evidence.evidence_id;
+      } catch(error) { /* The shared check owns its scoped failure. */ }
       state.status = 'review_required';
       delete state.pending_evidence;
       delete state.recovery_error;
@@ -1516,20 +1559,10 @@ class ManagedProjects {
       const evidence = await this.writeEvidence(state, { schema_version: 1, evidence_id: `recapture_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: state.project_id, phase: isFinal ? 'finish' : phase, record_type: isFinal ? 'final_recapture' : currentPhase ? 'phase_evidence' : 'continuation_recapture', created_at: new Date().toISOString(), scene_revision: Number(state.scene_revision || 0), model_binding: current, files, visual: 'unverified', geometry_readback: 'unverified', missing_machine_inputs:['geometry_measurements','geometry_dependencies'], note:'Fresh audit and views only; historical geometric measurements were not relabelled.' });
       if (!isFinal) {
         try {
-          if(phase==='massing' && state.mode==='single_image') {
-            state.projection_subjects=validateProjectionAudit(state,audit);
-            state.massing_summary=validateAntiSlabTowerAudit(state,audit);
-            state.source_camera=audit.camera;
-          }
-          const structure=validateStructureAudit(state,{name:phase},audit);
-          if(structure)state.structure={...(state.structure||{}),...structure};
-          if(phase==='archetypes')state.visible_detail_systems=validateDetailAudit(state,audit);
-          if(phase==='facade_detail')state.unique_details=validateUniqueDetailAudit(state,audit);
-          delete state.validation_failed;
-          delete state.structure_error;
-        }
-        catch(error){state.validation_failed={phase,kind:'structure',message:error.message,evidence_id:evidence.record.evidence_id};}
+          validateCurrentAudit(state,{name:phase},audit,evidence.record.evidence_id);
+        } catch(error) { /* Preserve all failures not covered by this audit. */ }
       }
+
       if (currentPhase) { delete state.recapture_return_status; delete state.recapture_phase; }
       delete state.recapture_basis;
       delete state.recapture_exact;
@@ -1560,29 +1593,20 @@ class ManagedProjects {
     } else if(canonical(live.root)!==canonical(prior.root)) {
       throw new Error('Live geometry changed since pending capture; refusing automatic approval');
     }
-    state.complexity_warning = validatePhaseOutput(state,phase,pending.build_result) || null;
+    validateCurrentOutput(state,phase,pending.build_result);
     let evidence;
     try { evidence=await this.automaticEvidence(state,phase.name,pending.script_path,pending.script_hash,bridge,pending.build_result); }
     catch(error) { if(state.status==='recovery_required') throw error; state.status='evidence_pending';state.evidence_error=error.message;await this.saveState(state);throw new Error(`取证仍未完成：${error.message}。下一步只能调 sketchup_project_retry_evidence；禁止重放建模。`); }
     const audit=JSON.parse(await fs.readFile(evidence.files.audit.path,'utf8'));
     try {
-      if(phase.name==='massing' && state.mode==='single_image') {
-        state.projection_subjects=validateProjectionAudit(state,audit);state.massing_summary=validateAntiSlabTowerAudit(state,audit);state.source_camera=evidence.camera_state;
-      }
-      const structure=validateStructureAudit(state,phase,audit);
-      if(structure) state.structure={...(state.structure||{}),...structure};
-      if(phase.name==='archetypes') state.visible_detail_systems=validateDetailAudit(state,audit);
-      if(phase.name==='facade_detail') state.unique_details=validateUniqueDetailAudit(state,audit);
-    } catch (error) {
-      state.status = 'review_required';
-      state.structure_error = String(error.message || error);
-      state.validation_failed = { phase: phase.name, kind: 'structure', evidence_id: evidence.evidence_id, message: state.structure_error, recorded_at: new Date().toISOString() };
-      delete state.pending_evidence;
-      state.updated_at = new Date().toISOString();
+      validateCurrentAudit(state,phase,audit,evidence.evidence_id);
+      if(revisionMatches(state,phase.name) && ['update','replace'].includes(state.pending_execution?.intent)) state.revision_required.repair_evidence_id=evidence.evidence_id;
+    } catch(error) {
+      state.status='review_required';delete state.pending_evidence;
       await this.saveState(state);
-      throw new Error(`Capture succeeded but structure validation requires correction: ${error.message}. Review the captured evidence and revise the phase; geometry was not replayed.`);
+      throw new Error(`Capture succeeded but validation requires correction: ${error.message}. Review the captured evidence; geometry was not replayed.`);
     }
-    state.status='review_required';delete state.pending_evidence;delete state.evidence_error;delete state.recovery_recapture_required;delete state.validation_failed;delete state.structure_error;
+    state.status='review_required';delete state.pending_evidence;delete state.evidence_error;delete state.recovery_recapture_required;
     await this.saveState(state);
     return {ok:true,project_id:state.project_id,status:state.status,phase:phase.name,task_card:taskCard(state,phase),...evidence,review_sheet:evidence.files.review_sheet?.path || '',next_action:'Inspect the sealed visual evidence and submit an explicit review. No geometry was rebuilt.'};
   }
@@ -1627,9 +1651,11 @@ class ManagedProjects {
       error.validation_failed = state.validation_failed;
       throw error;
     }
+    if (verdict==='continue' && state.revision_required && (!revisionMatches(state,phase.name) || state.revision_required.repair_evidence_id!==input.evidence_id)) throw this.stateError('REVISION_REQUIRED','The rejected result needs a scoped correction before a new acceptance.');
     const prepared = input.visual_review!==undefined ? await assembleVisualReview(input,state,phase.name,sealedEvidence.record) : input;
     const qualityReview = await validateQualityReview(prepared, state, phase.name, this.skillRoot, input.visual_review!==undefined ? sealedEvidence.record.files : null);
     if (verdict === 'continue') validateInspectedViews(qualityReview, sealedEvidence.record);
+    if (verdict==='continue' && revisionMatches(state,phase.name)) delete state.revision_required;
     await this.writeEvidence(state, {
       schema_version: 1,
       evidence_id: `decision_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`,
@@ -1681,7 +1707,7 @@ class ManagedProjects {
         // committed scene and require a scoped update/replace operation on the
         // next call. The existing patch/revise_from routes remain explicit
         // alternatives when their write scope is proven.
-        state.revision_required = { phase: phase.name, evidence_id: input.evidence_id, reason: String(input.note || 'review requested revision'), requested_at: new Date().toISOString() };
+        state.revision_required = { phase: phase.name, work_unit_id: state.work_unit?.id || null, evidence_id: input.evidence_id, reason: String(input.note || 'review requested revision'), requested_at: new Date().toISOString() };
         state.status = 'review_required';
         state.updated_at = new Date().toISOString();
         await this.saveState(state);
@@ -1705,10 +1731,10 @@ class ManagedProjects {
       try {
         const item = (evidenceId === input.evidence_id)
           ? sealedEvidence.record
-          : (await this.verifyEvidence(state, evidenceId, null, { verifyFiles: false })).record;
-        if (item.phase) mergedCoverage.push({ phase: item.phase, evidence_id: evidenceId, provenance: evidenceId === input.evidence_id ? 'current' : 'verified_history' });
+          : (await this.verifyEvidenceIdentity(state, evidenceId, { verifyFiles: false })).record;
+        if (item.phase) mergedCoverage.push({ phase: item.phase, evidence_id: evidenceId, work_unit_id: item.work_unit_id || item.operation_context?.work_unit_id || null, provenance: evidenceId === input.evidence_id ? 'current' : 'verified_history', current_usable: evidenceId === input.evidence_id });
       } catch (error) {
-        historyGaps.push({ evidence_id: evidenceId, code: error.code || 'HISTORY_UNAVAILABLE', message: String(error.message || error) });
+        historyGaps.push({ evidence_id: evidenceId, code: error.code || 'HISTORY_IDENTITY_INVALID', message: String(error.message || error) });
       }
     }
     state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, history_gaps: historyGaps, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
@@ -2337,7 +2363,7 @@ class ManagedProjects {
     }
     const operations=pendingOperation(state);const includeTask=input.detail===true&&(!input.section||input.section==='task');
     const pendingEvidenceRepair = state.status === 'evidence_pending' && /consumer|producer|materializ|GEOMETRY_DERIVED_INPUT_INVALID/i.test(String(state.evidence_error||'')) && state.pending_evidence;
-    const response={ ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,includeTask), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: state.status==='finished'?(state.final_evidence_path||''):evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? 'Inspect the latest review sheet and submit continue or revise.' : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : pendingEvidenceRepair ? '派生几何证据格式错误但几何已保留：可调用 sketchup_project_recover(action=abort_pending) 撤回当前未审阶段并保留审计，再修正输入；也可先重试取证。' : state.status === 'evidence_pending' ? '下一步调 sketchup_project_retry_evidence；若错误属于派生证据格式，可用 recover(action=abort_pending) 合法撤回当前未审阶段。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
+    const response={ ok: true, project_id: state.project_id, mode: state.mode, assistance: assistanceSummary(state,includeTask), status: state.status, phase: state.phase, step_index: state.step_index, last_evidence_id: state.last_evidence_id, final_evidence_id:state.final_evidence_id||null, output_path:state.output_path||null, last_checkpoint: state.last_checkpoint || null, toolkit_bindings: state.toolkit_bindings || [], evidence_path: state.status==='finished'?(state.final_evidence_path||''):evidencePath, review_sheet: reviewSheet, recapture_required:!!state.recovery_recapture_required, validation_failed:state.validation_failed || null, pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null, review_input:reviewInput, ...operations, next_call:nextCallForState(state), task_card: phase && state.status !== 'finished' ? taskCard(state, phase, input.detail===true) : null, next_action: state.recovery_recapture_required ? 'Call sketchup_project_retry_evidence, then review the new evidence_id.' : state.status === 'ready_for_step' && phase ? phase.hint : state.status === 'step_in_progress' || state.status === 'patch_in_progress' || state.status === 'write_in_progress' ? 'A write is in progress or its result is unresolved; inspect the operation receipt before any new write.' : state.status === 'review_required' ? (state.revision_required && !state.revision_required.repair_evidence_id ? 'Submit the scoped corrective Ruby through the returned next_call; committed geometry is preserved.' : 'Inspect the latest review sheet and submit continue or revise.') : state.status === 'ready_to_finish' ? 'Call sketchup_project_finish.' : pendingEvidenceRepair ? '派生几何证据格式错误但几何已保留：可调用 sketchup_project_recover(action=abort_pending) 撤回当前未审阶段并保留审计，再修正输入；也可先重试取证。' : state.status === 'evidence_pending' ? '下一步调 sketchup_project_retry_evidence；若错误属于派生证据格式，可用 recover(action=abort_pending) 合法撤回当前未审阶段。' : state.status === 'recovery_required' ? 'Recovery required: inspect the operation receipt and active document; do not replay the step.' : state.status === 'finished' ? 'Project is finished.' : 'Unknown state: inspect the project journal before any write.' };
     if(input.section==='delivery') return {ok:true,project_id:state.project_id,status:state.status,output_path:response.output_path,final_evidence_id:response.final_evidence_id,evidence_path:response.evidence_path,review_sheet:response.review_sheet,quality:qualityReviewSummary(state),unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved,next_call:response.next_call};
     if(input.section==='quality') return {ok:true,project_id:state.project_id,status:state.status,quality:qualityReviewSummary(state),validation_failed:response.validation_failed,unverified:qualityReviewSummary(state).unverified,unresolved:qualityReviewSummary(state).unresolved};
     if(input.section==='constraints') return {ok:true,project_id:state.project_id,status:state.status,assistance:{active_constraints:response.assistance.active_constraints,task_text_ref:response.assistance.task_text_ref}};

@@ -1054,6 +1054,18 @@ module PipClawManagedProject
     raise ArgumentError, 'operation_context must be a JSON object' unless operation_context.is_a?(Hash)
     intent = operation_context['intent'].to_s
     raise ArgumentError, 'operation_context.intent must be append, update, or replace' unless intent.empty? || %w[append update replace].include?(intent)
+    unless operation_context.empty?
+      strategy = operation_context['strategy'].to_s
+      raise ArgumentError, 'operation_context.strategy must be expert_work_unit or guided_phase' unless %w[expert_work_unit guided_phase].include?(strategy)
+      version = operation_context['policy_version']
+      raise ArgumentError, 'operation_context.policy_version must be supported integer 1' unless (version.is_a?(Integer) || version.to_s == '1') && version.to_i == 1
+      if strategy == 'expert_work_unit' && operation_context['work_unit_id'].to_s.strip.empty?
+        raise ArgumentError, 'expert_work_unit requires work_unit_id'
+      end
+      if strategy == 'guided_phase' && !operation_context['work_unit_id'].to_s.strip.empty?
+        raise ArgumentError, 'guided_phase cannot carry expert work_unit_id'
+      end
+    end
     request = {'operation_id'=>operation_id, 'project_id'=>project_id, 'phase'=>phase_name, 'step_index'=>step_index, 'script_sha256'=>Digest::SHA256.file(script_path).hexdigest, 'model_binding'=>binding, 'operation_context'=>operation_context}
     if File.file?(target)
       prior = JSON.parse(File.binread(target))
@@ -1214,7 +1226,7 @@ module PipClawManagedProject
     end
   end
 
-  def remove_phase(project_id, phase_name)
+  def remove_phase(project_id, phase_name, work_unit_id = nil)
     started = false
     committed = false
     commit_attempted = false
@@ -1225,7 +1237,7 @@ module PipClawManagedProject
       root = root_for(project_id, false)
       removed = 0
       if root
-        target = phase_group(root, phase_name)
+        target = phase_group(root, phase_name, work_unit_id)
         if target && target.valid?
           target.erase!
           removed = 1
@@ -1279,7 +1291,8 @@ module PipClawManagedProject
       raise "Managed project not found: #{project_id}" unless root
       removed = []
       normalized.each do |phase_name|
-        target = phase_group(root, phase_name)
+        unit_id = operation_request && operation_request.dig('operation_context','work_unit_id')
+        target = phase_group(root, phase_name, unit_id)
         next unless target && target.valid?
         target.erase!
         removed << phase_name

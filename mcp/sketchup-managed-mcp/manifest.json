@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.27",
-  "build_id": "0.5.27-r2-q01-q05-committed-outcome-unit-scope-20260922",
+  "build_id": "0.5.27-r3-c01-c06-visual-shorthand-20260922",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -64,6 +64,6 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.27-r2",
+  "codeBaseline": "0.5.27-r3",
   "engineeringVersion": "0.5.27"
 }

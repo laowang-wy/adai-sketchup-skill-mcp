@@ -57,13 +57,20 @@ def validate_phase_contract(data,ids):
    seen.add(item['id'])
   if mapped!=set(ids):raise ValueError('ARCHETYPE_PART_MAPPING_MISSING')
   details=data.get('visible_detail_systems')
-  if not isinstance(details,list) or len(details)<2:raise ValueError('VISIBLE_DETAIL_SYSTEMS_REQUIRED')
+  if not isinstance(details,list):raise ValueError('VISIBLE_DETAIL_SYSTEMS_REQUIRED')
+  if not details:raise ValueError('VISIBLE_DETAIL_SYSTEMS_REQUIRED')
+  required=task.get('required_detail_systems',[])
+  if required is None: required=[]
+  if not isinstance(required,list) or any(not isinstance(x,str) or not x.strip() for x in required):raise ValueError('REQUIRED_DETAIL_SYSTEMS_INVALID')
+  required=set(x.strip() for x in required)
   detail_ids=set()
   for item in details:
    if not isinstance(item,dict) or item.get('archetype_id') not in seen or not all(isinstance(item.get(k),str) and item[k].strip() for k in ('id','kind','source_cue')) or type(item.get('instances')) is not int or item['instances']<1:
     raise ValueError('VISIBLE_DETAIL_MAPPING_INVALID')
    if item['id'] in detail_ids:raise ValueError('DUPLICATE_VISIBLE_DETAIL_ID')
    detail_ids.add(item['id'])
+  missing=required-detail_ids
+  if missing:raise ValueError('VISIBLE_DETAIL_SYSTEMS_MISSING:'+','.join(sorted(missing)))
  if phase=='primary_corrections':
   targets=data.get('correction_targets')
   if not isinstance(targets,list) or not targets:raise ValueError('CORRECTION_TARGET_MAPPING_REQUIRED')

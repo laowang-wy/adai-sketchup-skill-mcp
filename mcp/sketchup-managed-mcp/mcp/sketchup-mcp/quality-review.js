@@ -38,18 +38,28 @@ async function assembleVisualReview(input,state,phase,evidence) {
   if(input.quality_review!==undefined && input.visual_review!==undefined) throw new Error('REVIEW_INPUT_CONFLICT: supply quality_review or visual_review, not both');
   const files=evidence.files || {},names=['geometry_measurements','geometry_dependencies','geometry_review_draft'];
   const missing=names.filter(name=>!files[name]?.path);
-  if(missing.length)throw Object.assign(new Error('VISUAL_REVIEW_INPUTS_MISSING: '+missing.join(', ')+'; use full quality_review to explicitly report missing inputs'),{code:'VISUAL_REVIEW_INPUTS_MISSING',missing_inputs:missing});
+  const checks=[];
+  for (const kind of ['geometry','dependencies']) {
+    const name=kind==='geometry'?'geometry_measurements':'geometry_dependencies';
+    const file=files[name];
+    if (!file?.path) checks.push({kind,state:'unverified',reason:`Machine attachment ${name} was not generated for this evidence; no machine pass is claimed.`});
+    else checks.push({kind,input_path:file.path});
+  }
+  // The draft is an optional machine artifact. If present, verify its binding;
+  // its absence is recorded by the engine instead of delegated to the Agent.
   const draftFile=files.geometry_review_draft;
-  if((await fs.stat(draftFile.path)).size>MAX_INPUT)throw new Error('Review draft exceeds 4 MiB');
-  const bytes=await fs.readFile(draftFile.path);verifySnapshot(bytes,draftFile);
-  const draft=JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));
-  if(draft.project_id!==state.project_id || draft.phase!==phase || draft.evidence_id!==input.evidence_id)throw new Error('Stale or unbound sealed review draft');
-  return {...input,quality_review:{schema_version:1,project_id:state.project_id,phase,evidence_id:input.evidence_id,visual:input.visual_review,checks:[{kind:'geometry',input_path:files.geometry_measurements.path},{kind:'dependencies',input_path:files.geometry_dependencies.path}]}};
+  if(draftFile?.path) {
+    if((await fs.stat(draftFile.path)).size>MAX_INPUT)throw new Error('Review draft exceeds 4 MiB');
+    const bytes=await fs.readFile(draftFile.path);verifySnapshot(bytes,draftFile);
+    const draft=JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));
+    if(draft.project_id!==state.project_id || draft.phase!==phase || draft.evidence_id!==input.evidence_id)throw new Error('Stale or unbound sealed review draft');
+  }
+  return {...input,quality_review:{schema_version:1,project_id:state.project_id,phase,evidence_id:input.evidence_id,visual:input.visual_review,checks}};
 }
 
 function reviewAvailability(files={}) {
   const missing=['geometry_measurements','geometry_dependencies','geometry_review_draft'].filter(name=>!files[name]?.path);
-  return {visual_review_available:missing.length===0,missing_inputs:missing,machine_checks:missing.length?'inputs_missing':'pending_validation',visual:'agent_review_required'};
+  return {visual_review_available:true,shorthand_available:true,missing_inputs:missing,machine_checks:missing.length?'partial_inputs':'pending_validation',visual:'agent_review_required'};
 }
 
 async function validateQualityReview(input, state, phase, skillRoot, sealedFiles=null) {
