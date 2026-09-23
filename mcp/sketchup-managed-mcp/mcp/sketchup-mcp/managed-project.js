@@ -297,7 +297,7 @@ function validateProjectionBrief(value) {
 }
 
 function validateProjectionAudit(state, audit) {
-  if (state.mode !== 'single_image' || !state.projection_brief?.targets?.length) return { visual_status: 'not_checked', status: 'not_checked', subjects: [], failures: ['No projection brief was bound; compare the returned views directly.'] };
+  if (state.mode !== 'single_image' || !state.projection_brief?.targets?.length) return { status: 'not_checked', subjects: [], failures: ['No projection brief was bound; compare the returned views directly.'] };
   const failures = [];
   if (state.projection_brief?.perspective_required && audit?.camera?.perspective === false) failures.push('perspective camera was not used');
   const actual = new Map((audit?.projection_subjects || []).map((item) => [String(item.id), item]));
@@ -329,12 +329,12 @@ function validateProjectionAudit(state, audit) {
     }
   }
   const uniqueFailures = [...new Set(failures)];
-  return { visual_status: uniqueFailures.length ? 'mismatch' : 'matched', status: uniqueFailures.length ? 'mismatch' : 'matched', subjects: [...actual.values()], failures: uniqueFailures };
+  return { status: uniqueFailures.length ? 'mismatch' : 'not_checked', subjects: [...actual.values()], failures: uniqueFailures, diagnostic: 'projection_geometry_only' };
 }
 
 
 function validateAntiSlabTowerAudit(state, audit) {
-  if (state.mode !== 'single_image') return { visual_status: 'not_checked', status: 'not_checked', reason: 'single_image massing heuristics do not apply' };
+  if (state.mode !== 'single_image') return { status: 'not_checked', reason: 'single_image massing heuristics do not apply' };
   const camera = audit?.camera || {};
   const summary = audit?.massing_summary || {};
   const bodies = Array.isArray(summary.bodies) ? summary.bodies : [];
@@ -345,13 +345,13 @@ function validateAntiSlabTowerAudit(state, audit) {
   // Generic multi-mass heuristics must not force invented context into such a photo.
   const singleSubject = state.projection_brief?.targets?.length === 1;
   if (state.projection_brief?.perspective_required && camera.perspective === false) failures.push('perspective camera was not used');
-  if (singleSubject) return { visual_status: failures.length ? 'mismatch' : 'not_checked', status: failures.length ? 'mismatch' : 'not_checked', failures, main_body_count: Number(summary.main_body_count), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0), geometry_heuristics: 'visual_review_required' };
+  if (singleSubject) return { status: failures.length ? 'mismatch' : 'not_checked', failures, main_body_count: Number(summary.main_body_count), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0), geometry_heuristics: 'visual_review_required' };
   if (Number(summary.main_body_count || 0) === 1 && Number(root.height_to_width || 0) >= 3.0) failures.push('single isolated skinny tower massing is inconsistent with perspective photo reconstruction');
   if (Number(summary.main_body_count || 0) === 1 && Number(root.plan_aspect || 0) >= 3.5 && Number(root.height_to_thickness || 0) <= 2.0) failures.push('single slab-like monolith massing detected');
   if (Number(summary.dominant_body_footprint_ratio || 0) > 0.78) failures.push('one body occupies too much of the whole footprint; likely a collapsed one-shot mass');
   const thinTallBodies = bodies.filter((body) => Number(body.height_to_width || 0) >= 4.2 && Number(body.footprint_share || 0) >= 0.08);
   if (thinTallBodies.length >= 1 && Number(summary.main_body_count || 0) <= 2) failures.push('detected a dominant thin-tall body pattern; rebuild from framing masses and shared courtyard/wing relationships');
-  return { visual_status: failures.length ? 'mismatch' : 'not_checked', status: failures.length ? 'mismatch' : 'not_checked', failures: [...new Set(failures)], main_body_count: Number(summary.main_body_count || 0), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0) };
+  return { status: failures.length ? 'mismatch' : 'not_checked', failures: [...new Set(failures)], main_body_count: Number(summary.main_body_count || 0), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0), diagnostic: 'massing_heuristics_only' };
 }
 
 function validateStructureAudit(state, phase, audit) {
@@ -571,7 +571,7 @@ function validateDetailAudit(state, audit) {
       issues.push(`Detail ${item?.id || '(unnamed)'} has an invalid or unverified live target; do not use it as evidence for an update.`);
     }
   }
-  return { status: issues.length ? 'not_checked' : 'matched', visual_status: 'not_checked', systems, issues };
+  return { status: issues.length ? 'not_checked' : 'matched', systems, issues };
 }
 
 function validateCurrentOutput(state, phase, result) {
@@ -586,7 +586,7 @@ function validateCurrentAudit(state, phase, audit, evidenceId) {
     if(phase.name === 'massing' && state.mode === 'single_image') {
       const projection = validateProjectionAudit(state,audit);
       state.projection_subjects=projection.subjects || [];
-      state.visual_status = projection.visual_status;
+      state.projection_status = projection.status;
       state.projection_audit = projection;
       state.massing_summary=validateAntiSlabTowerAudit(state,audit);
       state.source_camera=audit.camera;
@@ -601,7 +601,7 @@ function validateCurrentAudit(state, phase, audit, evidenceId) {
 function validateUniqueDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const details = Array.isArray(audit?.unique_details) ? audit.unique_details.filter((item) => item?.valid && Number(item?.counts?.entities || 0) >= 3) : [];
-  return details.length ? details : { status: 'not_checked', visual_status: 'not_checked', issues: ['No registered one-off detail was found; this is diagnostic only.'], details: [] };
+  return details.length ? details : { status: 'not_checked', issues: ['No registered one-off detail was found; this is diagnostic only.'], details: [] };
 }
 
 function validateInspectedViews(qualityReview, evidenceRecord) {

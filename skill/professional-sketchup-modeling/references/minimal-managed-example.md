@@ -4,7 +4,7 @@ This is the shortest complete production pattern. It demonstrates control flow, 
 
 ## Begin
 
-Inspect the source and call `sketchup_project_begin` with mode, source, output, project ID and 1–8 observed projection targets.
+Inspect the source and call `sketchup_project_begin` with mode, source, output and project ID. If composition needs it, add 1–8 observed projection targets; this brief is optional guidance, not a universal building contract.
 
 Example `single_image` begin arguments (illustrative paths and bbox only; replace with inspected source data):
 
@@ -28,7 +28,7 @@ For every returned `next_action`:
 
 1. write one `PipClawManagedBuild.build(entities, context)` file;
 2. build only the requested scale;
-3. use the required managed registration helper;
+3. use the applicable managed construction entry point; add registration metadata only when it helps track a real object or repeated system;
 4. call `sketchup_project_step`;
 5. inspect the returned review images yourself;
 6. call `sketchup_project_review` with `revise` or `continue`; production continue requires the bound [quality_review record](managed-quality-review.md), including concrete visual observations and both check statuses.

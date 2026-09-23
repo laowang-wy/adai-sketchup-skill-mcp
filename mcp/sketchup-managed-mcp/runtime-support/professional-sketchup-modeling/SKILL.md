@@ -9,7 +9,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 ## 共同专业底座
 
-两种模式每个任务都先加载同一份[建筑专业底座](references/shared-architectural-foundation.md)和[图片一致性底座](references/source-reading-diagnostics.md、references/form-feature-review.md、references/reference-comparison.md、references/progressive-image-reconstruction.md)，再理解来源身份、主体与翼楼、可见轮廓、负空间、尺度和基准，选择构造方法。它们是建模依据，不是交付表单；只读取当前来源相关章节。区分真实边界、阴影、反射和遮挡；照片像素不能直接当米数；面积与围护边界、绝对标高与分段高度不得混用。已给定可靠尺寸直接使用，资料不可见的部分可以在授权范围内合理推断并简短注明。
+两种模式每个任务先加载同一份[建筑专业底座](references/shared-architectural-foundation.md)，再理解来源身份、主体与翼楼、可见轮廓、负空间、尺度和基准，选择构造方法。上传效果图时再读[来源解读](references/source-reading-diagnostics.md)、[轮廓核对](references/form-feature-review.md)、[对照方法](references/reference-comparison.md)或[渐进重建](references/progressive-image-reconstruction.md)中与当前问题相关的章节；上传CAD时读CAD对应经验。它们是建模依据，不是交付表单；只读取当前来源相关章节。区分真实边界、阴影、反射和遮挡；照片像素不能直接当米数；面积与围护边界、绝对标高与分段高度不得混用。已给定可靠尺寸直接使用，资料不可见的部分可以在授权范围内合理推断并简短注明。
 
 几何闭合、包围框或数量不证明建筑相符。重要主形错误先修依赖它的部分，其他合法工作可继续；重复不收敛时换控制几何或表示方法，不堆细节。经验用于判断，不逐条提交遵守证明。任务没有照片时核对任务条件，不制造图像前置。
 
@@ -26,7 +26,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 ## 构造、观察与纠错
 
-使用当前绑定的Skill/MCP，不混读旧副本。已有生成器的文件直接提交；无匹配配方可用合法受管Ruby；需要自定义助手时再读取 `references/ruby-snippets.md`，按当前问题取用，不全库加载。Ruby先落文件，以 `PipClawManagedBuild.build(entities,context)` 构造；毫米与SU内部英寸转换按[受管API](references/managed-ruby-api.md)处理。不得在脚本中保存/打开文档、改变内核或嵌套事务。
+使用当前绑定的Skill/MCP，不混读旧副本。已有生成器的文件直接提交；无匹配配方可用合法受管Ruby；基础构造需要时读取 `references/ruby-snippets.md`，古建屋面/转角/斗拱/支承链需要时读取 [古建构造模式](references/examples/ruby/ancient-construction-patterns.rb)，按当前问题取用，不全库加载。Ruby先落文件，以 `PipClawManagedBuild.build(entities,context)` 构造；毫米与SU内部英寸转换按[受管API](references/managed-ruby-api.md)处理。不得在脚本中保存/打开文档、改变内核或嵌套事务。
 
 专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
