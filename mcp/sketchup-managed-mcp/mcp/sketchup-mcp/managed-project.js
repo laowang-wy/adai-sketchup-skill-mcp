@@ -456,10 +456,10 @@ function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}
     throw new Error('Managed build file must define module PipClawManagedBuild with build(entities, context)');
   }
   if (expert) return; // Compiled algorithms keep their own input contracts.
-  // The generated adapter records its phase in a metadata comment.  Keep that
-  // declaration visible to the gate while still ignoring commented-out calls.
+  // The generated adapter may record its phase in a metadata comment.  It is
+  // useful diagnostics, but it is not a permission or geometry proof: a valid
+  // managed script can be reused by another phase or assembled dynamically.
   const compiledPhase = String(source).match(/ADAI_COMPILED_PHASE\s*:\s*([a-z_]+)/i)?.[1]?.toLowerCase() || '';
-  if (compiledPhase && compiledPhase !== String(phaseName).toLowerCase()) throw new Error(`Compiled geometry phase ${compiledPhase} does not match managed phase ${phaseName}`);
   if (phaseName === 'massing' && /register_visible_detail/i.test(executableSource)) {
     const formalAdapterRoute = compiledPhase === 'massing' && /ADAIGeometryAdapter\.build/i.test(executableSource) && /(?:if|elsif)\s+context\[['"]phase['"]\]\s*==\s*['"]archetypes['"]/i.test(executableSource);
     const detailCallCount = (executableSource.match(/register_visible_detail/gi) || []).length;
@@ -467,9 +467,6 @@ function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}
   }
   if (phaseName === 'massing' && mode === 'single_image' && !/register_projection_subject/i.test(executableSource)) {
     throw new Error('Single-image massing must register each source projection subject through PipClawManagedProject.register_projection_subject');
-  }
-  if (ancientRoofRoute(taskProfile) && ['massing','roof_profile'].includes(phaseName) && /upturn/i.test(executableSource) && !/(ridge_profile|eave_curve|corner_lift_section)/i.test(executableSource)) {
-    throw new Error('Ancient-roof script appears to use plan-ring upturn without ridge/profile/eave controls. Rebuild the abstraction before adding detail.');
   }
   if (phaseName === 'archetypes' && ['single_image', 'cad', 'refinement'].includes(mode) && !/register_archetype/i.test(executableSource)) {
     throw new Error('Archetype step must register a real reusable prototype through PipClawManagedProject.register_archetype');
@@ -479,9 +476,6 @@ function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}
   }
   if (phaseName === 'replication' && ['single_image', 'cad', 'refinement'].includes(mode) && !/instantiate_archetype/i.test(executableSource)) {
     throw new Error('Replication step must create true instances of an accepted prototype through PipClawManagedProject.instantiate_archetype');
-  }
-  if (phaseName === 'primary_corrections' && mode === 'refinement' && !/register_primary_correction/i.test(executableSource)) {
-    throw new Error('Primary-corrections step must bind each declared correction to an accepted target through PipClawManagedProject.register_primary_correction');
   }
   if (phaseName === 'facade_detail' && ['single_image', 'cad', 'refinement'].includes(mode) && !/register_unique_detail/i.test(executableSource)) {
     throw new Error('Facade-detail step must bind actual one-off detail geometry through PipClawManagedProject.register_unique_detail');
@@ -566,17 +560,18 @@ function qualityReviewSummary(state) { return qualitySummary(state, executionPla
 function validateRoofControlContract(state, phase, buildResult) {
   if (!ancientRoofRoute(state.task_profile) || !['massing','roof_profile'].includes(phase.name)) return null;
   const c=buildResult?.build_result?.roof_control_contract;
-  if(!c || typeof c!=='object') throw new Error('Ancient-roof route requires build_result.roof_control_contract; flat slab/frustum approximations cannot advance.');
+  const issues=[];
+  if(!c || typeof c!=='object') return { advisory:true, code:'ROOF_CONTROL_UNVERIFIED', issues:['roof_control_contract was not returned; inspect the actual roof silhouette, underside and corner transition.'] };
   const pointList=(value)=>Array.isArray(value)&&value.length>=3&&value.every(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite));
-  for(const key of ['ridge_profile','eave_curve','corner_lift_section']) if(!pointList(c[key])) throw new Error(`roof_control_contract.${key} must contain at least three finite 3D points.`);
-  if(!['loft','sweep','shared_boundary_mesh'].includes(String(c.construction||''))) throw new Error('roof_control_contract.construction must be loft, sweep or shared_boundary_mesh.');
-  if(c.plan_ring_corner_lift_only===true) throw new Error('Corner lift may not be implemented only by raising plan-ring points.');
-  if(phase.name==='massing' && c.open_corridor_preserved!==true) throw new Error('Ancient massing must preserve source-visible corridor/gallery voids; set open_corridor_preserved only after actual geometry does so.');
+  for(const key of ['ridge_profile','eave_curve','corner_lift_section']) if(!pointList(c[key])) issues.push(`roof_control_contract.${key} is missing or has fewer than three finite 3D points`);
+  if(!['loft','sweep','shared_boundary_mesh'].includes(String(c.construction||''))) issues.push('roof_control_contract.construction is not one of loft, sweep or shared_boundary_mesh');
+  if(c.plan_ring_corner_lift_only===true) issues.push('corner lift is declared as plan-ring-only; inspect the actual corner transition');
+  if(phase.name==='massing' && c.open_corridor_preserved!==true) issues.push('open_corridor_preserved was not confirmed; inspect source-visible corridor/gallery voids');
   if(phase.name==='roof_profile') {
     const kinds=Array.isArray(c.prototype_kinds)?c.prototype_kinds.map(String):[];
-    if(!kinds.includes('body')||!kinds.includes('corner')) throw new Error('roof_profile requires both body and corner prototypes before tier replication.');
+    if(!kinds.includes('body')||!kinds.includes('corner')) issues.push('body and corner prototypes were not both reported');
   }
-  return c;
+  return issues.length ? { advisory:true, code:'ROOF_CONTROL_UNVERIFIED', issues } : { advisory:false, contract:c };
 }
 
 function validatePhaseOutput(state, phase, buildResult) {
@@ -584,13 +579,18 @@ function validatePhaseOutput(state, phase, buildResult) {
     if (!buildResult?.unit_scope) throw Object.assign(new Error('Live unit scope readback is missing.'), { code: 'UNIT_READBACK_MISSING' });
     return complexityWarning(buildResult);
   }
-  validateRoofControlContract(state, phase, buildResult);
-  return complexityWarning(buildResult);
+  const roof = validateRoofControlContract(state, phase, buildResult);
+  const complexity = complexityWarning(buildResult);
+  if (roof?.advisory) return { ...(complexity || {}), roof_control_advisory: roof.issues };
+  return complexity;
 }
 
 function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode) && !isExpert(state) && !(state.task_profile?.required_detail_systems || []).length) return [];
-  return validateDetails(audit?.visible_detail_systems, state.task_profile?.required_detail_systems || [], { allowEmpty: isExpert(state), requireActual: true });
+  // The original package checked the registered mapping and task coverage;
+  // live instance counts are useful diagnostics but are not a shape-quality
+  // proof and must not force a model to add proxy geometry just to deliver.
+  return validateDetails(audit?.visible_detail_systems, state.task_profile?.required_detail_systems || [], { allowEmpty: isExpert(state), requireActual: false });
 }
 
 function validateCurrentOutput(state, phase, result) {

@@ -26,7 +26,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 ## 构造、观察与纠错
 
-使用当前绑定的Skill/MCP，不混读旧副本。已有生成器的文件直接提交；无匹配配方可用合法受管Ruby。Ruby先落文件，以 `PipClawManagedBuild.build(entities,context)` 构造；毫米与SU内部英寸转换按[受管API](references/managed-ruby-api.md)处理。不得在脚本中保存/打开文档、改变内核或嵌套事务。
+使用当前绑定的Skill/MCP，不混读旧副本。已有生成器的文件直接提交；无匹配配方可用合法受管Ruby；需要自定义助手时再读取 `references/ruby-snippets.md`，按当前问题取用，不全库加载。Ruby先落文件，以 `PipClawManagedBuild.build(entities,context)` 构造；毫米与SU内部英寸转换按[受管API](references/managed-ruby-api.md)处理。不得在脚本中保存/打开文档、改变内核或嵌套事务。
 
 专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
