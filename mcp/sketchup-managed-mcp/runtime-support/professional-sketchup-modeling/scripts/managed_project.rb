@@ -1222,7 +1222,8 @@ module PipClawManagedProject
         'work_unit_id'=>operation_context['work_unit_id'],
         'execution_policy_version'=>operation_context['policy_version'],
         'dimension_targets'=>operation_context['dimension_targets'] || [],
-        'execution_strategy'=>operation_context['strategy']
+        'execution_strategy'=>operation_context['strategy'],
+        'typed_operations_allowed'=>operation_context['typed_operations_allowed'] == true
       }
       result = PipClawManagedBuild.build(phase.entities, context)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }

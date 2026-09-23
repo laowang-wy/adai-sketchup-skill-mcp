@@ -114,7 +114,12 @@ module ADAIManagedOperations
     frame
   end
   def build(entities, context, operations)
-    raise 'TYPED_OPERATIONS_EXPERT_ONLY' unless context['execution_policy_version'] == 2
+    guided_typed = context['execution_policy_version'] == 1 &&
+      context['execution_strategy'].to_s == 'guided_phase' &&
+      context['typed_operations_allowed'] == true
+    unless context['execution_policy_version'] == 2 || guided_typed
+      raise 'TYPED_OPERATIONS_POLICY_INVALID'
+    end
     PipClawManagedProject.preflight_primitive_dimensions(context,operations)
     result=[]
     operations.each do |op|

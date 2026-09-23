@@ -1513,7 +1513,11 @@ class ManagedProjects {
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
     const typedOperations = input.operations !== undefined;
-    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : (typedOperations ? 'guided_typed_batch' : 'guided_phase'), policy_version: policy.version, typed_operations_allowed: typedOperations, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
+    // Typed guided construction is still the guided phase strategy.  The
+    // input form may be operations or Ruby, but the Ruby-side scope contract
+    // must see one canonical strategy so it preserves phase replacement and
+    // the guided same-batch target rules.
+    const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, typed_operations_allowed: typedOperations, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
     operationContext.dimension_targets = state.task_profile?.dimension_targets || [];
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };

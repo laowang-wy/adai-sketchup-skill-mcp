@@ -2,5 +2,5 @@ f44a9b304fcd95f70d9e34c54fa86cfb11896e5b08c6fb6fec9735e6c629ece3  dist\professio
 42cde50e437b0c7831625ee9ee7b46e258b9d0ffe2556929f959ebe789fabb6c  dist\sketchup-managed-mcp-0.5.29-context-projection-ref-routing-20260923.zip
 f302a8b28cf56e2da4d644fe677f9f6995c22cf3bf72c285ae97e78d124912d2  dist\professional-sketchup-modeling-0.5.29-guided-typed-ops-method-focus-20260923.zip
 eb04dc30a395c563cef71ac2fff61424554ed909240be32fb702137888a45cd6  dist\sketchup-managed-mcp-0.5.29-guided-typed-ops-method-focus-20260923.zip
-f9807e00cc36b1cd74624060ea0c7f5dfb0cd4f8b7f58d4c58b397e0ced5615c  dist\professional-sketchup-modeling-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
-d2b97adc8232b3173b50b64f81f1873808d554b9c708555e82bc68ffa7b6df6f  dist\sketchup-managed-mcp-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
+c2924170867452c81caaac46cbfd9b97e5629d2fff18e238d4cd2180ea64e1ad  dist\professional-sketchup-modeling-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
+a01c3648723d063cf993b659fae6b9fd2485f1c2be5b96d5f5b20556bd0a31cf  dist\sketchup-managed-mcp-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
