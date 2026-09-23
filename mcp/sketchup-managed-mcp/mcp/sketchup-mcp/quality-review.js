@@ -11,6 +11,9 @@ const text = value => typeof value === 'string' && value.trim().length > 0;
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const validators = {geometry:'validate_geometry_measurements.py', dependencies:'validate_parameter_dependencies.py'};
 const MAX_INPUT = 4 * 1024 * 1024;
+function visualStatus(state) {
+  return state === 'pass' ? 'matched' : state === 'fail' ? 'mismatch' : 'not_checked';
+}
 
 async function runValidator(kind, snapshotBytes, skillRoot) {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'su-review-'));
@@ -66,7 +69,7 @@ async function validateQualityReview(input, state, phase, skillRoot, sealedFiles
   const q = input.quality_review;
   if (q === undefined) {
     if (state.mode === 'test' || input.verdict === 'revise')
-      return {state:'unverified', scope:'no_quality_report', geometry_readback:'unverified'};
+      return {state:'unverified', scope:'no_quality_report', geometry_readback:'unverified', visual_status:'not_checked'};
     throw new Error('Production continue requires quality_review; see SKILL references/managed-quality-review.md. Existing state is unchanged.');
   }
   if (!object(q) || q.schema_version !== 1 || q.project_id !== state.project_id || q.phase !== phase || q.evidence_id !== input.evidence_id)
@@ -153,7 +156,7 @@ async function validateQualityReview(input, state, phase, skillRoot, sealedFiles
   return {schema_version:1,project_id:state.project_id,phase,evidence_id:input.evidence_id,
     state:visual.state === 'fail' || results.some(x => ['fail','invalid','needs_review'].includes(x.state)) ? 'needs_review' :
       results.every(x=>x.state==='pass') && visual.state==='pass' ? 'declared_checks_pass' : 'accepted_with_unverified_items',
-    scope:'bound_declared_inputs_and_agent_visual_review',geometry_readback:'unverified',
+    scope:'bound_declared_inputs_and_agent_visual_review',geometry_readback:'unverified', visual_status: visualStatus(visual.state),
     visual:{...visual,scope:'agent_declared'},checks:results};
 }
-module.exports={validateQualityReview,assembleVisualReview,reviewAvailability};
+module.exports={validateQualityReview,assembleVisualReview,reviewAvailability,visualStatus};

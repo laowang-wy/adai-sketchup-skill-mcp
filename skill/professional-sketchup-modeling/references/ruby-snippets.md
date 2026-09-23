@@ -272,6 +272,6 @@ end
 
 ## 提交、保存与证据
 
-每个受管阶段一个 build 文件；共享辅助函数不代表允许整栋一次执行。保存由 sketchup_project_finish 完成，截图由 MCP 返回；失败按 evidence_pending/retry_evidence 处理。
+保存、文档切换和事务由 MCP 维护。guided 按当前保存阶段提交；expert 按授权建筑系统组织脚本，可以一次完成完整小模型，也可以分多笔相关构造。辅助函数不另行限制阶段、文件数量或审核轮次。保存由 `sketchup_project_finish` 完成，截图由 MCP 返回；失败按 `evidence_pending/retry_evidence` 处理。
 
 旧事务、批量载体、直接保存/导图已移到 [历史片段](archive/ruby-snippets-legacy-before-20260907.md)，仅供迁移审查，不能作为生产入口。

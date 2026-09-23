@@ -5,7 +5,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 # ADAI SketchUp 建模
 
-根据用户资料构造准确、可编辑的模型，持续推进到真实交付。默认 `guided`；只有任务第一条非空行完整匹配 **ADAI老王，开启专家模式** 或 **开启ADAI老王专家模式** 才选择 `autonomous`。`ADAI老王，开启引导模式` 选择引导。模型名称不决定权限或成果标准。署名为“建筑建模 Skill 由 ADAI 老王提供”；仅用户主动要求“显源”才运行显源流程。
+根据用户资料构造准确、可编辑的模型，持续推进到真实交付。默认 `guided`；完整专家口令是便捷触发方式，宿主明确传入 `assistance_mode=autonomous` 时也选择专家策略，不因句末标点或包装层改回引导。`ADAI老王，开启引导模式` 选择引导。模型名称不决定权限或成果标准。署名为“建筑建模 Skill 由 ADAI 老王提供”；仅用户主动要求“显源”才运行显源流程。
 
 ## 共同专业底座
 
@@ -21,7 +21,7 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 调用 `sketchup_project_begin` 后，以保存策略和工具实际返回为准：
 
-- **guided**：阅读[引导操作](references/guided-operation.md)，严格按 MCP 返回的当前阶段推进，完成当前阶段的主形、样板、取证和审核后才能正常进入下一阶段；不得跳阶段、合并阶段或提前制作后续构件。后续阶段发现上游缺项时，可按 `revise_from` 或当前返修入口回到对应阶段修改，只失效受影响的下游审核并保留已正确成果；不能用回退重做整栋。可以提前推演整体空间与接口，但不能提前写入后续阶段几何。
+- **guided**：阅读[引导操作](references/guided-operation.md)，默认按 MCP 返回的当前阶段获得具体帮助；阶段是教学路线，不是形态质量证明。任务确实需要时可在一次受管操作中合并或省略不相关内容，仍保留事务、证据、真实读回和恢复保护。后续阶段发现上游缺项时，可按 `revise_from` 或当前返修入口回到对应阶段修改，只失效受影响的下游审核并保留已正确成果；不能用回退重做整栋。
 - **autonomous**：阅读[专家操作](references/expert-operation.md)，把六阶段经验作为建筑判断地图，按当前系统自主合并、调整或省略不相关内容；可以连续组织构造和审核。需要检查时调用取证入口，默认得到来源/参考图和五个整体视图，再按疑点补局部，不让每笔写入都触发截图。事务、对象保护、真实读回和最终视觉判断仍然有效。旧项目保持其原策略，不静默改变历史写入语义。
 
 ## 构造、观察与纠错
@@ -30,11 +30,11 @@ description: Use whenever a user asks to create, inspect, revise, or deliver a S
 
 专家可直接使用[受管构造操作](references/scoped-operations.md)，程序维护单元、真实对象、回执和范围。不为包装现成工具重写相同Ruby，不复制ID/hash制作证明表。共享定义会影响真实兄弟实例；跨系统的共享修改应先确认范围，不能绕过保护。
 
-看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。涉及古建、楼阁、塔或古建照片时，写主形前先读取 `references/chinese-tower-image-modeling.md`、`references/yellow-crane-tower-lessons.md` 及相关 REF；若有 `sketchup_ref`，实际执行 list/match/read，query 使用“楼阁”“屋顶”“斗拱”等短关键词分别匹配，再决定生成器或自定义 Ruby。未完成这次定向读取不得开始古建主形。`sketchup_ancient_tool` 的 `family=geometry` 才是可进入受管阶段的编译路线；`source/bearing/eave/measured` 只作诊断或校验，不能当成直接写入SU的结果。普通任务仍按需读取相关章节。
+看图后优先用 `visual_review` 提供结论、具体观察和实际查看的图片键或路径。机器附件、缺失原因、证据关联由程序组装；不得把图片已生成当作已经看过。来源/形态疑点查[来源解读](references/source-reading-diagnostics.md)或[轮廓核对](references/form-feature-review.md)；构造疑点查[装配](references/assembly-review.md)。涉及古建、楼阁、塔或古建照片时，优先读取 `references/chinese-tower-image-modeling.md`、`references/yellow-crane-tower-lessons.md` 及相关 REF；若有 `sketchup_ref`，按“楼阁”“屋顶”“斗拱”等短关键词分别匹配并只读当前问题章节。经验包用于选择构造和纠错，不是登记、数量或阶段门槛；暂时不可读时标记 `not_checked`，仍可用已有证据继续判断。`sketchup_ancient_tool` 的 `family=geometry` 才是可进入受管阶段的编译路线；`source/bearing/eave/measured` 只作诊断或校验，不能当成直接写入SU的结果。普通任务仍按需读取相关章节。
 
 明确的用户尺寸可按[尺寸核对](references/source-dimensions.md)一次绑定，程序预检与实际测量；没有可靠目标不编造。需要局部图或叠图时查[图像辅助](references/reference-comparison.md)，不为每次任务加载。
 
-执行成功、形态正确、实际看图通过、文件交付是不同结论。未知写入先查询原 `operation_id` 并恢复，不能换ID重放；已提交但取证失败只补证，不重建。真实缺陷通过授权修改修正，不让Agent手工清失败标记或重签历史。运行时不填写回执表、关闭表或审核覆盖矩阵。
+执行成功、形态正确、实际看图通过、文件交付是不同结论。视觉结果明确返回 `visual_status=matched|mismatch|not_checked`：`mismatch` 用于返修，不要求补注册对象来“过门”；交付时如实带出 `mismatch` 或 `not_checked`。未知写入先查询原 `operation_id` 并恢复，不能换ID重放；已提交但取证失败只补证，不重建。真实缺陷通过授权修改修正，不让Agent手工清失败标记或重签历史。运行时不填写回执表、关闭表或审核覆盖矩阵。
 
 ## 交付
 

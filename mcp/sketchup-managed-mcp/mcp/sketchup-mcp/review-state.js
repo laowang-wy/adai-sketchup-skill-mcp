@@ -26,7 +26,7 @@ function qualitySummary(state, plan, expert = false) {
   const latest = new Map(history.filter(x => !x.invalidated_at).map(x => [x.phase, x]));
   const phases = expert ? [] : plan.map(p => {
     const r = latest.get(p.name);
-    return { phase: p.name, state: r?.state || 'unreviewed', evidence_id: r?.evidence_id || null, checks: (r?.checks || []).map(({ kind, state }) => ({ kind, state })) };
+    return { phase: p.name, state: r?.state || 'unreviewed', visual_status: r?.visual_status || 'not_checked', evidence_id: r?.evidence_id || null, checks: (r?.checks || []).map(({ kind, state }) => ({ kind, state })) };
   });
   const current = expert ? state.current_review : null;
   const checks = expert ? (current?.checks || []) : phases.flatMap(p => p.checks.map(c => ({ phase: p.phase, ...c })));
@@ -38,6 +38,6 @@ function qualitySummary(state, plan, expert = false) {
   if (state.recovery_recapture_required) unresolved.push({ kind: 'recovery_recapture_required', value: true });
   const gaps = history.flatMap(x => x.history_gaps || []);
   // Historical provenance is separate from a defect in the current model.
-  return { ...(expert ? { scope: 'current_project_result', reviewed_revision: current?.scene_revision ?? null, current_revision: state.scene_revision || 0, current: !!current && current.scene_revision === state.scene_revision } : { reviewed_phases: phases.filter(p => p.state !== 'unreviewed').length, total_phases: plan.length, phases }), unverified, unresolved, history_gap_count: gaps.length, history_gaps: gaps.slice(-5), history_detail: 'sketchup_project_status(section=quality,detail=true)' };
+  return { ...(expert ? { scope: 'current_project_result', reviewed_revision: current?.scene_revision ?? null, current_revision: state.scene_revision || 0, current: !!current && current.scene_revision === state.scene_revision, visual_status: current?.visual_status || 'not_checked' } : { reviewed_phases: phases.filter(p => p.state !== 'unreviewed').length, total_phases: plan.length, phases }), unverified, unresolved, history_gap_count: gaps.length, history_gaps: gaps.slice(-5), history_detail: 'sketchup_project_status(section=quality,detail=true)' };
 }
 module.exports = { validationIssues, applyValidationResult, revisionMatches, qualitySummary };

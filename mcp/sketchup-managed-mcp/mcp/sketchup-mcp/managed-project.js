@@ -121,16 +121,11 @@ function ancientRoofRoute(profile) {
 function phasePlanFor(mode, profile) {
   const standard=PHASE_PLANS[mode] || PHASES;
   const base=profile?.repetition==='none' && ['single_image','freeform','cad'].includes(mode) ? standard.filter(p=>!['archetypes','replication'].includes(p.name)) : standard;
-  // A declared repeated system always needs both its reusable prototype and
-  // its real instances.  Method selection may omit unrelated optional phases,
-  // but it cannot silently erase that task obligation.
+  // The phase list is a teaching route.  It must not manufacture prototype or
+  // replication work merely because a profile says a repeated system exists;
+  // the model may choose a direct construction or merge relevant work.  The
+  // transaction, evidence and readback contracts remain enforced elsewhere.
   const omitted = new Set(profile?.omit_phases || []);
-  if (profile?.repetition === 'present') {
-    omitted.delete('archetypes');
-    omitted.delete('replication');
-  }
-  // An omitted prototype cannot leave a replication phase with no legal source.
-  if (omitted.has('archetypes')) omitted.add('replication');
   let selected = base.filter((phase)=>!omitted.has(phase.name));
   if (!ancientRoofRoute(profile) || !['single_image','freeform'].includes(mode)) return selected;
   if (omitted.has('roof_profile')) return selected;
@@ -279,30 +274,33 @@ async function verifyEvidenceFiles(record) {
 }
 
 function validateProjectionBrief(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('single_image mode requires projection_brief');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { schema_version: 1, perspective_required: false, targets: [], advisory: true, issues: ['projection_brief was not supplied; use direct visual comparison and report visual_status explicitly.'] };
   const targets = value.targets;
-  if (!Array.isArray(targets) || targets.length < 1 || targets.length > 8) throw new Error('projection_brief.targets must contain 1-8 key projected subjects');
+  if (!Array.isArray(targets) || targets.length < 1 || targets.length > 8) return { schema_version: 1, perspective_required: value.perspective_required !== false, targets: [], advisory: true, issues: ['projection_brief.targets must contain 1-8 key projected subjects'] };
   const seen = new Set();
+  const issues = [];
+  const clean = [];
   for (const target of targets) {
     const id = String(target?.id || '').trim();
     const role = String(target?.role || '').trim();
     const box = target?.bbox;
-    if (!/^[A-Za-z][A-Za-z0-9_-]{1,47}$/.test(id) || seen.has(id)) throw new Error('Every projection target requires a unique stable id');
-    if (!role || !Array.isArray(box) || box.length !== 4 || box.some((n) => typeof n !== 'number' || !Number.isFinite(n))) throw new Error(`Projection target ${id} needs role and bbox [x0,y0,x1,y1]`);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{1,47}$/.test(id) || seen.has(id)) { issues.push(`Projection target ${id || '(unnamed)'} has no unique stable id`); continue; }
+    if (!role || !Array.isArray(box) || box.length !== 4 || box.some((n) => typeof n !== 'number' || !Number.isFinite(n))) { issues.push(`Projection target ${id} needs role and bbox [x0,y0,x1,y1]`); continue; }
     const b = box.map(Number);
-    if (b.some((n) => n < 0 || n > 1) || b[2] <= b[0] || b[3] <= b[1]) throw new Error(`Projection target ${id} bbox must be ordered normalized coordinates in 0..1`);
-    if (target.tolerance !== undefined && (typeof target.tolerance !== 'number' || !Number.isFinite(target.tolerance) || target.tolerance <= 0)) throw new Error(`Projection target ${id} tolerance must be a finite positive number`);
+    if (b.some((n) => n < 0 || n > 1) || b[2] <= b[0] || b[3] <= b[1]) { issues.push(`Projection target ${id} bbox must be ordered normalized coordinates in 0..1`); continue; }
+    if (target.tolerance !== undefined && (typeof target.tolerance !== 'number' || !Number.isFinite(target.tolerance) || target.tolerance <= 0)) { issues.push(`Projection target ${id} tolerance must be a finite positive number`); continue; }
     seen.add(id);
+    clean.push({ id, role, bbox: b, tolerance: Math.min(0.2, Math.max(0.05, Number(target.tolerance ?? 0.1))), cue: String(target.cue || '') });
   }
-  if (!targets.some((item) => ['focal_building', 'primary_building', 'main_subject'].includes(String(item.role)))) throw new Error('projection_brief must contain a focal_building, primary_building or main_subject');
-  return { schema_version: 1, perspective_required: value.perspective_required !== false, targets: targets.map((item) => ({ id: String(item.id), role: String(item.role), bbox: item.bbox.map(Number), tolerance: Math.min(0.2, Math.max(0.05, Number(item.tolerance ?? 0.1))), cue: String(item.cue || '') })) };
+  if (!clean.some((item) => ['focal_building', 'primary_building', 'main_subject'].includes(item.role))) issues.push('projection_brief has no focal subject role');
+  return { schema_version: 1, perspective_required: value.perspective_required !== false, targets: clean, ...(issues.length ? { advisory: true, issues } : {}) };
 }
 
 function validateProjectionAudit(state, audit) {
-  if (state.mode !== 'single_image') return [];
-  if (state.projection_brief?.perspective_required && audit?.camera?.perspective === false) throw new Error('Projection contract failed: perspective camera required for single-image reconstruction');
-  const actual = new Map((audit?.projection_subjects || []).map((item) => [String(item.id), item]));
+  if (state.mode !== 'single_image' || !state.projection_brief?.targets?.length) return { visual_status: 'not_checked', status: 'not_checked', subjects: [], failures: ['No projection brief was bound; compare the returned views directly.'] };
   const failures = [];
+  if (state.projection_brief?.perspective_required && audit?.camera?.perspective === false) failures.push('perspective camera was not used');
+  const actual = new Map((audit?.projection_subjects || []).map((item) => [String(item.id), item]));
   const ordered = [];
   for (const expected of state.projection_brief.targets) {
     const subject = actual.get(expected.id);
@@ -330,17 +328,14 @@ function validateProjectionAudit(state, audit) {
       if (n.a[3] < f.a[3] - 0.1) failures.push(`${n.id}: near frame sits markedly higher than explicit far background ${f.id}`);
     }
   }
-  if (failures.length) throw new Error(`Projection contract failed; rebuild massing/camera before later phases: ${[...new Set(failures)].join('; ')}`);
-  return [...actual.values()];
+  const uniqueFailures = [...new Set(failures)];
+  return { visual_status: uniqueFailures.length ? 'mismatch' : 'matched', status: uniqueFailures.length ? 'mismatch' : 'matched', subjects: [...actual.values()], failures: uniqueFailures };
 }
 
 
 function validateAntiSlabTowerAudit(state, audit) {
-  if (state.mode !== 'single_image') return null;
+  if (state.mode !== 'single_image') return { visual_status: 'not_checked', status: 'not_checked', reason: 'single_image massing heuristics do not apply' };
   const camera = audit?.camera || {};
-  if (state.projection_brief?.perspective_required && camera.perspective === false) {
-    throw new Error('Massing audit rejected: single-image reconstruction must keep a perspective camera, not a flat orthographic view');
-  }
   const summary = audit?.massing_summary || {};
   const bodies = Array.isArray(summary.bodies) ? summary.bodies : [];
   const root = audit?.root_form_summary || {};
@@ -349,38 +344,32 @@ function validateAntiSlabTowerAudit(state, audit) {
   // A single observed building may legitimately occupy its entire footprint.
   // Generic multi-mass heuristics must not force invented context into such a photo.
   const singleSubject = state.projection_brief?.targets?.length === 1;
-  if (singleSubject) {
-    if (failures.length) throw new Error('Massing audit rejected: ' + failures.join('; '));
-    return { main_body_count: Number(summary.main_body_count), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0), geometry_heuristics: 'single_subject_visual_review_required' };
-  }
+  if (state.projection_brief?.perspective_required && camera.perspective === false) failures.push('perspective camera was not used');
+  if (singleSubject) return { visual_status: failures.length ? 'mismatch' : 'not_checked', status: failures.length ? 'mismatch' : 'not_checked', failures, main_body_count: Number(summary.main_body_count), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0), geometry_heuristics: 'visual_review_required' };
   if (Number(summary.main_body_count || 0) === 1 && Number(root.height_to_width || 0) >= 3.0) failures.push('single isolated skinny tower massing is inconsistent with perspective photo reconstruction');
   if (Number(summary.main_body_count || 0) === 1 && Number(root.plan_aspect || 0) >= 3.5 && Number(root.height_to_thickness || 0) <= 2.0) failures.push('single slab-like monolith massing detected');
   if (Number(summary.dominant_body_footprint_ratio || 0) > 0.78) failures.push('one body occupies too much of the whole footprint; likely a collapsed one-shot mass');
   const thinTallBodies = bodies.filter((body) => Number(body.height_to_width || 0) >= 4.2 && Number(body.footprint_share || 0) >= 0.08);
   if (thinTallBodies.length >= 1 && Number(summary.main_body_count || 0) <= 2) failures.push('detected a dominant thin-tall body pattern; rebuild from framing masses and shared courtyard/wing relationships');
-  if (failures.length) throw new Error('Massing audit rejected: ' + [...new Set(failures)].join('; '));
-  return { main_body_count: Number(summary.main_body_count || 0), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0) };
+  return { visual_status: failures.length ? 'mismatch' : 'not_checked', status: failures.length ? 'mismatch' : 'not_checked', failures: [...new Set(failures)], main_body_count: Number(summary.main_body_count || 0), dominant_body_footprint_ratio: Number(summary.dominant_body_footprint_ratio || 0) };
 }
 
 function validateStructureAudit(state, phase, audit) {
   const structure = audit?.structure || {};
   if (phase.name === 'archetypes' && ['single_image', 'cad', 'refinement'].includes(state.mode)) {
     const valid = (structure.archetypes || []).filter((item) => item?.valid && Number(item?.counts?.entities || 0) >= 3);
-    if (!valid.length) throw new Error('Archetype contract failed: no registered reusable prototype with real geometry was found. Build one correct component before copying it.');
-    return { archetypes: valid.map((item) => item.id) };
+    return { status: valid.length ? 'matched' : 'not_checked', archetypes: valid.map((item) => item.id), missing: valid.length ? [] : ['No registered reusable prototype was found; inspect the actual repeated geometry if repetition is intended.'] };
   }
   if (phase.name === 'replication' && ['single_image', 'cad', 'refinement'].includes(state.mode)) {
     const known = new Set((structure.archetypes || []).filter((item) => item?.valid).map((item) => String(item.id)));
     const systems = Array.isArray(structure.replication_systems) ? structure.replication_systems : [];
     const invalid = systems.filter((item) => item?.valid === false || (item?.invalid_instance_pids || []).length || (item?.duplicate_instance_pids || []).length || (item?.definition_mismatch_pids || []).length || (item?.placement_mismatch_pids || []).length || item?.placement_contract_missing);
-    if (invalid.length) throw new Error('Replication contract failed: every required replication system must be valid; invalid systems=' + JSON.stringify(invalid.map((item) => ({ id: item.id, invalid_instance_pids: item.invalid_instance_pids || [], duplicate_instance_pids: item.duplicate_instance_pids || [], definition_mismatch_pids: item.definition_mismatch_pids || [] }))).slice(0, 2000));
     const valid = systems.filter((item) => {
       const detailed = item?.valid !== undefined || item?.expected_instances !== undefined || item?.invalid_instance_pids !== undefined || item?.duplicate_instance_pids !== undefined || item?.definition_mismatch_pids !== undefined;
       const accepted = detailed ? item?.valid === true : item?.valid !== false;
       return accepted && Number(item?.actual_instances || 0) >= 2 && Number(item?.expected_instances || item?.actual_instances || 0) === Number(item.actual_instances || 0) && !(item?.duplicate_instance_pids || []).length && !(item?.invalid_instance_pids || []).length && !(item?.definition_mismatch_pids || []).length && !(item?.placement_mismatch_pids || []).length && !item?.placement_contract_missing && known.has(String(item.archetype_id));
     });
-    if (!valid.length) throw new Error('Replication contract failed: no accepted archetype was instantiated at least twice. Audit=' + JSON.stringify({ archetypes: structure.archetypes || [], replication_systems: structure.replication_systems || [], phase: (audit.phases || []).find((item) => item.phase === 'replication') || null }).slice(0, 2000));
-    return { replication_systems: valid.map((item) => ({ id: item.id, archetype_id: item.archetype_id, instances: item.actual_instances })) };
+    return { status: valid.length && !invalid.length ? 'matched' : 'not_checked', replication_systems: valid.map((item) => ({ id: item.id, archetype_id: item.archetype_id, instances: item.actual_instances })), issues: invalid.map((item) => ({ id: item.id, invalid_instance_pids: item.invalid_instance_pids || [], duplicate_instance_pids: item.duplicate_instance_pids || [], definition_mismatch_pids: item.definition_mismatch_pids || [], placement_mismatch_pids: item.placement_mismatch_pids || [] })) };
   }
   return null;
 }
@@ -395,17 +384,17 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
   if (phase.name === 'primary_corrections') return { ...shared, required: ['Correct the identified host contacts, dimensions or primary form; verify affected dependencies.'], forbidden: ['Decoration that hides the defect', 'Unrelated changes'] };
   if (phase.name === 'component_cleanup') return { ...shared, required: ['Repair authorized component hierarchy, definitions, variants and terminations; verify sibling instances.'], forbidden: ['Unintended shared-definition propagation', 'Deleting unrelated objects'] };
   if (phase.name === 'massing') {
-    const required = mode === 'single_image' ? ['Set perspective camera.', 'Build visible primary solids and voids, including source-visible open corridors/recesses.', 'Register every projection-brief subject with register_projection_subject.'] : ['Build primary solids, voids and source topology.'];
-    if (ancientRoofRoute(taskProfile)) required.push('Even at massing resolution, drive each visible roof silhouette from ridge_profile + eave_curve + corner_lift_section and return roof_control_contract.');
+    const required = mode === 'single_image' ? ['Use a camera/view that makes the source relationship legible when useful.', 'Build visible primary solids and voids, including source-visible open corridors/recesses.', 'Projection subjects may be registered for comparison, but the registration is not a substitute for looking at the form.'] : ['Build primary solids, voids and source topology.'];
+    if (ancientRoofRoute(taskProfile)) required.push('For an ancient roof, make the ridge, eave, corner lift, shell thickness and open gallery relationships visible in the chosen construction; use a control contract only when the selected method needs one.');
     const forbidden = ['Premature detail arrays without source justification (necessary multi-roof/faceted primary form is allowed)', 'Facade grids', 'Context used to hide a wrong form'];
     if (ancientRoofRoute(taskProfile)) forbidden.push('Flat slab or single-frustum roof', 'Corner lift implemented only by raising plan-ring points', 'Solid tower body that fills source-visible galleries/corridors');
     return {...shared,required,forbidden};
   }
-  if (phase.name === 'roof_profile') return { ...shared, required: ['Return roof_control_contract with ridge_profile, eave_curve and corner_lift_section; each control has at least three points.', 'Build one body-section roof bay and one corner condition using loft/sweep/shared-boundary mesh.', 'Keep the roof shell connected and visually inspect profile, underside and corner transition before replication.'], forbidden: ['Flat slab plus frustum', 'Only raising four plan-ring corners', 'Copying the unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
-  if (phase.name === 'archetypes') return { ...shared, required: ['Build one visually complete real ComponentInstance for each repeated family.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail inside the archetype.', 'Register the component with register_archetype and at least one source-visible reusable system, with additional systems when the source/task contract requires them with register_visible_detail.'], forbidden: ['Broad arrays', 'Copying an unreviewed prototype through the building', 'Deferring repeatable component detail to facade_detail'] };
-  if (phase.name === 'replication') return { ...shared, required: ['Use instantiate_archetype with a previously registered archetype.', 'Create at least two true ComponentInstances for a repeated system.'], forbidden: ['Redrawing repeated floors independently', 'Changing roof/podium/unique levels here'] };
-  if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only.', 'Register each important unique entity with register_variant.'], forbidden: ['Generic facade dressing'] };
-  if (phase.name === 'facade_detail') return { ...shared, required: ['Build source-visible one-off details that cannot belong to a reusable archetype.', 'Bind each actual detail entity with register_unique_detail.', 'Inspect automatic close-ups.', 'Compare the source skin grammar: opaque/open ratio, band rhythm, recess/projection depth, corner/termination conditions and base/crown transitions; accepted massing does not prove facade fidelity.'], forbidden: ['Rebuilding repeated window/balcony systems', 'Generic grid or uniform curtain wall used as a substitute for source evidence', 'Treating geometry, entity count or material color as proof that the source facade is correct'] };
+  if (phase.name === 'roof_profile') return { ...shared, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
+  if (phase.name === 'archetypes') return { ...shared, required: ['Build a visually complete representative repeated family when repetition is actually present.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail when supported by the source.', 'Inspect the representative geometry and its actual contact/appearance before reuse.'], forbidden: ['Broad arrays used to hide a wrong form', 'Copying an unreviewed prototype through the building'] };
+  if (phase.name === 'replication') return { ...shared, required: ['Reuse a reviewed component or construct the repeated geometry with a method appropriate to the source.', 'Check representative, middle, end and corner conditions when repetition exists.'], forbidden: ['Redrawing repeated floors independently when that would change the intended geometry', 'Changing roof/podium/unique levels without a source reason'] };
+  if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only and preserve their actual host relationships.'], forbidden: ['Generic facade dressing'] };
+  if (phase.name === 'facade_detail') return { ...shared, required: ['Build source-visible one-off details that cannot belong to a reusable family.', 'Inspect the actual close views.', 'Compare the source skin grammar: opaque/open ratio, band rhythm, recess/projection depth, corner/termination conditions and base/crown transitions; accepted massing does not prove facade fidelity. Registration is optional bookkeeping.'], forbidden: ['Rebuilding repeated window/balcony systems', 'Generic grid or uniform curtain wall used as a substitute for source evidence', 'Treating geometry, entity count or material color as proof that the source facade is correct'] };
   return { ...shared, required: ['Add restrained material/ground/roof closure only after form and visible detail already read correctly.'], forbidden: ['Changing accepted primary massing'] };
 }
 
@@ -455,31 +444,10 @@ function validateBuildScript(source, phaseName = '', mode = '', taskProfile = {}
   if (!/module\s+PipClawManagedBuild\b/.test(executableSource) || !/def\s+(?:self\.)?build\b/.test(executableSource)) {
     throw new Error('Managed build file must define module PipClawManagedBuild with build(entities, context)');
   }
-  if (expert) return; // Compiled algorithms keep their own input contracts.
-  // The generated adapter may record its phase in a metadata comment.  It is
-  // useful diagnostics, but it is not a permission or geometry proof: a valid
-  // managed script can be reused by another phase or assembled dynamically.
-  const compiledPhase = String(source).match(/ADAI_COMPILED_PHASE\s*:\s*([a-z_]+)/i)?.[1]?.toLowerCase() || '';
-  if (phaseName === 'massing' && /register_visible_detail/i.test(executableSource)) {
-    const formalAdapterRoute = compiledPhase === 'massing' && /ADAIGeometryAdapter\.build/i.test(executableSource) && /(?:if|elsif)\s+context\[['"]phase['"]\]\s*==\s*['"]archetypes['"]/i.test(executableSource);
-    const detailCallCount = (executableSource.match(/register_visible_detail/gi) || []).length;
-    if (!formalAdapterRoute || detailCallCount !== 1) throw new Error('Massing may not register facade detail systems; build only the major form first');
-  }
-  if (phaseName === 'massing' && mode === 'single_image' && !/register_projection_subject/i.test(executableSource)) {
-    throw new Error('Single-image massing must register each source projection subject through PipClawManagedProject.register_projection_subject');
-  }
-  if (phaseName === 'archetypes' && ['single_image', 'cad', 'refinement'].includes(mode) && !/register_archetype/i.test(executableSource)) {
-    throw new Error('Archetype step must register a real reusable prototype through PipClawManagedProject.register_archetype');
-  }
-  if (phaseName === 'archetypes' && ['single_image', 'cad', 'refinement'].includes(mode) && !/register_visible_detail/i.test(executableSource)) {
-    throw new Error('Archetype step must include and register its source-visible reusable detail systems; do not defer repeatable detail to facade_detail');
-  }
-  if (phaseName === 'replication' && ['single_image', 'cad', 'refinement'].includes(mode) && !/instantiate_archetype/i.test(executableSource)) {
-    throw new Error('Replication step must create true instances of an accepted prototype through PipClawManagedProject.instantiate_archetype');
-  }
-  if (phaseName === 'facade_detail' && ['single_image', 'cad', 'refinement'].includes(mode) && !/register_unique_detail/i.test(executableSource)) {
-    throw new Error('Facade-detail step must bind actual one-off detail geometry through PipClawManagedProject.register_unique_detail');
-  }
+  // Phase names and register_* calls are useful adapters/diagnostics, but they
+  // are not evidence that a building has the right form.  Do not inspect Ruby
+  // source for those names: doing so rewards proxy geometry and forces the
+  // model to rewrite useful construction merely to satisfy a checklist.
 }
 
 function declaredDetailSystems(buildResult) {
@@ -561,7 +529,7 @@ function validateRoofControlContract(state, phase, buildResult) {
   if (!ancientRoofRoute(state.task_profile) || !['massing','roof_profile'].includes(phase.name)) return null;
   const c=buildResult?.build_result?.roof_control_contract;
   const issues=[];
-  if(!c || typeof c!=='object') return { advisory:true, code:'ROOF_CONTROL_UNVERIFIED', issues:['roof_control_contract was not returned; inspect the actual roof silhouette, underside and corner transition.'] };
+  if(!c || typeof c!=='object') return null;
   const pointList=(value)=>Array.isArray(value)&&value.length>=3&&value.every(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite));
   for(const key of ['ridge_profile','eave_curve','corner_lift_section']) if(!pointList(c[key])) issues.push(`roof_control_contract.${key} is missing or has fewer than three finite 3D points`);
   if(!['loft','sweep','shared_boundary_mesh'].includes(String(c.construction||''))) issues.push('roof_control_contract.construction is not one of loft, sweep or shared_boundary_mesh');
@@ -587,10 +555,23 @@ function validatePhaseOutput(state, phase, buildResult) {
 
 function validateDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode) && !isExpert(state) && !(state.task_profile?.required_detail_systems || []).length) return [];
-  // The original package checked the registered mapping and task coverage;
-  // live instance counts are useful diagnostics but are not a shape-quality
-  // proof and must not force a model to add proxy geometry just to deliver.
-  return validateDetails(audit?.visible_detail_systems, state.task_profile?.required_detail_systems || [], { allowEmpty: isExpert(state), requireActual: false });
+  // Keep mapping and live-object failures visible without turning either a
+  // missing label or a count quota into a shape-quality gate.
+  const systems = Array.isArray(audit?.visible_detail_systems) ? audit.visible_detail_systems : [];
+  const issues = [];
+  try {
+    validateDetails(systems, [], { allowEmpty: true, requireActual: false });
+  } catch (error) {
+    issues.push(error.message);
+  }
+  const required = state.task_profile?.required_detail_systems || [];
+  for (const id of required) if (!systems.some((item) => String(item?.id || '') === String(id))) issues.push(`Missing requested detail mapping: ${id}`);
+  for (const item of systems) {
+    if (item?.valid === false || (Array.isArray(item?.invalid_instance_pids) && item.invalid_instance_pids.length) || (item?.actual_instances !== undefined && Number(item.actual_instances) < 1)) {
+      issues.push(`Detail ${item?.id || '(unnamed)'} has an invalid or unverified live target; do not use it as evidence for an update.`);
+    }
+  }
+  return { status: issues.length ? 'not_checked' : 'matched', visual_status: 'not_checked', systems, issues };
 }
 
 function validateCurrentOutput(state, phase, result) {
@@ -603,7 +584,10 @@ function validateCurrentAudit(state, phase, audit, evidenceId) {
     if (isExpert(state)) { validateExpertAudit(state, audit); applyValidationResult(state,phase.name,'phase_audit',null,evidenceId); return; }
     validateAuditReadback(audit);
     if(phase.name === 'massing' && state.mode === 'single_image') {
-      state.projection_subjects=validateProjectionAudit(state,audit);
+      const projection = validateProjectionAudit(state,audit);
+      state.projection_subjects=projection.subjects || [];
+      state.visual_status = projection.visual_status;
+      state.projection_audit = projection;
       state.massing_summary=validateAntiSlabTowerAudit(state,audit);
       state.source_camera=audit.camera;
     }
@@ -617,8 +601,7 @@ function validateCurrentAudit(state, phase, audit, evidenceId) {
 function validateUniqueDetailAudit(state, audit) {
   if (!['single_image', 'cad', 'refinement'].includes(state.mode)) return [];
   const details = Array.isArray(audit?.unique_details) ? audit.unique_details.filter((item) => item?.valid && Number(item?.counts?.entities || 0) >= 3) : [];
-  if (details.length < 1) throw new Error('Managed audit found no valid source-visible one-off detail geometry.');
-  return details;
+  return details.length ? details : { status: 'not_checked', visual_status: 'not_checked', issues: ['No registered one-off detail was found; this is diagnostic only.'], details: [] };
 }
 
 function validateInspectedViews(qualityReview, evidenceRecord) {
@@ -654,8 +637,7 @@ function validateFinalAudit(state, audit, plannedNames = []) {
   if (names.has('archetypes')) result.visible_detail_systems = validateDetailAudit(state, audit);
   if (names.has('archetypes')) {
     const archetypes = Array.isArray(audit?.structure?.archetypes) ? audit.structure.archetypes.filter((item) => item?.valid && Number(item?.counts?.entities || 0) >= 3) : [];
-    if (!archetypes.length) throw new Error('Archetype contract failed at final audit: no surviving reusable prototype with audited geometry was found.');
-    result.archetypes = archetypes.map((item) => item.id);
+    result.archetypes = { status: archetypes.length ? 'matched' : 'not_checked', ids: archetypes.map((item) => item.id), issues: archetypes.length ? [] : ['No reusable prototype was registered; inspect repeated geometry visually if needed.'] };
   }
   if (names.has('replication')) result.structure = validateStructureAudit(state, { name: 'replication' }, audit);
   if (names.has('facade_detail')) result.unique_details = validateUniqueDetailAudit(state, audit);
@@ -1160,8 +1142,10 @@ class ManagedProjects {
     const toolkitBinding = taskProfile.method_family ? await resolveMethodBinding(this.appDataDir, taskProfile.method_family) : null;
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
-    if (assistance.command_required) throw this.stateError('ASSISTANCE_COMMAND_REQUIRED', 'autonomous requires an exact first non-empty task line: ADAI老王，开启专家模式 or 开启ADAI老王专家模式');
-    projectionBrief = mode === 'single_image' && (input.projection_brief || assistance.mode !== 'autonomous') ? validateProjectionBrief(input.projection_brief) : null;
+    // Explicit assistance_mode is a host-supported preference.  The Chinese
+    // command remains a shortcut, but a punctuation wrapper or a structured
+    // Codex request must not silently downgrade an autonomous task to guided.
+    projectionBrief = mode === 'single_image' && input.projection_brief ? validateProjectionBrief(input.projection_brief) : null;
     const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode) || (assistance.mode === 'autonomous' ? { id: `unit_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`, strategy: 'autonomous_work_unit' } : null);
     const response = await bridge('run_ruby', { code: this.rubyCall('begin_project', [projectId]), file: this.helperPath });
     parseManagedResult(response);
@@ -1958,7 +1942,7 @@ class ManagedProjects {
         return { ok: true, project_id: state.project_id, status: rollback.status, patch_id: patchReview.patch_id, next_action: rollback.next_action };
       }
       const returnStatus = patchReview.return_status;
-      state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, patch_id: patchReview.patch_id, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+      state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, patch_id: patchReview.patch_id, state: qualityReview.state, visual_status: qualityReview.visual_status || 'not_checked', checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
       delete state.patch_review;
       state.status = returnStatus;
       state.updated_at = new Date().toISOString();
@@ -1970,7 +1954,7 @@ class ManagedProjects {
         const audit = JSON.parse(await fs.readFile(sealedEvidence.record.files.audit.path, 'utf8'));
         if (sealedEvidence.record.record_type === 'final_recapture') validateFinalAudit(state, audit, phasePlan.map((item) => item.name));
         else validateStructureAudit(state, phase, audit);
-        state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+        state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, state: qualityReview.state, visual_status: qualityReview.visual_status || 'not_checked', checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
         state.status = state.recapture_return_status || 'ready_to_finish';
         if (state.status === 'review_required') state.last_evidence_id = input.evidence_id;
         delete state.recapture_return_status;
@@ -2020,7 +2004,7 @@ class ManagedProjects {
         historyGaps.push({ evidence_id: evidenceId, code: error.code || 'HISTORY_IDENTITY_INVALID', message: String(error.message || error) });
       }
     }
-    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, history_gaps: historyGaps, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
+    state.quality_reviews = [...(state.quality_reviews || []), { phase: phase.name, evidence_id: input.evidence_id, merged_evidence_ids: mergedEvidenceIds, merged_coverage: mergedCoverage, history_gaps: historyGaps, work_unit_id: state.work_unit?.id || null, state: qualityReview.state, visual_status: qualityReview.visual_status || 'not_checked', checks: (qualityReview.checks || []).map(({kind,state}) => ({kind,state})), geometry_readback: 'unverified' }];
     delete state.pending_unit_reviews;
     delete state.complexity_warning;
     state.step_index += 1;
@@ -2034,7 +2018,7 @@ class ManagedProjects {
     state.phase = phasePlan[state.step_index].name;
     state.status = 'ready_for_step';
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, phase: state.phase, status: state.status, review_checks:{state:qualityReview.state,scope:qualityReview.scope,geometry_readback:qualityReview.geometry_readback,checks:qualityReview.checks?.map(({kind,state,reason})=>({kind,state,reason}))}, task_card: taskCard(state,phasePlan[state.step_index]), next_action: phasePlan[state.step_index].hint };
+    return { ok: true, project_id: state.project_id, phase: state.phase, status: state.status, review_checks:{state:qualityReview.state,visual_status:qualityReview.visual_status || 'not_checked',scope:qualityReview.scope,geometry_readback:qualityReview.geometry_readback,checks:qualityReview.checks?.map(({kind,state,reason})=>({kind,state,reason}))}, task_card: taskCard(state,phasePlan[state.step_index]), next_action: phasePlan[state.step_index].hint };
   }
 
 
@@ -2047,7 +2031,7 @@ class ManagedProjects {
       validateExpertAudit(state, JSON.parse(await fs.readFile(evidence.record.files.audit.path, 'utf8')));
       if (state.revision_required && state.revision_required.repair_evidence_id !== input.evidence_id) throw this.stateError('REVISION_REQUIRED', 'A corrected current result is required before acceptance.');
       delete state.revision_required;
-      const accepted = { phase: UNIT_PHASE, evidence_id: input.evidence_id, scene_revision: state.scene_revision, scope: 'current_project_result', unit_ids: Object.values(state.work_units).filter(u => u.fingerprint).map(u => u.id), state: quality.state, checks: quality.checks.map(({ kind, state, reason }) => ({ kind, state, ...(reason ? { reason } : {}) })) };
+      const accepted = { phase: UNIT_PHASE, evidence_id: input.evidence_id, scene_revision: state.scene_revision, scope: 'current_project_result', unit_ids: Object.values(state.work_units).filter(u => u.fingerprint).map(u => u.id), state: quality.state, visual_status: quality.visual_status || 'not_checked', checks: quality.checks.map(({ kind, state, reason }) => ({ kind, state, ...(reason ? { reason } : {}) })) };
       state.quality_reviews = [...(state.quality_reviews || []), accepted];
       state.current_review = accepted;
       state.status = 'ready_to_finish';
@@ -2268,12 +2252,6 @@ class ManagedProjects {
     if (isExpert(state) && (!state.current_review || state.current_review.scene_revision !== state.scene_revision)) throw this.stateError('DELIVERY_UNREVIEWED', 'Current geometry has not been reviewed.');
     const currentBinding = await this.assertModelBinding(state, bridge);
     const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
-    if (plannedNames.includes('archetypes') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.visible_detail_systems) || state.visible_detail_systems.length < 1)) {
-      throw new Error('Delivery blocked: reusable archetypes do not contain an audited source-visible detail system required by this task. Rebuild and review the archetypes step.');
-    }
-    if (plannedNames.includes('facade_detail') && ['single_image', 'cad', 'refinement'].includes(state.mode) && (!Array.isArray(state.unique_details) || state.unique_details.length < 1)) {
-      throw new Error('Delivery blocked: no audited source-visible one-off detail is registered. Rebuild and review the facade_detail step.');
-    }
     if (!isExpert(state) && state.mode === 'single_image' && state.source_camera) {
       const restoreCode = this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]);
       const restored = await bridge('run_ruby', { code: restoreCode, file: this.helperPath }, 120000);
