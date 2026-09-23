@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile);
 const { resolveMethodBinding } = require('./toolkit-registry');
 const { applyCommittedProgress, pendingExecution, classifyEvidenceFailure } = require('./operation-outcome');
 const {normalizeTargets, evaluateMeasurements, assertTargets} = require('./source-dimensions');
-const { createPolicy, policyFor, isExpert, isAutonomous, planForState, resolveUnit, commitUnit, UNIT_PHASE, UNIT_HINT } = require('./execution-policy');
+const { createPolicy, policyFor, isExpert, initialStage, initialStageName, isAutonomous, planForState, resolveUnit, commitUnit, UNIT_PHASE, UNIT_HINT } = require('./execution-policy');
 const { pendingOperation, describeActions } = require('./project-actions');
 const { validationIssues, applyValidationResult, revisionMatches, qualitySummary } = require('./review-state');
 const { requiredSystems, validateDetails } = require('./detail-contract');
@@ -118,6 +118,62 @@ function ancientRoofRoute(profile) {
   const words=[...(profile?.topics||[]),...(profile?.features||[])].join(' ');
   return /(古建|楼阁|塔|庙|殿|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
 }
+function validateSourceAnalysis(value) {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('source_analysis must be an object');
+  const analyzer = value.analyzer || {};
+  const providers = new Set(['host_vision','configured_api','local_vision','agent_fallback','unavailable']);
+  const statuses = new Set(['complete','partial','unavailable']);
+  if (!providers.has(String(analyzer.provider || 'unavailable')) || !statuses.has(String(analyzer.status || 'unavailable'))) throw new Error('Invalid source_analysis analyzer provider or status');
+  const list = (items, name, max) => {
+    if (!Array.isArray(items) || items.length > max || items.some((x) => typeof x !== 'string' || x.length > 500)) throw new Error(`source_analysis.${name} must be a bounded string array`);
+    return items.map((x) => x.trim()).filter(Boolean);
+  };
+  const images = Array.isArray(value.images) ? value.images : [];
+  if (images.length > 32) throw new Error('source_analysis.images exceeds limit');
+  const normalizedImages = images.map((image) => {
+    if (!image || typeof image !== 'object' || !String(image.image_id || '').trim()) throw new Error('Each source_analysis image requires image_id');
+    return { image_id: String(image.image_id).trim().slice(0,128), visible_facts:list(image.visible_facts || [], 'visible_facts', 64), geometry_cues:list(image.geometry_cues || [], 'geometry_cues', 64), spatial_relations:list(image.spatial_relations || [], 'spatial_relations', 64), style_hypotheses:list(image.style_hypotheses || [], 'style_hypotheses', 32), possible_roof_types:list(image.possible_roof_types || [], 'possible_roof_types', 16), scale_clues:list(image.scale_clues || [], 'scale_clues', 32), occlusions:list(image.occlusions || [], 'occlusions', 32), unknowns:list(image.unknowns || [], 'unknowns', 64), ...(image.conflict === true ? {conflict:true} : {}) };
+  });
+  return { analyzer: { provider: String(analyzer.provider || 'unavailable'), status: String(analyzer.status || 'unavailable'), model: String(analyzer.model || '').slice(0,128), ...(analyzer.image_sha256 ? {image_sha256:String(analyzer.image_sha256).toLowerCase()} : {}) }, images: normalizedImages, conflicts: list(value.conflicts || [], 'conflicts', 64) };
+}
+function ancientRoofPresetId(profile) {
+  const words=[...(profile?.topics||[]), ...(profile?.features||[])].join(' ');
+  if (/(歇山|xieshan|xie[_ -]?shan)/i.test(words)) return 'si_shan';
+  if (/(卷棚|juan[_ -]?peng)/i.test(words)) return 'juan_peng';
+  if (/(攒尖|zan[_ -]?jian)/i.test(words)) return 'zan_jian';
+  if (/(盔顶|盔|helmet)/i.test(words)) return 'helmet';
+  return null;
+}
+function inferProfileFromTaskText(profile, taskText) {
+  const text = String(taskText || '');
+  const words = [...(profile?.topics || []), ...(profile?.features || [])].join(' ');
+  const combined = `${words} ${text}`;
+  const ancient = /(古建|楼阁|塔|庙|殿|pagoda|temple|xieshan|xie[_ -]?shan|歇山|卷棚|攒尖|盔顶)/i.test(combined);
+  const topics = [...(profile?.topics || [])];
+  const features = [...(profile?.features || [])];
+  if (/歇山|xieshan|xie[_ -]?shan/i.test(text) && !features.some((x) => /歇山|xieshan|xie[_ -]?shan/i.test(x))) features.push('歇山顶');
+  if (/古建|楼阁|塔|庙|殿|pagoda|temple/i.test(text) && !topics.some((x) => /古建|楼阁|塔|庙|殿|pagoda|temple/i.test(x))) topics.push('古建');
+  return normalizedProfile({ ...profile, topics, features, roof_route: profile?.roof_route === 'custom' ? 'custom' : ancient ? 'ancient_roof' : profile?.roof_route });
+}
+function constructionBriefFor(profile, taskText = '', mode = '') {
+  const effective = inferProfileFromTaskText(profile || {}, taskText);
+  const methods = modelingMethodCards.construction_methods || {};
+  const id = ancientRoofPresetId(effective);
+  const methodId = id || 'generic_ancient_roof';
+  const imageOnly = mode === 'single_image' && !ancientRoofRoute(effective) && !/(歇山|卷棚|攒尖|盔顶|古建|楼阁|塔|庙|殿|pagoda|temple)/i.test(String(taskText || ''));
+  if (imageOnly && methods.image_primary_form) {
+    const method = methods.image_primary_form;
+    return { method_id: 'image_primary_form', ...JSON.parse(JSON.stringify(method)), selection_state: 'candidate_selection_required', source: 'bundled_construction_method', agent_action: 'Inspect the source image and choose the applicable construction method; this card is not a roof-type match.' };
+  }
+  const method = methods[methodId] || methods.generic_ancient_roof;
+  if (!method || !ancientRoofRoute(effective)) return null;
+  const related = (method.related_methods || []).map((relatedId) => {
+    const card = methods[relatedId];
+    return card ? { method_id: relatedId, recognize: card.recognize, construct: card.construct, method: card.method, key_parameters: card.key_parameters, common_errors: card.common_errors, inspect: card.inspect, fallback: card.if_failed } : null;
+  }).filter(Boolean);
+  return { method_id: methodId, ...JSON.parse(JSON.stringify(method)), related_method_cards: related, experience_pack: { id: 'adai-ancient-experience', version: '0.4.2', generator: id ? `roof.${id}` : null }, source: 'bundled_construction_method', agent_action: 'Use this method now; do not search the package first. Ask for extra REF only when the source exceeds this method.' };
+}
 function phasePlanFor(mode, profile) {
   const standard=PHASE_PLANS[mode] || PHASES;
   const base=profile?.repetition==='none' && ['single_image','freeform','cad'].includes(mode) ? standard.filter(p=>!['archetypes','replication'].includes(p.name)) : standard;
@@ -127,11 +183,10 @@ function phasePlanFor(mode, profile) {
   // transaction, evidence and readback contracts remain enforced elsewhere.
   const omitted = new Set(profile?.omit_phases || []);
   let selected = base.filter((phase)=>!omitted.has(phase.name));
-  if (!ancientRoofRoute(profile) || !['single_image','freeform'].includes(mode)) return selected;
-  if (omitted.has('roof_profile')) return selected;
-  const index=selected.findIndex((x)=>x.name==='archetypes');
-  const insert=index<0 ? 1 : index;
-  return [...selected.slice(0,insert),ROOF_PROFILE_PHASE,...selected.slice(insert)];
+  // A named ancient roof is part of the complete primary form. Keep the
+  // internal phase field for compatibility, but do not add a separate roof
+  // phase that teaches the agent to postpone the defining roof geometry.
+  return selected;
 }
 
 function resolveExecutionPolicy({ mode, assistanceMode, profile }) {
@@ -378,19 +433,25 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
   const method = mode === 'test'
     ? { version: modelingMethodCards.version, scope: 'diagnostic_only', evidence_checks: ['Validate the requested diagnostic contract; do not invent source-image observations or claim photographic acceptance.'] }
     : { version: modelingMethodCards.version, scope: modelingMethodCards.scope, review_record_fields: [...modelingMethodCards.review_record_fields], ...JSON.parse(JSON.stringify(modelingMethodCards.phases[phase.name] || {})) };
-  const shared = { quality_review_contract: { version: 1, production_continue_required: mode !== 'test', reference: 'references/managed-quality-review.md', checks: ['geometry','dependencies'], unverified_requires_reason: true, live_readback: 'unverified' }, phase: phase.name, objective: phase.hint, method, agent_review: 'Inspect actual returned evidence; record object/view, source constraint, observation and unresolved defects. Continue only when this scale meets the source. A checklist is not approval evidence.' };
+  const shared = { quality_review_contract: { version: 1, production_continue_required: mode !== 'test', reference: 'references/managed-quality-review.md', checks: ['geometry','dependencies'], unverified_requires_reason: true, live_readback: 'unverified' }, phase: phase.name, objective: phase.name === 'massing' ? '完整主形' : phase.hint, method, agent_review: 'Inspect actual returned evidence; record object/view, source constraint, observation and unresolved defects. Continue only when this scale meets the source. A checklist is not approval evidence.' };
   if (phase.name === 'source_alignment') return { ...shared, required: ['Preserve source units, coordinates, counts, rotation and host relationships; build only source-aligned primary geometry.'], forbidden: ['Invented source dimensions', 'Facade detail before source alignment'] };
   if (phase.name === 'correction_scope') return { ...shared, required: ['Identify the user-authorized defect, affected entities and target constraints; preserve unrelated geometry.'], forbidden: ['Unrelated rebuilding', 'Invented defect evidence'] };
   if (phase.name === 'primary_corrections') return { ...shared, required: ['Correct the identified host contacts, dimensions or primary form; verify affected dependencies.'], forbidden: ['Decoration that hides the defect', 'Unrelated changes'] };
   if (phase.name === 'component_cleanup') return { ...shared, required: ['Repair authorized component hierarchy, definitions, variants and terminations; verify sibling instances.'], forbidden: ['Unintended shared-definition propagation', 'Deleting unrelated objects'] };
   if (phase.name === 'massing') {
-    const required = mode === 'single_image' ? ['Use a camera/view that makes the source relationship legible when useful.', 'Build visible primary solids and voids, including source-visible open corridors/recesses.', 'Projection subjects may be registered for comparison, but the registration is not a substitute for looking at the form.'] : ['Build primary solids, voids and source topology.'];
+    const required = mode === 'single_image' ? ['Establish the complete source-related massing: overall proportions, primary roof volumes, tier setbacks and negative spaces before component detail; a floor-and-column frame is not a substitute for the whole form.', 'Use a camera/view that makes the source relationship legible when useful.', 'Build visible primary solids and voids, including source-visible open corridors/recesses.', 'Projection subjects may be registered for comparison, but the registration is not a substitute for looking at the form.'] : ['Build primary solids, voids and source topology.'];
     if (ancientRoofRoute(taskProfile)) required.push('For an ancient roof, make the ridge, eave, corner lift, shell thickness and open gallery relationships visible in the chosen construction; use a control contract only when the selected method needs one.');
     const forbidden = ['Premature detail arrays without source justification (necessary multi-roof/faceted primary form is allowed)', 'Facade grids', 'Context used to hide a wrong form'];
     if (ancientRoofRoute(taskProfile)) forbidden.push('Flat slab or single-frustum roof', 'Corner lift implemented only by raising plan-ring points', 'Solid tower body that fills source-visible galleries/corridors');
-    return {...shared,required,forbidden};
+    const route = ancientRoofRoute(taskProfile) ? {
+      recommended: 'sketchup_ancient_tool',
+      preset_id: ancientRoofPresetId(taskProfile),
+      sequence: [ancientRoofPresetId(taskProfile) ? `preset(family=roof,preset_id=${ancientRoofPresetId(taskProfile)})` : 'use the matched roof candidate from construction_brief', 'compile(family=recipe,parameters=returned_preset)', 'sketchup_project_step(ruby_file=returned_manifest.ruby_file)'],
+      fallback: 'Use custom managed Ruby only when no matching preset/recipe exists or the source visibly exceeds its scope; state the reason.'
+    } : null;
+    return {...shared,required,forbidden,...(route ? {method_route: route, construction_brief: constructionBriefFor(taskProfile)} : {})};
   }
-  if (phase.name === 'roof_profile') return { ...shared, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
+  if (phase.name === 'roof_profile') return { ...shared, method_route: ancientRoofRoute(taskProfile) ? { recommended: 'sketchup_ancient_tool', preset_id: ancientRoofPresetId(taskProfile), sequence: [ancientRoofPresetId(taskProfile) ? `preset(family=roof,preset_id=${ancientRoofPresetId(taskProfile)})` : 'use the matched roof candidate from construction_brief', 'compile(family=recipe,parameters=returned_preset)', 'sketchup_project_step(ruby_file=returned_manifest.ruby_file)'], fallback: 'Use custom managed Ruby only when no matching preset/recipe exists or the source visibly exceeds its scope; state the reason.' } : null, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
   if (phase.name === 'archetypes') return { ...shared, required: ['Build a visually complete representative repeated family when repetition is actually present.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail when supported by the source.', 'Inspect the representative geometry and its actual contact/appearance before reuse.'], forbidden: ['Broad arrays used to hide a wrong form', 'Copying an unreviewed prototype through the building'] };
   if (phase.name === 'replication') return { ...shared, required: ['Reuse a reviewed component or construct the repeated geometry with a method appropriate to the source.', 'Check representative, middle, end and corner conditions when repetition exists.'], forbidden: ['Redrawing repeated floors independently when that would change the intended geometry', 'Changing roof/podium/unique levels without a source reason'] };
   if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only and preserve their actual host relationships.'], forbidden: ['Generic facade dressing'] };
@@ -476,7 +537,7 @@ function complexityWarning(result) {
 // instead of the source.  The full cards remain available on demand.
 function expertMethodFocus(state) {
   const profile = state?.task_profile || {};
-  const names = [];
+  const names = ['massing'];
   if (ancientRoofRoute(profile)) names.push('roof_profile', 'archetypes', 'replication', 'facade_detail');
   else if (Array.isArray(profile.features) && profile.features.some((x) => /曲面|屋面|楼|塔|古建|roof|tower|curv/i.test(String(x)))) names.push('roof_profile', 'archetypes');
   if (!names.length) return null;
@@ -491,10 +552,14 @@ function abstractionRecheckNeeded(state, phaseName) {
 }
 function taskCard(state, phase, detail=false) {
   if (isExpert(state)) return {
-    objective: state.work_unit?.name || 'Current architectural system',
+    objective: initialStage(state) ? initialStageName(initialStage(state)) : state.work_unit?.name || 'Current architectural system',
+    ...(initialStage(state) ? {initial_step:initialStage(state), required_next_milestone:initialStage(state) === 'massing'
+      ? 'Build complete primary proportions, roof volumes and voids; inspect actual views and review massing separately before component construction.'
+      : 'Build complete representative components at their real hosts; inspect construction, contact and editability, then review separately before broad replication. No minimum component count or registration quota.'} : {}),
     work_unit: state.work_unit || null,
     shared_foundation: 'references/shared-architectural-foundation.md',
     operation_guidance: 'references/expert-operation.md',
+    construction_brief: constructionBriefFor(state.task_profile, state.task_text),
     method_focus: expertMethodFocus(state),
     open_findings: validationIssues(state),
     revision_required: state.revision_required || null,
@@ -581,7 +646,7 @@ function validateCurrentOutput(state, phase, result) {
 }
 function validateCurrentAudit(state, phase, audit, evidenceId) {
   try {
-    if (isExpert(state)) { validateExpertAudit(state, audit); applyValidationResult(state,phase.name,'phase_audit',null,evidenceId); return; }
+    if (isExpert(state)) { const expertAudit = validateExpertAudit(state, audit); state.detail_audit = expertAudit.detail_audit; applyValidationResult(state,phase.name,'phase_audit',null,evidenceId); return expertAudit; }
     validateAuditReadback(audit);
     if(phase.name === 'massing' && state.mode === 'single_image') {
       const projection = validateProjectionAudit(state,audit);
@@ -653,9 +718,10 @@ function validateExpertAudit(state, audit) {
     const found = audit.work_units.filter(u => u.work_unit_id === unit.id);
     if (found.length !== 1 || found[0].fingerprint !== unit.fingerprint) throw Object.assign(new Error(`Work unit ${unit.name} changed or is missing; inspect the live result before editing.`), { code: 'UNIT_SCOPE_CHANGED' });
   }
-  validateDetailAudit(state, audit);
+  const detailAudit = validateDetailAudit(state, audit);
+  state.detail_audit = detailAudit;
   if (state.projection_brief) validateProjectionAudit(state, audit);
-  return { source_coverage: 'agent_visual_and_explicit_constraints', unit_count: units.length };
+  return { source_coverage: 'agent_visual_and_explicit_constraints', unit_count: units.length, detail_audit: detailAudit };
 }
 
 function parseManagedResult(bridgeResult) {
@@ -1137,8 +1203,9 @@ class ManagedProjects {
     if (fsSync.existsSync(this.statePath(projectId))) throw new Error(`Managed project already exists: ${projectId}`);
     const ping = await bridge('ping');
     const source = mode === 'single_image' ? await fileEvidence(sourcePath) : null;
+    const sourceAnalysis = validateSourceAnalysis(input.source_analysis);
     let projectionBrief = null;
-    const taskProfile = normalizedProfile(input.task_profile);
+    const taskProfile = inferProfileFromTaskText(normalizedProfile(input.task_profile), input.task_text || '');
     const toolkitBinding = taskProfile.method_family ? await resolveMethodBinding(this.appDataDir, taskProfile.method_family) : null;
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
@@ -1153,17 +1220,19 @@ class ManagedProjects {
     const execution_policy = resolveExecutionPolicy({ mode, assistanceMode: assistance.mode, profile: taskProfile });
     const expert = execution_policy.version === 2;
     const phasePlan = expert ? [{ name: UNIT_PHASE, hint: UNIT_HINT }] : execution_policy.phase_plan;
-    if (workUnit) workUnit.name = 'Main architectural system';
+    if (workUnit) workUnit.name = execution_policy.initial_stages ? 'Whole-building massing' : 'Main architectural system';
     const state = {
-      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
+      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, source_analysis: sourceAnalysis, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
       model_path: modelBinding.path || ping.model_path || '', model_binding: modelBinding,
       toolkit_bindings: toolkitBinding ? [toolkitBinding] : [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, ...(expert ? { work_units: { [workUnit.id]: { id: workUnit.id, name: workUnit.name, revision: 0 } }, scene_revision: 0 } : { phase_plan: phasePlan }), execution_policy,
+      ...(execution_policy.initial_stages ? {initial_stage_unit_id:workUnit.id, initial_stage_reviews:[]} : {}),
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
-    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, task_card: taskCard(state,phasePlan[0]), next_action: phasePlan[0].hint };
+    const constructionBrief = constructionBriefFor(taskProfile, assistance.task_text, mode);
+    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), source_analysis: sourceAnalysis, projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, construction_brief: constructionBrief, matched_method: constructionBrief?.selection_state === 'candidate_selection_required' ? null : (constructionBrief ? { method_id: constructionBrief.method_id, method: constructionBrief.method } : null), task_card: taskCard(state,phasePlan[0]), next_action: constructionBrief?.actions?.[0] || phasePlan[0].hint };
   }
 
   async captureViewportSet(state, phase, directory, bridge, requestedViews = null) {
@@ -2037,8 +2106,31 @@ class ManagedProjects {
       delete state.revision_required;
       const accepted = { phase: UNIT_PHASE, evidence_id: input.evidence_id, scene_revision: state.scene_revision, scope: 'current_project_result', unit_ids: Object.values(state.work_units).filter(u => u.fingerprint).map(u => u.id), state: quality.state, visual_status: quality.visual_status || 'not_checked', checks: quality.checks.map(({ kind, state, reason }) => ({ kind, state, ...(reason ? { reason } : {}) })) };
       state.quality_reviews = [...(state.quality_reviews || []), accepted];
-      state.current_review = accepted;
-      state.status = 'ready_to_finish';
+      const initial = initialStage(state);
+      if (initial) {
+        const unit = state.work_units[state.initial_stage_unit_id];
+        const previous = (state.initial_stage_reviews || []).at(-1);
+        if (!unit?.fingerprint || (previous && state.scene_revision <= previous.scene_revision)) {
+          throw this.stateError('INITIAL_STAGE_BUILD_REQUIRED', 'Construct the current foundation step before its independent review; re-capturing the previous result cannot advance it.');
+        }
+        state.initial_stage_reviews = [...(state.initial_stage_reviews || []), {...accepted, stage:initial, scope:initial, work_unit_id:unit.id}];
+        const next = initialStage(state);
+        if (next) {
+          const id = `unit_${crypto.randomBytes(8).toString('hex')}`;
+          const name = initialStageName(next);
+          state.work_units[id] = {id,name,revision:0};
+          state.work_unit = {id,name,strategy:'autonomous_work_unit'};
+          state.initial_stage_unit_id = id;
+          state.current_review = null;
+          state.status = 'ready_for_step';
+        } else {
+          state.current_review = accepted;
+          state.status = 'ready_to_finish';
+        }
+      } else {
+        state.current_review = accepted;
+        state.status = 'ready_to_finish';
+      }
     }
     await this.saveState(state);
     return { ok: true, project_id: state.project_id, status: state.status, quality: qualityReviewSummary(state), ...describeActions(state) };
@@ -2798,5 +2890,4 @@ class ManagedProjects {
   }
 }
 
-module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, normalizedWorkUnit, ancientRoofRoute, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualityReviewSummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };
-
+module.exports = { ManagedProjects, PHASES, RAW_WRITE_TOOLS, __test: { normalizedProfile, normalizedWorkUnit, validateSourceAnalysis, ancientRoofRoute, ancientRoofPresetId, inferProfileFromTaskText, constructionBriefFor, phasePlanFor, abstractionRecheckNeeded, validateRoofControlContract, complexityWarning, taskCard, assistanceSummary, pendingOperation, nextCallForState, qualitySummary, validateBuildScript, validatePhaseOutput, validateDetailAudit, validateUniqueDetailAudit, validateFinalAudit, validateInspectedViews, validateProjectionBrief, validateProjectionAudit, validateAntiSlabTowerAudit, validateStructureAudit, phaseTaskCard, declaredDetailSystems, declaredUniqueDetails, fileEvidence, sameModelBinding, collectEvidenceFiles, verifyEvidenceFiles, patchChange, patchScope } };

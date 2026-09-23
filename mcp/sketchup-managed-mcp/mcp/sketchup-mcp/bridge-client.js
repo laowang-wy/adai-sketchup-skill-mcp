@@ -45,6 +45,7 @@ class BridgeClient {
     this.root = env.SKETCHUP_BRIDGE_DIR || path.join(appData, 'SketchUpLiveMCP', 'bridge');
     this.selectionFile = path.join(appData, 'SketchUpLiveMCP', 'runtime-instance.json');
     this.pinned = null;
+    this.runtimeHashCache = null;
   }
   async token() {
     const value = this.env.SKETCHUP_BRIDGE_TOKEN || await fs.readFile(this.env.SKETCHUP_BRIDGE_TOKEN_FILE || path.join(this.appData, 'SketchUpLiveMCP', 'bridge.token'), 'utf8');
@@ -85,7 +86,18 @@ class BridgeClient {
     catch (e) { if (e.code === 'ENOENT') throw Error('RUNTIME_UNBOUND: bind the user-provided SketchUp executable first'); throw e; }
     if (!binding.executable || !path.isAbsolute(binding.executable)) throw Error('INVALID_RUNTIME_BINDING');
     if (!/^[a-f0-9]{64}$/.test(binding.executable_sha256 || '')) throw Error('INVALID_RUNTIME_BINDING');
-    const digest = crypto.createHash('sha256').update(await fs.readFile(binding.executable)).digest('hex');
+    // Avoid hashing a large SketchUp executable before every read-only call.
+    // The cache is short-lived and invalidated by file metadata changes;
+    // instance/session checks still run for every request.
+    const stat = await fs.stat(binding.executable);
+    const cache = this.runtimeHashCache;
+    const cacheValid = cache && cache.path === normalize(binding.executable) &&
+      cache.size === stat.size && cache.mtimeMs === stat.mtimeMs &&
+      Date.now() - cache.checkedAt < 1500;
+    const digest = cacheValid
+      ? cache.digest
+      : crypto.createHash('sha256').update(await fs.readFile(binding.executable)).digest('hex');
+    if (!cacheValid) this.runtimeHashCache = {path: normalize(binding.executable), size: stat.size, mtimeMs: stat.mtimeMs, digest, checkedAt: Date.now()};
     if (digest !== binding.executable_sha256) throw Error('RUNTIME_EXECUTABLE_CHANGED: inspect and rebind the designated executable');
     return (await this.instances()).filter(item => normalize(item.executable) === normalize(binding.executable));
   }

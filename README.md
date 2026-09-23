@@ -6,8 +6,8 @@
 
 ## 当前版本
 
-- 版本：`0.5.29`
-- 构建：`0.5.29-context-projection-ref-routing-20260923`
+- 版本：`0.5.30`
+- 构建：`0.5.30-ui-responsive-20260923`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。

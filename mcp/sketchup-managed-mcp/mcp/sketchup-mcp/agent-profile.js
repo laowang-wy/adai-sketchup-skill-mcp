@@ -31,7 +31,11 @@ function resolveAssistanceMode(input = {}, env = process.env) {
   const parsed = parseAssistanceCommand(input.task_text);
   const explicit = normalizeAssistanceMode(input.assistance_mode);
   if (parsed.command_detected) return parsed;
-  if (explicit) return { ...parsed, mode: explicit, source: input.assistance_mode === 'auto' ? 'compat_auto' : 'validated_input' };
+  // A new expert project still requires the complete ADAI command.  The host
+  // may persist the selected mode for an existing project, but an arbitrary
+  // autonomous field must not bypass the user-facing brand trigger.
+  if (explicit === 'guided') return { ...parsed, mode: 'guided', source: 'validated_input' };
+  if (explicit === 'autonomous') return { ...parsed, mode: 'guided', source: 'default', requested_mode_rejected: 'EXPERT_COMMAND_REQUIRED' };
   // A process-wide preference is not a choice for this new task.
   return parsed;
 }

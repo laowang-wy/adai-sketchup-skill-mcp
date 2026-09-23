@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.29',
+  version: '0.5.30',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -88,6 +88,7 @@ const tools = [
         project_id: { type: 'string' },
         assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'Saved per-project assistance preference. auto is compatibility-only and resolves to guided.' },
         task_text: { type: 'string', description: 'Optional original task text. A documented first-line command is a shortcut; hosts may select the saved assistance_mode explicitly. The remainder is retained.' },
+        source_analysis: { type: 'object', description: 'Optional provider-neutral image analysis produced by the host, a configured API, a local vision model, or the agent fallback. It is source context, never a quality or shape gate.', properties: { analyzer: { type: 'object', properties: { provider: { type: 'string', enum: ['host_vision','configured_api','local_vision','agent_fallback','unavailable'] }, status: { type: 'string', enum: ['complete','partial','unavailable'] }, model: { type: 'string', maxLength: 128 }, image_sha256: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' } }, additionalProperties: false }, images: { type: 'array', maxItems: 32, items: { type: 'object', properties: { image_id: { type: 'string', minLength: 1, maxLength: 128 }, visible_facts: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, geometry_cues: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, spatial_relations: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, style_hypotheses: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, possible_roof_types: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 160 } }, scale_clues: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, occlusions: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, unknowns: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, conflict: { type: 'boolean' } }, required: ['image_id','visible_facts','geometry_cues','spatial_relations','style_hypotheses','possible_roof_types','scale_clues','occlusions','unknowns'], additionalProperties: false } }, conflicts: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } } }, additionalProperties: false },
         work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$', description: 'Optional autonomous work-unit label. It groups related managed operations without bypassing phase, evidence, or transaction guards.' },
         detail: { type: 'boolean', description: 'Return the original task text in the response; default false returns only a hash and readable reference.' },
       task_profile: { type: 'object', description: 'Optional bounded task routing hints. Use matching topics/features or explicitly choose roof_route=custom for a legitimate alternative construction. omit_phases selects the default teaching route and may omit or merge irrelevant optional nodes; safety, evidence, transaction and readback gates remain active. required_detail_systems expresses source/task information for diagnostics, not a minimum-count requirement.', properties: { topics: { type: 'array', maxItems: 20, items: { type: 'string' } }, features: { type: 'array', maxItems: 20, items: { type: 'string' } }, roof_route:{type:'string',enum:['auto','ancient_roof','custom']}, method_family:{type:'string',maxLength:64,pattern:'^[A-Za-z0-9_.-]*$'}, omit_phases:{type:'array',maxItems:8,items:{type:'string',enum:['roof_profile','archetypes','replication','variants','facade_detail']}}, repetition:{type:'string',enum:['present','none']}, repetition_reason:{type:'string',maxLength:1000}, required_detail_systems:{type:'array',maxItems:20,items:{type:'string',minLength:1}}, dimension_targets:{type:'array',maxItems:32,description:'Optional confirmed source dimensions, bound once. Only unique objects and local axis extents with world scaling are supported; no inferred area/grid relationships.',items:{type:'object',properties:{object:{type:'string',minLength:1,maxLength:160},axis:{type:'string',enum:['x','y','z']},expected_mm:{type:'number'},tolerance_mm:{type:'number',minimum:0},source:{type:'string',minLength:1,maxLength:1000}},required:['object','axis','expected_mm','tolerance_mm','source'],additionalProperties:false}} }, additionalProperties: false },
@@ -420,8 +421,18 @@ function instanceLayoutSummary(data) {
   const sample = rows.slice(0, 12).map(item => {
     if (!item || typeof item !== 'object') return item;
     const out = {};
-    for (const key of ['path','persistent_id','definition_guid','name','hidden','origin','axes','determinant']) {
-      if (item[key] !== undefined && item[key] !== null) out[key] = item[key];
+    // Keep the compact response useful without forcing a second full-layout
+    // read.  Ruby readback uses the occurrence-oriented names below; retain
+    // legacy aliases only when they are actually present.
+    const fields = [
+      ['entity_path','path'], ['persistent_id','persistent_id'],
+      ['definition_id','definition_guid'], ['definition_name','name'],
+      ['instance_name','instance_name'], ['hidden','hidden'],
+      ['origin','origin'], ['axis_lengths','axes'], ['determinant','determinant']
+    ];
+    for (const [actual, legacy] of fields) {
+      if (item[actual] !== undefined && item[actual] !== null) out[actual] = item[actual];
+      else if (item[legacy] !== undefined && item[legacy] !== null) out[legacy] = item[legacy];
     }
     return Object.keys(out).length ? out : { value_type: Array.isArray(item) ? 'array' : 'object' };
   });

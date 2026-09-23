@@ -1,5 +1,5 @@
 'use strict';
-const { isExpert, isAutonomous } = require('./execution-policy');
+const { isExpert, initialStage, initialStageName, isAutonomous } = require('./execution-policy');
 const { validationIssues } = require('./review-state');
 
 const UNRESOLVED = new Set(['dispatched', 'write_in_progress', 'result_unknown', 'recovery_required']);
@@ -70,6 +70,9 @@ function describeActions(state) {
     if (needsRepair) {
       return result(write,
         'Correct the observed architectural defect in its authorized system; records and prior geometry are preserved.', [capture]);
+    }
+    if (initialStage(state)) {
+      return result(write, `Build or correct ${initialStageName(initialStage(state))} in the current unit; capture and review this step independently before advancing.`, [capture]);
     }
     return result(write, 'Continue the current system or capture current evidence when ready to inspect it.', [capture]);
   }

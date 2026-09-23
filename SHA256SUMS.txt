@@ -4,3 +4,5 @@ f302a8b28cf56e2da4d644fe677f9f6995c22cf3bf72c285ae97e78d124912d2  dist\professio
 eb04dc30a395c563cef71ac2fff61424554ed909240be32fb702137888a45cd6  dist\sketchup-managed-mcp-0.5.29-guided-typed-ops-method-focus-20260923.zip
 c2924170867452c81caaac46cbfd9b97e5629d2fff18e238d4cd2180ea64e1ad  dist\professional-sketchup-modeling-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
 a01c3648723d063cf993b659fae6b9fd2485f1c2be5b96d5f5b20556bd0a31cf  dist\sketchup-managed-mcp-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
+96637ff672adc4b10f9b803c0361807d3998128d71808608e54a9ad2724c343f  dist\professional-sketchup-modeling-0.5.30-ui-responsive-20260923.zip
+4eaf36e097e1db153ef735bd84772ccfcbb31746204b49eb290ca23cfdde9495  dist\sketchup-managed-mcp-0.5.30-ui-responsive-20260923.zip

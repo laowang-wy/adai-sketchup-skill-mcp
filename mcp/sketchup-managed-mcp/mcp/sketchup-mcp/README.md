@@ -1,6 +1,6 @@
 # SketchUp Managed MCP
 
-Current managed-server version: 0.5.27.
+Current managed-server version: 0.5.30.
 
 This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. Version 0.5.27 makes the standard human modeling order tool-enforced: massing → archetypes → replication → variants → visible facade detail → finish.
 

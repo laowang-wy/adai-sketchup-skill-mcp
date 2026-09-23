@@ -21,7 +21,9 @@ module ADAIAncientConstructionPatterns
     group = entities.add_group
     group.name = name
     inner = group.entities
-    [inner.add_face(a), inner.add_face(b.reverse)].each do |face|
+    faces = [inner.add_face(a), inner.add_face(b.reverse)]
+    raise "PROFILE_PRISM_FACE_FAILED: #{name}" if faces.any?(&:nil?)
+    faces.each do |face|
       next unless face
       face.material = material if material
       face.back_material = material if material
@@ -29,7 +31,8 @@ module ADAIAncientConstructionPatterns
     profile_xz.each_index do |index|
       next_index = (index + 1) % profile_xz.length
       face = inner.add_face(a[index], a[next_index], b[next_index], b[index])
-      face.material = material if face && material
+      raise "PROFILE_PRISM_SIDE_FAILED: #{name}:#{index}" unless face
+      face.material = material if material
       face.back_material = material if face && material
     end
     group
@@ -38,13 +41,15 @@ module ADAIAncientConstructionPatterns
   # Sweep one measured section between two stations.  The caller can provide
   # different station heights to preserve a real ridge/eave slope instead of
   # raising four plan-ring corners after the fact.
-  def section_sweep(entities, name, section_xz, x_mm, y0_mm, y1_mm, z0_mm, z1_mm, material = nil)
-    a = section_xz.map { |x, z| point(x_mm + x, y0_mm, z0_mm + z) }
-    b = section_xz.map { |x, z| point(x_mm + x, y1_mm, z1_mm + z) }
+  def section_sweep(entities, name, section_xz, x0_mm, x1_mm, y0_mm, y1_mm, z0_mm, z1_mm, material = nil)
+    a = section_xz.map { |x, z| point(x0_mm + x, y0_mm, z0_mm + z) }
+    b = section_xz.map { |x, z| point(x1_mm + x, y1_mm, z1_mm + z) }
     group = entities.add_group
     group.name = name
     inner = group.entities
-    [inner.add_face(a), inner.add_face(b.reverse)].each do |face|
+    faces = [inner.add_face(a), inner.add_face(b.reverse)]
+    raise "SECTION_SWEEP_FACE_FAILED: #{name}" if faces.any?(&:nil?)
+    faces.each do |face|
       next unless face
       face.material = material if material
       face.back_material = material if material
@@ -52,7 +57,8 @@ module ADAIAncientConstructionPatterns
     section_xz.each_index do |index|
       next_index = (index + 1) % section_xz.length
       face = inner.add_face(a[index], a[next_index], b[next_index], b[index])
-      face.material = material if face && material
+      raise "SECTION_SWEEP_SIDE_FAILED: #{name}:#{index}" unless face
+      face.material = material if material
       face.back_material = material if face && material
     end
     group
@@ -84,7 +90,7 @@ module ADAIAncientConstructionPatterns
       first = pair[0]
       second = pair[1]
       section_sweep(root.entities, "#{name}_segment_#{index}", section_xz,
-                    first[0], first[1], second[1], first[2], second[2], material)
+                    first[0], second[0], first[1], second[1], first[2], second[2], material)
     end
     root
   end

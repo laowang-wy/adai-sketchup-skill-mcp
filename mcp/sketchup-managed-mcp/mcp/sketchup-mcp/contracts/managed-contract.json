@@ -6,7 +6,7 @@
     "single_image": [
       {
         "name": "massing",
-        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+        "hint": "Build the whole primary form and source-visible voids, including major roof volumes, tier setbacks and silhouette curves. Repeated primary masses are allowed; defer component detail arrays, facade grids and decorative context. Compare overall proportions before detailing."
       },
       {
         "name": "archetypes",
@@ -18,7 +18,7 @@
       },
       {
         "name": "variants",
-        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+        "hint": "Refine source-visible unique conditions at entry, transfer, setbacks and roof on the established primary form. Major roof volumes and setbacks already belong in massing; do not postpone them here."
       },
       {
         "name": "facade_detail",
@@ -32,7 +32,7 @@
     "freeform": [
       {
         "name": "massing",
-        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+        "hint": "Build the whole primary form and source-visible voids, including major roof volumes, tier setbacks and silhouette curves. Repeated primary masses are allowed; defer component detail arrays, facade grids and decorative context. Compare overall proportions before detailing."
       },
       {
         "name": "archetypes",
@@ -44,7 +44,7 @@
       },
       {
         "name": "variants",
-        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+        "hint": "Refine source-visible unique conditions at entry, transfer, setbacks and roof on the established primary form. Major roof volumes and setbacks already belong in massing; do not postpone them here."
       },
       {
         "name": "facade_detail",
@@ -58,7 +58,7 @@
     "test": [
       {
         "name": "massing",
-        "hint": "Build only primary solids, primary voids/recesses, plinth and source-matched camera. No repeated floors, facade grids, trees or context."
+        "hint": "Build the whole primary form and source-visible voids, including major roof volumes, tier setbacks and silhouette curves. Repeated primary masses are allowed; defer component detail arrays, facade grids and decorative context. Compare overall proportions before detailing."
       },
       {
         "name": "archetypes",
@@ -70,7 +70,7 @@
       },
       {
         "name": "variants",
-        "hint": "Build source-visible non-repeating levels: podium/entry, transfer, setbacks, roof and major unique recesses. Do not add finish dressing."
+        "hint": "Refine source-visible unique conditions at entry, transfer, setbacks and roof on the established primary form. Major roof volumes and setbacks already belong in massing; do not postpone them here."
       },
       {
         "name": "facade_detail",

@@ -43,6 +43,11 @@ module CodexSketchUpBridge
   LEGACY_RESPONSES_DIR = File.join(BRIDGE_DIR, 'responses')
   REGISTRY_PATH = File.join(BRIDGE_DIR, 'instances', "#{Process.pid}.json")
   MAX_REQUEST_AGE_MS = Integer((ENV['SKETCHUP_BRIDGE_REQUEST_MAX_AGE_MS'] || '120000')) rescue 120000
+  # SketchUp's Ruby API and UI share one thread. Processing a burst of
+  # requests in one timer callback makes Windows mark the application as
+  # unresponsive even when each individual operation is valid.
+  MAX_REQUESTS_PER_TICK = 1
+  MAX_MAIN_THREAD_JOBS_PER_TICK = 1
 
   class << self
     def log(message)
@@ -155,15 +160,19 @@ module CodexSketchUpBridge
     end
 
     def poll_file_requests
-      poll_file_requests_in(REQUESTS_DIR, RESPONSES_DIR, false)
+      processed = poll_file_requests_in(REQUESTS_DIR, RESPONSES_DIR, false, MAX_REQUESTS_PER_TICK)
       # Compatibility with the original package's machine-wide file bridge.
       # Atomic claiming prevents two live instances from executing one legacy
       # request twice; callers using the new MCP are unaffected.
-      poll_file_requests_in(LEGACY_REQUESTS_DIR, LEGACY_RESPONSES_DIR, true) unless LEGACY_REQUESTS_DIR == REQUESTS_DIR
+      if processed < MAX_REQUESTS_PER_TICK && LEGACY_REQUESTS_DIR != REQUESTS_DIR
+        poll_file_requests_in(LEGACY_REQUESTS_DIR, LEGACY_RESPONSES_DIR, true, MAX_REQUESTS_PER_TICK - processed)
+      end
     end
 
-    def poll_file_requests_in(requests_dir, responses_dir, legacy = false)
+    def poll_file_requests_in(requests_dir, responses_dir, legacy = false, limit = MAX_REQUESTS_PER_TICK)
+      processed = 0
       Dir.glob(File.join(requests_dir, '*.json')).sort.each do |request_path|
+        break if processed >= limit
         payload = JSON.parse(File.read(request_path))
         id = payload['id'].to_s
         created_at = begin
@@ -188,6 +197,7 @@ module CodexSketchUpBridge
         rescue Errno::ENOENT
           next
         end
+        processed += 1
         response_path = File.join(responses_dir, "#{id}.json")
         log("request_claimed id=#{id} operation_id=#{payload['operation_id'].to_s} legacy=#{legacy}")
 
@@ -240,6 +250,7 @@ module CodexSketchUpBridge
         File.delete(request_path) rescue nil
         File.delete(claimed_path) if claimed_path && File.file?(claimed_path)
       end
+      processed
     end
 
     def handle_client(socket)
@@ -344,7 +355,7 @@ module CodexSketchUpBridge
 
     def drain_jobs
       processed = 0
-      while @jobs && !@jobs.empty? && processed < 20
+      while @jobs && !@jobs.empty? && processed < MAX_MAIN_THREAD_JOBS_PER_TICK
         payload, response_queue = @jobs.pop(true)
         response_queue << dispatch(payload)
         processed += 1

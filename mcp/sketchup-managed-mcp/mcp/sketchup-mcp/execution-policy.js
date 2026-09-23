@@ -13,7 +13,7 @@ function policyError(message) {
 
 function createPolicy(mode, assistanceMode, profile, planFor) {
   if (assistanceMode === 'autonomous') {
-    return { version: EXPERT_VERSION, strategy: 'autonomous_work_unit', review_mode: 'current_result' };
+    return { version: EXPERT_VERSION, strategy: 'autonomous_work_unit', review_mode: 'current_result', ...(['single_image','freeform','cad'].includes(mode) ? { initial_stages: ['massing', 'archetypes'] } : {}) };
   }
   return { version: 1, strategy: 'guided_phase', review_mode: 'phase_review', phase_plan: planFor(mode, profile) };
 }
@@ -33,6 +33,11 @@ function policyFor(state) {
 }
 
 function isExpert(state) { const p = policyFor(state); return p.version === EXPERT_VERSION; }
+function initialStage(state) {
+  const stages = policyFor(state).initial_stages;
+  return Array.isArray(stages) ? stages[(state.initial_stage_reviews || []).length] || null : null;
+}
+function initialStageName(stage) { return stage === 'massing' ? 'Whole-building massing' : 'Representative components'; }
 function isAutonomous(state) { return policyFor(state).strategy === 'autonomous_work_unit'; }
 function planForState(state, plans) {
   if (isExpert(state)) return [{ name: UNIT_PHASE, hint: UNIT_HINT }]; // Internal adapter context, not a staged permission plan.
@@ -41,6 +46,13 @@ function planForState(state, plans) {
 
 function resolveUnit(state, input, allocateId) {
   const units = state.work_units || {};
+  if (initialStage(state)) {
+    const initial = units[state.initial_stage_unit_id];
+    if (!initial || (input.work_unit_id && input.work_unit_id !== initial.id) ||
+        (input.work_unit_name !== undefined && input.work_unit_name !== initial.name)) {
+      throw Object.assign(new Error('Review the current independent foundation step before selecting another architectural system. Correct it in the current unit; no extra form is required.'), {code:'INITIAL_STAGE_REVIEW_REQUIRED'});
+    }
+  }
   if (input.work_unit_id && input.work_unit_name) throw policyError('Select an existing work_unit_id OR name a work_unit_name, not both.');
   let unit;
   if (input.work_unit_id) {
@@ -83,4 +95,4 @@ function commitUnit(state, operation, result) {
   state.status = 'ready_for_step';
 }
 
-module.exports = { EXPERT_VERSION, UNIT_PHASE, UNIT_HINT, createPolicy, policyFor, isExpert, isAutonomous, planForState, resolveUnit, commitUnit };
+module.exports = { EXPERT_VERSION, UNIT_PHASE, UNIT_HINT, createPolicy, policyFor, isExpert, initialStage, initialStageName, isAutonomous, planForState, resolveUnit, commitUnit };
