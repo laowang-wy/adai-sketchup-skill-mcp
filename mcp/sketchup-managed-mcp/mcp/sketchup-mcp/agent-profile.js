@@ -17,7 +17,11 @@ function parseAssistanceCommand(taskText) {
   const lines = original.split(/\r?\n/);
   const first = lines.findIndex((line) => line.trim().length > 0);
   if (first < 0) return { mode: 'guided', task_text: original, command_detected: false, source: 'default' };
-  const command = lines[first].trim();
+  // Keep the documented phrases as a convenient shortcut, but do not make a
+  // punctuation mark or a host-side task wrapper decide whether the model may
+  // use the autonomous strategy.  The explicit assistance_mode field is the
+  // authoritative route when the host can pass it.
+  const command = lines[first].trim().replace(/[。.!！?？]+$/u, '').trim();
   const mode = EXPERT_COMMANDS.includes(command) ? 'autonomous' : command === GUIDED_COMMAND ? 'guided' : null;
   if (!mode) return { mode: 'guided', task_text: original, command_detected: false, source: 'default' };
   return { mode, task_text: lines.slice(0, first).concat(lines.slice(first + 1)).join('\n'), command_detected: true, source: 'user_command' };
@@ -26,10 +30,6 @@ function parseAssistanceCommand(taskText) {
 function resolveAssistanceMode(input = {}, env = process.env) {
   const parsed = parseAssistanceCommand(input.task_text);
   const explicit = normalizeAssistanceMode(input.assistance_mode);
-  // Autonomous is selected only by one of the exact first-line expert
-  // commands. The field remains readable for legacy guided/auto callers, but
-  // it cannot be used as a shortcut to bypass the user command.
-  if (explicit === 'autonomous' && !parsed.command_detected) return { ...parsed, mode: 'guided', source: 'missing_expert_command', command_required: true };
   if (parsed.command_detected) return parsed;
   if (explicit) return { ...parsed, mode: explicit, source: input.assistance_mode === 'auto' ? 'compat_auto' : 'validated_input' };
   // A process-wide preference is not a choice for this new task.

@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.29",
-  "build_id": "0.5.29-context-projection-ref-routing-20260923",
+  "build_id": "0.5.29-visual-diagnostics-no-proxy-gates-20260923",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -64,7 +64,7 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.29-context-projection-ref-routing-20260923",
+  "codeBaseline": "0.5.29-visual-diagnostics-no-proxy-gates-20260923",
   "engineeringVersion": "0.5.29",
   "sourceBaseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8"
 }
