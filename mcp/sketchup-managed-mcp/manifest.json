@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
-  "version": "0.5.32",
-  "build_id": "0.5.32-executable-route-20260924",
+  "version": "0.5.33",
+  "build_id": "0.5.33-legacy-route-guidance-20260924",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -64,7 +64,7 @@
   "releaseStatus": "engineering_regression_candidate",
   "runtime": "node",
   "entrypoint": "launch.cjs",
-  "codeBaseline": "0.5.32-executable-route-20260924",
-  "engineeringVersion": "0.5.32",
+  "codeBaseline": "0.5.33-legacy-route-guidance-20260924",
+  "engineeringVersion": "0.5.33",
   "sourceBaseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8"
 }

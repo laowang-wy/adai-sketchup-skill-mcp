@@ -1,6 +1,6 @@
 # SketchUp Managed MCP
 
-Current managed-server version: 0.5.32.
+Current managed-server version: 0.5.33.
 
 This MCP controls the active SketchUp session through the local Ruby bridge while keeping production modeling behind a small managed API. The returned construction cards keep the proven human modeling order executable: recognize the source → construct the complete primary form → validate one representative construction → reuse confirmed instances → add source-visible variants and skin → finish. The order guides the Agent; it is not a visual-quality proxy or an entity-count quota.
 

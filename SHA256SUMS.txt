@@ -8,5 +8,7 @@ a01c3648723d063cf993b659fae6b9fd2485f1c2be5b96d5f5b20556bd0a31cf  dist\sketchup-
 4eaf36e097e1db153ef735bd84772ccfcbb31746204b49eb290ca23cfdde9495  dist\sketchup-managed-mcp-0.5.30-ui-responsive-20260923.zip
 f13edbcaa43e1f6dd604644512734e34db8faa630cae97f31340dd8ada806975  dist\professional-sketchup-modeling-0.5.31-method-route-20260924.zip
 ec71b174f145760b861c40a417e4e6f1a9c30fa5a9948014308bff498eae3b59  dist\sketchup-managed-mcp-0.5.31-method-route-20260924.zip
-7c41e523d9afff5eeaaf78843b8e2bd108aafdd59cd6cd86b0bc74342654efdc  dist\professional-sketchup-modeling-0.5.32-executable-route-20260924.zip
-6b1fd6678a07e91ed1ddee7eae3d54aba1eb4fa62f6493b33306a03994f49159  dist\sketchup-managed-mcp-0.5.32-executable-route-20260924.zip
+69b4e8f7c60b5c0853963da114914c00484d3b75b8506bce1de14446356a3060  dist\professional-sketchup-modeling-0.5.32-executable-route-20260924.zip
+bb2072b13427e70c6cfdebb04ac2ca42a48eb6c57989ebde5f83885d13e45f5c  dist\sketchup-managed-mcp-0.5.32-executable-route-20260924.zip
+eaf3e7153580fc51b15e4803c4cb70f777918fd979455aecee1b1a7573124fef  dist\professional-sketchup-modeling-0.5.33-legacy-route-guidance-20260924.zip
+cd5c7f386aeb2f9b22037e0cacb3fa74bb72be67cb1b185532e90263b2afd9b8  dist\sketchup-managed-mcp-0.5.33-legacy-route-guidance-20260924.zip

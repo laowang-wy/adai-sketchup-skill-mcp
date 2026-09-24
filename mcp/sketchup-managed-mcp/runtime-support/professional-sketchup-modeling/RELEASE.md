@@ -1,10 +1,10 @@
-# ADAI SketchUp 0.5.32 — 工程候选
+# ADAI SketchUp 0.5.33 — 工程候选
 
-Build: `0.5.32-executable-route-20260924`
+Build: `0.5.33-legacy-route-guidance-20260924`
 
 基于用户确认的 `3a38143a54b1882ff0ac18aee3ff7aabf26e57e8` 源码直接修改。两个包独立安装；MCP 默认定位自身 runtime-support，不依赖 Skill 的绝对安装路径。
 
-## 0.5.32 更新
+## 0.5.33 更新
 - 恢复主动构造简报与简短执行卡，保留来源判断和受管操作。
 - 文件桥每次轮询最多处理一个请求，TCP 主线程队列每次最多处理一个任务；单个长 Ruby 操作仍可能阻塞窗口。
 - EXE 哈希使用 1.5 秒有界缓存，实例和会话检查保留。
