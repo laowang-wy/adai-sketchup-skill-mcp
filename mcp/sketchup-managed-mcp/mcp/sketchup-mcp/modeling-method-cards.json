@@ -227,7 +227,7 @@
         "preset_id": "si_shan",
         "route": [
           "preset(family=roof,preset_id=si_shan)",
-          "compile(family=recipe, parameters=returned_preset)",
+          "compile(family=recipe,parameters=returned_preset,output_directory=<new absolute directory>)",
           "sketchup_project_step(ruby_file=returned_manifest.ruby_file)"
         ],
         "validation": "compile内部完成参数验证"
@@ -235,7 +235,7 @@
       "actions": [
         "先逐张查看来源图，记录主体宽深比、层间退台、檐底标高、正脊/山面/侧坡、翼角上扬和廊下开敞；先用比例关系，不编造绝对尺寸。",
         "先调用 sketchup_ancient_tool(action=preset,family=roof,preset_id=si_shan)，用返回参数调整 width/depth/rise/eave_height/setback/corner_lift，使一个代表性屋壳对应来源。",
-        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset)，随后只使用返回的 ruby_file 调用 sketchup_project_step；不要用自定义 Ruby 代替已有路线。",
+        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset,output_directory=<新的绝对目录>)；compile 已包含参数校验，随后只使用返回的 ruby_file 调用 sketchup_project_step。si_shan 的 corner_lift 必须小于 rise×apron_rise_ratio×0.65，优先保留 preset 默认值。",
         "step 返回后看正面、侧面、斜视和檐下视图；确认完整主形、屋脊/檐线、翼角、廊下负空间后，再沿同一方法组织其他楼层和构件。",
         "若来源明显不是歇山，或 si_shan 不能表达关键形体，先说明超出范围，再改用相关方法或受管自定义 Ruby；不得因为省一步而直接写盒体代理。"
       ],
@@ -253,7 +253,8 @@
         "把台基/墙盒/柱网当完整主形",
         "用任意硬编码比例替代来源比例",
         "只抬平面角点表示翼角",
-        "先铺瓦或加斗拱掩盖屋壳错误"
+        "先铺瓦或加斗拱掩盖屋壳错误",
+        "corner_lift 超过 si_shan 的 apron_rise_ratio 约束；遇到 APRON_LIFT_CONFLICT 时降低 corner_lift，不要改走盒体或无依据的自定义 Ruby"
       ],
       "inspect": "正面、侧面、斜视和檐下近景；比较总宽深、各层退台、屋脊/檐线、翼角和廊下开敞。",
       "if_failed": "先调整共享比例或屋壳表示；若来源超出si_shan范围，再查对应REF或使用受管自定义Ruby并说明原因。",
