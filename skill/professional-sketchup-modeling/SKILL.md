@@ -7,21 +7,15 @@ description: Build editable SketchUp architecture from images, CAD, text or exis
 
 依据用户资料创建或修改准确、可编辑的 SketchUp 模型，持续推进到可核验交付。代理负责观察来源、选择构造方法、生成几何和看图纠错；MCP 负责事务、文档绑定、对象范围、证据、恢复和保存。工具成功、几何合法、视觉相符和文件交付分别判断。
 
-## 1. 先选任务，按需读取真正有用的经验
+## 1. 先得到可执行方法，再按需读取经验
 
-用户要求决定范围；不要把历史脚本、案例尺寸或旧会话当成本次事实。已读且未更新的同版本资料可复用，不要每阶段重复读取；也不要因为包里存在文件就全库加载。
+用户要求决定范围；不要把历史脚本、案例尺寸或旧会话当成本次事实。参考文件不是开工前的阅读清单，也不要因为包里存在文件就全库加载。
 
-| 当前任务 | 先做什么 | 只读当前需要的资料 |
-|---|---|---|
-| 图片重建 | 实际逐张查看来源，记录可见事实、推导、假设和未知 | [图片分阶段重建](references/progressive-image-reconstruction.md)、[来源对照](references/reference-comparison.md) |
-| 中式楼阁、塔、黄鹤楼、古建照片 | 先判主体、屋面、层间退台和开敞关系，再选构造 | [古建图片流程](references/chinese-tower-image-modeling.md)、[黄鹤楼复盘](references/yellow-crane-tower-lessons.md)、[古建构造](references/chinese-ancient-architecture-rules.md)；需要构件时再读[细部分解](references/ancient-detail-decomposition.md) |
-| CAD 建模 | 先确认单位、图层、轴线和可见边界 | [CAD 保真](references/cad-to-su-fidelity.md)、[语义检查](references/semantic-validation.md) |
-| 重复组件或楼层 | 先完成一个真实宿主上的完整原型 | [层级与组件](references/hierarchical-component-workflow.md) |
-| 曲屋面、复杂曲面 | 先确定剖面、控制线和共享接缝 | [曲面构造](references/curved-architecture-rules.md) |
-| 写 Ruby 或遇到实体引用错误 | 先确认受管 build 边界，再复用对应 helper | [受管 Ruby API](references/managed-ruby-api.md)、[Ruby 构造片段](references/ruby-snippets.md) |
-| 运行故障或结果未知 | 先查原请求、状态和桥，不重放 | [恢复规则](references/managed-recovery.md) |
+先调用 `sketchup_project_begin`。它应把当前来源观察、可执行建筑方法、关键参数、常见错误、检查视角和下一步动作压缩成 `construction_brief`；先执行这张短卡，不要为了寻找方法而自行 `list → match → read`。中式楼阁、塔、黄鹤楼和明确歇山任务，短卡应直接给出 `si_shan` 或同等适用方法及 `preset → compile → step` 动作。
 
-参考资料是可执行构造帮助，不是登记表或质量配额。经验卡按“怎么认 → 怎么建 → 哪些参数重要 → 常见错误 → 怎么看 → 不行怎么办”使用。
+只有短卡明确缺少当前问题所需的方法，或执行中遇到具体疑点时，才定向读取一份对应参考：图片来源不清读图片对照；CAD 单位或语义不清读 CAD 参考；重复构件失真读组件参考；曲面接缝或放样不清读曲面参考；Ruby 边界不清读受管 API/Ruby 片段；运行结果未知读恢复规则。读取后复用同版本内容，不在每阶段重复读取。
+
+随包保留的 `cad-to-su-fidelity.md`、`semantic-validation.md`、`hierarchical-component-workflow.md` 和 `curved-architecture-rules.md` 是按问题调用的后备方法，不是所有任务的必读项。经验卡按“怎么认 → 怎么建 → 哪些参数重要 → 常见错误 → 怎么看 → 不行怎么办”使用；程序负责把适用部分先放进短卡，代理负责建筑判断和实际看图。
 
 ## 2. 建模前确认来源和运行环境
 
