@@ -131,7 +131,9 @@ def main(a):
   from compile import prepare
   with tempfile.TemporaryDirectory(prefix='adai-roof-') as td:
    preset=Path(td)/'preset.json';preset.write_text(json.dumps(p),encoding='utf8');manifest=prepare([preset],out)
-  prefix='ARK4_'
+  # The managed step binds the compiled Ruby to the current project. Do not
+  # require a development-only ARK4_ project-id prefix for normal projects.
+  prefix=None
  elif family=='measured':
   from prepare_measured_loft import prepare
   prepare(p['profile_id'],p['length_mm'],p['span_mm'],p['rise_mm'],p['thickness_mm'],out);manifest=read(out/'manifest.json');prefix='ARK_Diagnostic_'
@@ -139,7 +141,9 @@ def main(a):
   import bearing_tool;manifest=bearing_tool.prepare(p['template'],p['width_mm'],p['column_height_mm'],p['beam_height_mm'],out);prefix='ARKS_Bearing'
  else:
   import eave_tool;manifest=eave_tool.prepare(out,p['width_mm']);prefix='ARKS_Eave'
- return {'manifest':manifest,'resolved_family':family,'production_ready':False,'execution_contract':{'mode':'test','phase':'massing','project_id_prefix':prefix,'next_tool':'sketchup_project_step','requires_review':True},'scope':'compiled only; no SketchUp execution'}
+ contract={'phase':'massing','next_tool':'sketchup_project_step','requires_review':True}
+ if prefix: contract['project_id_prefix']=prefix
+ return {'manifest':manifest,'resolved_family':family,'production_ready':False,'execution_contract':contract,'scope':'compiled only; no SketchUp execution'}
 if __name__=='__main__':
  try:print(json.dumps({'ok':True,'result':main(json.loads(sys.stdin.read()))},ensure_ascii=False))
  except (OSError,ValueError,TypeError,KeyError,ImportError,subprocess.TimeoutExpired) as e:print(json.dumps({'ok':False,'error':type(e).__name__+': '+str(e)},ensure_ascii=False));raise SystemExit(2)

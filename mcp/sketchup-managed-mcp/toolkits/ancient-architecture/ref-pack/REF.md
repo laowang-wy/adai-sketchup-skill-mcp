@@ -157,7 +157,7 @@ EVIDENCE: read card_id=bearing-contacts 获取相对记录；历史验证范围�
 
 TRIGGER: 通用歇山需要补齐山面和翼角收口
 
-ACTION: 复用 experience/recipes/xieshan-detailed.json；validate 后 compile；受管 ARK4_ 单体诊断。
+ACTION: 复用 experience/recipes/xieshan-detailed.json；validate 后 compile；将返回的 ruby_file 提交到当前受管项目并进行真实读回与视觉审核。
 
 RULES: detailed 加入山面封板、曲边封檐、底枋、竖条和六个脊接头。；四翼角按毫米瓦宽排列，在斜脊边界裁切；切边封闭8mm厚度。；接头为闭合搭接件，山面为素面推定做法。；端裙坡仍使用原有收分瓦域。
 

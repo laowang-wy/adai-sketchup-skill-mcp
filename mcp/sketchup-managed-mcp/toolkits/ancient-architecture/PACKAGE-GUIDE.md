@@ -1,7 +1,7 @@
 
 # 古建工具与经验包指南
 
-当前 MCP 发行版 0.5.27；来源算法 0.4，经验包 0.4.1，可执行工具包 0.4.4。经验包内的 REF 1.3.0 与 MCP 默认随附 REF 1.4.0 为不同副本，以实际读取路径及版本为准。
+当前 MCP 发行版 0.5.32；来源算法 0.4，经验包 0.4.2，可执行工具包 0.4.5。经验包内的 REF 1.3.0 与 MCP 默认随附 REF 1.4.0 为不同副本，以实际读取路径及版本为准。
 
 先读 `roof-types.json` 与 `experience/README.md`。六类基础屋壳均有独立算法；最新运行范围以对应 review.json 为准，不能把闭合网格等同古制还原。
 
@@ -37,9 +37,9 @@ schema_version=4。width/depth是最外檐口尺寸mm；rise从中檐口上表�
 
 ## 受管执行和审查
 
-按本机 professional-sketchup-modeling Skill核对文档、桥接和真实渲染状态。屋面project_id用ARK4_，檐口用ARKS_Eave；mode=test。step仅提交编译结果ruby_file，timeout_ms=300000。输出Ruby内嵌几何，不依赖SU常驻require缓存。
+按本机 professional-sketchup-modeling Skill核对文档、桥接和真实渲染状态。屋面编译结果可直接用于当前受管项目的 `project_id`（无需测试前缀）；step 仅提交返回的 `ruby_file`，timeout_ms=300000。输出Ruby内嵌几何，不依赖SU常驻require缓存。
 
-仅允许诊断massing；不能冒充整栋项目finished。review_required后打开实际透视、两向立面、檐下及问题近景。超时先检查原请求和项目状态，禁止并发写入或盲目重放。检查点含旧隐藏项目与人物，不是纯净最终SKP。
+古建屋面路线可在当前项目的 `massing` 步骤执行；它不是只供测试项目的诊断脚本。不能冒充整栋项目finished。review_required后打开实际透视、两向立面、檐下及问题近景。超时先检查原请求和项目状态，禁止并发写入或盲目重放。检查点含旧隐藏项目与人物，不是纯净最终SKP。
 
 ## 失败处理
 

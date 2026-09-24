@@ -2,7 +2,7 @@
 
 使用时机：通用歇山需要补齐山面和翼角收口
 
-复用 experience/recipes/xieshan-detailed.json；validate 后 compile；受管 ARK4_ 单体诊断。
+复用 experience/recipes/xieshan-detailed.json；compile 已包含参数校验；把返回的 ruby_file 提交到当前受管项目并做真实读回和视觉复核。
 
 ## 规则
 

@@ -110,7 +110,12 @@ def prepare(paths,output):
  if estimated>230000:raise ValueError('GEOMETRY_BUDGET_EXCEEDED: includes ridge triangles')
  payload=json.dumps(roofs,separators=(',',':'));source=(ROOT.parent/'geometry/managed_guard.rb').read_text(encoding='utf-8-sig')+'\n'+(ROOT/'managed_builder.rb').read_text(encoding='utf8')
  ruby="require 'sketchup.rb'\nrequire 'json'\nrequire 'base64'\n"+source+"\nmodule PipClawManagedBuild\n extend self\n def build(entities,context)\n"
- ruby+="  raise 'ARK v4 test project required' unless context['project_id'].start_with?('ARK4_')\n  raise 'massing diagnostic only' unless context['phase']=='massing'\n"
+ # This artifact is executed inside the managed project that supplied the
+ # context. The old ARK4_ prefix was a test-harness condition and made the
+ # normal su_* project ids fail before SketchUp could execute the route.
+ # Keep the phase guard; project binding, readback and review belong to the
+ # managed kernel.
+ ruby+="  raise 'massing diagnostic only' unless context['phase']=='massing'\n"
  ruby+="  data=JSON.parse(Base64.strict_decode64('"+base64.b64encode(payload.encode()).decode()+"'))\n  AncientRoofKitV4.build(entities,context,data)\n end\nend\n"
  output.mkdir(parents=True);(output/'build.rb').write_text(ruby,encoding='utf8',newline='\n');(output/'mesh-data.json').write_text(json.dumps(roofs),encoding='utf8')
  manifest={'compile_seconds':time.perf_counter()-started,'geometry_kernel_version':GEOMETRY_VERSION,'schema_version':4,'ruby_file':str(output/'build.rb'),'build_sha256':hashlib.sha256(ruby.encode()).hexdigest(),'inputs':[r['preset'] for r in roofs],'geometry_checks':[r['expected'] for r in roofs],'source_sha256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in ['roof_mesh.py','contract.py','compile.py','managed_builder.rb','surface_tiles.py','detail_geometry.py','cut_tiles.py','helmet_profile.py']},'geometry_core_sha256':{f:hashlib.sha256((ROOT.parent/'geometry'/f).read_bytes()).hexdigest() for f in ['contracts.py','managed_guard.rb']},'estimated_expanded_faces':estimated,'recommended_timeout_ms':300000,'profile_sha256':hashlib.sha256((ROOT.parent/'study/measured-profiles.json').read_bytes()).hexdigest(),'historical_fidelity':'not certified; generic inferred families','details_scope':[r['details']['scope'] for r in roofs]}
