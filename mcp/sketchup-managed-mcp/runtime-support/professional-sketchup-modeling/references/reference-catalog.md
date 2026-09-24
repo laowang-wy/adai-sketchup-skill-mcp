@@ -2,6 +2,18 @@
 
 The runtime reference set is loaded on demand. Links below are documentation routes, not permission to bypass the managed transaction or evidence checks.
 
+## 按当前问题查方法
+
+只选当前问题需要的章节；短卡已提供的方法不重复阅读。这不是开工前的必读清单。
+
+- 图片比例、遮挡或多图冲突：[来源对照](reference-comparison.md)、[图片重建](progressive-image-reconstruction.md)。
+- 古建屋面与支承：[古建构造](chinese-ancient-architecture-rules.md)；多层楼阁看[塔类图片方法](chinese-tower-image-modeling.md)，确为黄鹤楼时才参考[案例复盘](yellow-crane-tower-lessons.md)。
+- CAD 单位、轴线和对应对象：[CAD 保真](cad-to-su-fidelity.md)、[语义检查](semantic-validation.md)。
+- 原型、父级变换与重复关系：[层级与组件](hierarchical-component-workflow.md)。
+- 剖面、放样与曲面接缝：[曲面构造](curved-architecture-rules.md)。
+
+## 其余资料索引
+
 - [RELEASE.md](../RELEASE.md): package version, supported hosts and install scope.
 
 - [ATTRIBUTION.md](ATTRIBUTION.md)
