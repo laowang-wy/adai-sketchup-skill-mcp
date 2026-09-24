@@ -52,7 +52,7 @@ async function runtimeBinding(input,appData,skillRoot){
   // Best effort only: a bounded binding file makes the packaged fallback usable without guessing paths.
   let binding_written=false;
   try{await writeClientBinding(appData);binding_written=true;}catch{/* guidance must never fail on this */}
-  return {...packet,client_binding:{path:clientBindingPath(appData),written:binding_written},host_enablement:{installed_does_not_mean_enabled:true,check:['宿主是否登记','enabled 是否为真','刷新后新会话能否列出 sketchup_*'],guide:'references/HOST-ENABLEMENT.md'}};
+  return {...packet,client_binding:{path:clientBindingPath(appData),written:binding_written},host_enablement:{installed_does_not_mean_enabled:true,check:['宿主是否登记','enabled 是否为真','刷新后新会话能否列出 sketchup_*']}};
  }
  if(input.action==='client_binding')return {ok:true,...await writeClientBinding(appData),next:'Fallback script may now run without --server. Native host enablement is still preferred.'};
  if(input.action==='host_enablement')return hostEnablement(appData);

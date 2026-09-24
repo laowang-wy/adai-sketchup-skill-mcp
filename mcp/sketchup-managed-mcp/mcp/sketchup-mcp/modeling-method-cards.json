@@ -44,7 +44,7 @@
     "archetypes": {
       "decisions": [
         "Complete the source-required reusable component, its host relationship and critical end conditions before copying.",
-        "State the method boundary and load only relevant REF sections by task and stage."
+        "State the method boundary; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -70,7 +70,7 @@
     "variants": {
       "decisions": [
         "Read source evidence, use current managed phase variants.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -83,7 +83,7 @@
     "facade_detail": {
       "decisions": [
         "Read source evidence, use current managed phase facade_detail.",
-        "Load relevant REF sections by task and stage.",
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved.",
         "Separate accepted massing from source-visible skin grammar: opaque/open ratio, band rhythm, recess/projection, corners, base and crown. Repair the wrong skin system before materials or decoration."
       ],
       "evidence_checks": [
@@ -97,7 +97,7 @@
     "finish": {
       "decisions": [
         "Read source evidence, use current managed phase finish.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -110,7 +110,7 @@
     "source_alignment": {
       "decisions": [
         "Read source evidence, use current managed phase source_alignment.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -123,7 +123,7 @@
     "correction_scope": {
       "decisions": [
         "Read source evidence, use current managed phase correction_scope.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -136,7 +136,7 @@
     "primary_corrections": {
       "decisions": [
         "Read source evidence, use current managed phase primary_corrections.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -149,7 +149,7 @@
     "component_cleanup": {
       "decisions": [
         "Read source evidence, use current managed phase component_cleanup.",
-        "Load relevant REF sections by task and stage."
+        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
       ],
       "evidence_checks": [
         "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
@@ -235,7 +235,7 @@
       "actions": [
         "先逐张查看来源图，记录主体宽深比、层间退台、檐底标高、正脊/山面/侧坡、翼角上扬和廊下开敞；先用比例关系，不编造绝对尺寸。",
         "先调用 sketchup_ancient_tool(action=preset,family=roof,preset_id=si_shan)，用返回参数调整 width/depth/rise/eave_height/setback/corner_lift，使一个代表性屋壳对应来源。",
-        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset,output_directory=<新的绝对目录>)；compile 已包含参数校验，随后只使用返回的 ruby_file 调用 sketchup_project_step。si_shan 的 corner_lift 必须小于 rise×apron_rise_ratio×0.65，优先保留 preset 默认值。",
+        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset,output_directory=<新的绝对目录>)；compile 已包含参数校验，随后只使用返回的 ruby_file 调用 sketchup_project_step。只根据来源和工具返回的可行范围调整参数，不为了绕过冲突硬改约束。",
         "step 返回后看正面、侧面、斜视和檐下视图；确认完整主形、屋脊/檐线、翼角、廊下负空间后，再沿同一方法组织其他楼层和构件。",
         "若来源明显不是歇山，或 si_shan 不能表达关键形体，先说明超出范围，再改用相关方法或受管自定义 Ruby；不得因为省一步而直接写盒体代理。"
       ],
@@ -254,7 +254,7 @@
         "用任意硬编码比例替代来源比例",
         "只抬平面角点表示翼角",
         "先铺瓦或加斗拱掩盖屋壳错误",
-        "corner_lift 超过 si_shan 的 apron_rise_ratio 约束；遇到 APRON_LIFT_CONFLICT 时降低 corner_lift，不要改走盒体或无依据的自定义 Ruby"
+        "corner_lift 与屋壳比例冲突：使用工具返回的可行范围并重新检查翼角，不退回盒体或无依据 Ruby。"
       ],
       "inspect": "正面、侧面、斜视和檐下近景；比较总宽深、各层退台、屋脊/檐线、翼角和廊下开敞。",
       "if_failed": "先调整共享比例或屋壳表示；若来源超出si_shan范围，再查对应REF或使用受管自定义Ruby并说明原因。",
@@ -313,7 +313,7 @@
       "method": {
         "tool": "sketchup_ancient_tool",
         "route": [
-          "preset(family=roof,preset_id=匹配屋面)",
+          "preset(family=roof,preset_id=construction_brief 返回的适用屋面)",
           "compile(family=recipe, parameters=returned_preset)",
           "sketchup_project_step(ruby_file=returned_manifest.ruby_file)"
         ],
@@ -334,7 +334,12 @@
         "用细部登记代替形态判断"
       ],
       "inspect": "整体正/侧/斜视和最能暴露屋面、檐口、转角的近景。",
-      "if_failed": "回查形制和来源比例，改变构造表示，不通过增加登记或数量过门。"
+      "if_failed": "回查形制和来源比例，改变构造表示，不通过增加登记或数量过门。",
+      "actions": [
+        "先识别屋面类型、层级退台、支承体系和可见开敞空间；不确定时保留未知，不猜预设。",
+        "按 construction_brief 返回的适用屋面调用 preset，再用返回参数 compile；没有明确适用预设时改用受管自定义 Ruby并说明原因。",
+        "只使用返回的 ruby_file 调用 sketchup_project_step，随后按来源视角看图。"
+      ]
     }
   }
 }

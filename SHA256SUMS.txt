@@ -12,5 +12,5 @@ ec71b174f145760b861c40a417e4e6f1a9c30fa5a9948014308bff498eae3b59  dist\sketchup-
 bb2072b13427e70c6cfdebb04ac2ca42a48eb6c57989ebde5f83885d13e45f5c  dist\sketchup-managed-mcp-0.5.32-executable-route-20260924.zip
 eaf3e7153580fc51b15e4803c4cb70f777918fd979455aecee1b1a7573124fef  dist\professional-sketchup-modeling-0.5.33-legacy-route-guidance-20260924.zip
 cd5c7f386aeb2f9b22037e0cacb3fa74bb72be67cb1b185532e90263b2afd9b8  dist\sketchup-managed-mcp-0.5.33-legacy-route-guidance-20260924.zip
-16356df1fb1c35b210b2b0640ed6b0760a7ce582cc57b6a86268ed485e8cacdb  dist\professional-sketchup-modeling-0.5.34-legacy-route-brief-20260924.zip
-598200212552f517631a69d9f6212121ed5d32397ded696fb578ea1842d28eba  dist\sketchup-managed-mcp-0.5.34-legacy-route-brief-20260924.zip
+41bfc0a47cf68d6b8646ba991d78bcae127af7deb2cfb2548de762da96c61d08  dist\professional-sketchup-modeling-0.5.34-legacy-route-brief-20260924.zip
+a6dc85c418b6f905a281134636535d6bed53892d735fde359704b4a0b73b083f  dist\sketchup-managed-mcp-0.5.34-legacy-route-brief-20260924.zip

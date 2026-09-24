@@ -440,7 +440,7 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
   const method = mode === 'test'
     ? { version: modelingMethodCards.version, scope: 'diagnostic_only', evidence_checks: ['Validate the requested diagnostic contract; do not invent source-image observations or claim photographic acceptance.'] }
     : { version: modelingMethodCards.version, scope: modelingMethodCards.scope, review_record_fields: [...modelingMethodCards.review_record_fields], ...JSON.parse(JSON.stringify(modelingMethodCards.phases[phase.name] || {})) };
-  const shared = { quality_review_contract: { version: 1, production_continue_required: mode !== 'test', reference: 'references/managed-quality-review.md', checks: ['geometry','dependencies'], unverified_requires_reason: true, live_readback: 'unverified' }, phase: phase.name, objective: phase.name === 'massing' ? '完整主形' : phase.hint, method, agent_review: 'Inspect actual returned evidence; record object/view, source constraint, observation and unresolved defects. Continue only when this scale meets the source. A checklist is not approval evidence.' };
+  const shared = { quality_review_contract: { version: 1, production_continue_required: mode !== 'test', checks: ['geometry','dependencies'], unverified_requires_reason: true, live_readback: 'unverified' }, phase: phase.name, objective: phase.name === 'massing' ? '完整主形' : phase.hint, method, agent_review: 'Inspect actual returned evidence; record object/view, source constraint, observation and unresolved defects. Continue only when this scale meets the source. A checklist is not approval evidence.' };
   if (phase.name === 'source_alignment') return { ...shared, required: ['Preserve source units, coordinates, counts, rotation and host relationships; build only source-aligned primary geometry.'], forbidden: ['Invented source dimensions', 'Facade detail before source alignment'] };
   if (phase.name === 'correction_scope') return { ...shared, required: ['Identify the user-authorized defect, affected entities and target constraints; preserve unrelated geometry.'], forbidden: ['Unrelated rebuilding', 'Invented defect evidence'] };
   if (phase.name === 'primary_corrections') return { ...shared, required: ['Correct the identified host contacts, dimensions or primary form; verify affected dependencies.'], forbidden: ['Decoration that hides the defect', 'Unrelated changes'] };
@@ -564,8 +564,7 @@ function taskCard(state, phase, detail=false) {
       ? 'Build complete primary proportions, roof volumes and voids; inspect actual views and review massing separately before component construction.'
       : 'Build complete representative components at their real hosts; inspect construction, contact and editability, then review separately before broad replication. No minimum component count or registration quota.'} : {}),
     work_unit: state.work_unit || null,
-    shared_foundation: 'references/shared-architectural-foundation.md',
-    operation_guidance: 'references/expert-operation.md',
+    building_guidance: 'Use the source, construction_brief and actual views as the architectural basis; the program handles unit, identity, evidence and recovery records.',
     construction_brief: constructionBriefFor(state.task_profile, state.task_text),
     method_focus: expertMethodFocus(state),
     open_findings: validationIssues(state),
@@ -576,14 +575,14 @@ function taskCard(state, phase, detail=false) {
   const card=phaseTaskCard(phase,state.mode,state.task_profile);
   if(!detail) {
     delete card.method.review_record_fields;
-    card.method.full_guidance='references/managed-ruby-api.md';
+    card.method.guidance='Use the managed Ruby API described by the Skill only when the current construction needs custom Ruby.';
     card.method.detail_tool='sketchup_project_status(detail=true)';
     if(assistanceSummary(state).mode==='autonomous') {
       card.method.guidance='Use the current phase constraints; consult full guidance for unfamiliar operations.';
       delete card.method.decisions;
     }
   }
-  return {...card, work_unit: state.work_unit || null, shared_foundation: 'references/shared-architectural-foundation.md', complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
+  return {...card, work_unit: state.work_unit || null, building_guidance: 'Use the returned source constraints and actual views; do not replace architectural comparison with counts or registrations.', complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
 }
 function assistanceSummary(state, detail=false) {
   const mode = isAutonomous(state) ? 'autonomous' : 'guided';
