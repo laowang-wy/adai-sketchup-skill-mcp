@@ -6,3 +6,5 @@ c2924170867452c81caaac46cbfd9b97e5629d2fff18e238d4cd2180ea64e1ad  dist\professio
 a01c3648723d063cf993b659fae6b9fd2485f1c2be5b96d5f5b20556bd0a31cf  dist\sketchup-managed-mcp-0.5.29-visual-diagnostics-no-proxy-gates-20260923.zip
 96637ff672adc4b10f9b803c0361807d3998128d71808608e54a9ad2724c343f  dist\professional-sketchup-modeling-0.5.30-ui-responsive-20260923.zip
 4eaf36e097e1db153ef735bd84772ccfcbb31746204b49eb290ca23cfdde9495  dist\sketchup-managed-mcp-0.5.30-ui-responsive-20260923.zip
+11944f4b6532e80015566d1fbdf8a4e4032a5c793b4c7303bc63a4a2f1b930ef  dist\professional-sketchup-modeling-0.5.31-method-route-20260924.zip
+00659d7fdd3bc7033b22a4d9662dd8aa5e0e9b6b70d690843c8699ca6b0d2823  dist\sketchup-managed-mcp-0.5.31-method-route-20260924.zip

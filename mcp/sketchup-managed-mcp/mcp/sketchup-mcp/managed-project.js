@@ -114,9 +114,9 @@ function normalizedProfile(value) {
 function ancientRoofRoute(profile) {
   if (profile?.roof_route === 'custom') return false;
   if (profile?.roof_route === 'ancient_roof') return true;
-  if (profile?.method_family && !['ancient_roof','chinese_ancient_roof'].includes(profile.method_family)) return false;
+  if (profile?.method_family && !['ancient_roof','chinese_ancient_roof','chinese_tower','yellow_crane_tower','yellow_crane'].includes(profile.method_family)) return false;
   const words=[...(profile?.topics||[]),...(profile?.features||[])].join(' ');
-  return /(古建|楼阁|塔|庙|殿|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
+  return /(古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
 }
 function validateSourceAnalysis(value) {
   if (value === undefined || value === null) return null;
@@ -139,6 +139,11 @@ function validateSourceAnalysis(value) {
 }
 function ancientRoofPresetId(profile) {
   const words=[...(profile?.topics||[]), ...(profile?.features||[])].join(' ');
+  // The old guided route treated a named Chinese tower/photo reconstruction as
+  // an executable roof-method route. Keep that route in the new transaction
+  // kernel: a tower task gets a concrete xieshan starting method instead of a
+  // generic card with the placeholder "matched roof candidate".
+  if (/(黄鹤楼|yellow[ _-]?crane)/i.test(words) || /^(chinese[_ -]?tower|yellow[_ -]?crane[_ -]?tower)$/i.test(String(profile?.method_family||''))) return 'si_shan';
   if (/(歇山|xieshan|xie[_ -]?shan)/i.test(words)) return 'si_shan';
   if (/(卷棚|juan[_ -]?peng)/i.test(words)) return 'juan_peng';
   if (/(攒尖|zan[_ -]?jian)/i.test(words)) return 'zan_jian';
@@ -149,12 +154,14 @@ function inferProfileFromTaskText(profile, taskText) {
   const text = String(taskText || '');
   const words = [...(profile?.topics || []), ...(profile?.features || [])].join(' ');
   const combined = `${words} ${text}`;
-  const ancient = /(古建|楼阁|塔|庙|殿|pagoda|temple|xieshan|xie[_ -]?shan|歇山|卷棚|攒尖|盔顶)/i.test(combined);
+  const ancient = /(古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple|xieshan|xie[_ -]?shan|歇山|卷棚|攒尖|盔顶)/i.test(combined);
+  const namedTower = /(黄鹤楼|yellow[ _-]?crane|楼阁|塔|tower)/i.test(combined);
   const topics = [...(profile?.topics || [])];
   const features = [...(profile?.features || [])];
   if (/歇山|xieshan|xie[_ -]?shan/i.test(text) && !features.some((x) => /歇山|xieshan|xie[_ -]?shan/i.test(x))) features.push('歇山顶');
-  if (/古建|楼阁|塔|庙|殿|pagoda|temple/i.test(text) && !topics.some((x) => /古建|楼阁|塔|庙|殿|pagoda|temple/i.test(x))) topics.push('古建');
-  return normalizedProfile({ ...profile, topics, features, roof_route: profile?.roof_route === 'custom' ? 'custom' : ancient ? 'ancient_roof' : profile?.roof_route });
+  if (/古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple/i.test(text) && !topics.some((x) => /古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple/i.test(x))) topics.push('古建');
+  const methodFamily = profile?.method_family || (namedTower ? 'chinese_tower' : undefined);
+  return normalizedProfile({ ...profile, topics, features, method_family: methodFamily, roof_route: profile?.roof_route === 'custom' ? 'custom' : ancient ? 'ancient_roof' : profile?.roof_route });
 }
 function constructionBriefFor(profile, taskText = '', mode = '') {
   const effective = inferProfileFromTaskText(profile || {}, taskText);

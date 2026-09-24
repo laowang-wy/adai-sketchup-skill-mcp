@@ -175,18 +175,45 @@
     "agent_message": "把经验直接作为当前构造建议返回；不要要求Agent先搜索经验包或填写审核字段。"
   },
   "construction_methods": {
-  "image_primary_form": {
-    "match": ["source image", "照片", "效果图", "图片"],
-    "recognize": "程序只能确认这是图像来源；主体、屋面类型、层级退台和开敞关系必须由Agent实际查看图像判断。",
-    "construct": "先从图像提取主体轮廓、相对宽高、主要屋面、退台和负空间，建立完整主形；不先用台基、墙盒或柱网替代来源形体。",
-    "method": {"tool": "agent visual selection", "route": ["inspect source image", "choose a candidate method card", "compile selected method or managed Ruby", "sketchup_project_step"]},
-    "actions": ["打开并逐张查看用户图片，先写下主体、屋面、退台和开敞空间的直接观察。", "从候选方法中选择最符合图像的屋面/主形方法；不确定时保留两个候选并说明区别。", "按选定方法生成完整主形，再调用 sketchup_project_step；不要先提交台基、墙盒或柱网代理块。"],
-    "key_parameters": ["overall_width_depth_ratio", "tier_setbacks", "roof_profile", "eave_height", "open_space_depth"],
-    "common_errors": ["仅凭建筑名称猜屋面", "先搭盒体再把屋顶当后续细节", "把程序字段或数量当成形态判断"],
-    "inspect": "与来源对应的正面、侧面、斜视和关键局部；确认形制后再使用专门屋面卡。",
-    "if_failed": "如果形制仍不确定，保留候选和未知，先补看图或询问关键来源，不要强行选择si_shan。"
-  },
-  "si_shan": {
+    "image_primary_form": {
+      "match": [
+        "source image",
+        "照片",
+        "效果图",
+        "图片"
+      ],
+      "recognize": "程序只能确认这是图像来源；主体、屋面类型、层级退台和开敞关系必须由Agent实际查看图像判断。",
+      "construct": "先从图像提取主体轮廓、相对宽高、主要屋面、退台和负空间，建立完整主形；不先用台基、墙盒或柱网替代来源形体。",
+      "method": {
+        "tool": "agent visual selection",
+        "route": [
+          "inspect source image",
+          "choose a candidate method card",
+          "compile selected method or managed Ruby",
+          "sketchup_project_step"
+        ]
+      },
+      "actions": [
+        "打开并逐张查看用户图片，先写下主体、屋面、退台和开敞空间的直接观察。",
+        "从候选方法中选择最符合图像的屋面/主形方法；不确定时保留两个候选并说明区别。",
+        "按选定方法生成完整主形，再调用 sketchup_project_step；不要先提交台基、墙盒或柱网代理块。"
+      ],
+      "key_parameters": [
+        "overall_width_depth_ratio",
+        "tier_setbacks",
+        "roof_profile",
+        "eave_height",
+        "open_space_depth"
+      ],
+      "common_errors": [
+        "仅凭建筑名称猜屋面",
+        "先搭盒体再把屋顶当后续细节",
+        "把程序字段或数量当成形态判断"
+      ],
+      "inspect": "与来源对应的正面、侧面、斜视和关键局部；确认形制后再使用专门屋面卡。",
+      "if_failed": "如果形制仍不确定，保留候选和未知，先补看图或询问关键来源，不要强行选择si_shan。"
+    },
+    "si_shan": {
       "match": [
         "歇山",
         "xieshan",
@@ -205,7 +232,13 @@
         ],
         "validation": "compile内部完成参数验证"
       },
-      "actions": ["从来源图确定主体宽深、层间退台和檐底标高，先记录比例而不是编造绝对尺寸。", "调用 sketchup_ancient_tool(action=preset,family=roof,preset_id=si_shan)，再用返回参数按来源调整 width/depth/rise/eave_height。", "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset)，随后用返回的 ruby_file 调用 sketchup_project_step。", "step 返回后查看正面、侧面、斜视和檐下视图；翼角不连续时先改 corner_lift 或转角方法，不先铺瓦或加斗拱。"],
+      "actions": [
+        "先逐张查看来源图，记录主体宽深比、层间退台、檐底标高、正脊/山面/侧坡、翼角上扬和廊下开敞；先用比例关系，不编造绝对尺寸。",
+        "先调用 sketchup_ancient_tool(action=preset,family=roof,preset_id=si_shan)，用返回参数调整 width/depth/rise/eave_height/setback/corner_lift，使一个代表性屋壳对应来源。",
+        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset)，随后只使用返回的 ruby_file 调用 sketchup_project_step；不要用自定义 Ruby 代替已有路线。",
+        "step 返回后看正面、侧面、斜视和檐下视图；确认完整主形、屋脊/檐线、翼角、廊下负空间后，再沿同一方法组织其他楼层和构件。",
+        "若来源明显不是歇山，或 si_shan 不能表达关键形体，先说明超出范围，再改用相关方法或受管自定义 Ruby；不得因为省一步而直接写盒体代理。"
+      ],
       "key_parameters": [
         "width",
         "depth",
@@ -223,19 +256,46 @@
         "先铺瓦或加斗拱掩盖屋壳错误"
       ],
       "inspect": "正面、侧面、斜视和檐下近景；比较总宽深、各层退台、屋脊/檐线、翼角和廊下开敞。",
-    "if_failed": "先调整共享比例或屋壳表示；若来源超出si_shan范围，再查对应REF或使用受管自定义Ruby并说明原因。",
-    "related_methods": ["ancient_corner_lift"]
-  },
-  "ancient_corner_lift": {
-    "match": ["翼角", "corner lift", "curved corner"],
-    "recognize": "翼角是连续檐线和转角曲率，不是四个平面角点的独立抬高。",
-    "construct": "沿主体檐线建立转角控制站点，与正身檐口共享边界；用连续曲面或局部扫掠接入屋壳。",
-    "method": {"tool": "curved_corner / section_sweep", "route": ["reuse the si_shan shell boundary", "compile the corner method", "sketchup_project_step"]},
-    "actions": ["保留已生成的 si_shan 主屋壳，只提取正身檐线和转角边界。", "用连续转角控制站点生成翼角曲面或 section_sweep，不抬高四个平面角点。", "调用 sketchup_project_step 更新转角，再查看斜视和檐下近景。"],
-    "key_parameters": ["eave_curve", "corner_lift", "corner_station_spacing", "shell_thickness"],
-    "common_errors": ["只抬角点", "转角与正身檐线断开", "用厚水平板遮盖接缝"],
-    "inspect": "斜视和檐下近景检查檐线连续、曲率变化和屋壳接缝。",
-    "if_failed": "保留主屋壳，局部替换转角表示；不要重建整栋或先铺瓦。"
+      "if_failed": "先调整共享比例或屋壳表示；若来源超出si_shan范围，再查对应REF或使用受管自定义Ruby并说明原因。",
+      "related_methods": [
+        "ancient_corner_lift"
+      ],
+      "agent_action": "按这条顺序直接执行；不要先让Agent自行搜索经验包，也不要把已有 si_shan 路线降级为 generic_ancient_roof。"
+    },
+    "ancient_corner_lift": {
+      "match": [
+        "翼角",
+        "corner lift",
+        "curved corner"
+      ],
+      "recognize": "翼角是连续檐线和转角曲率，不是四个平面角点的独立抬高。",
+      "construct": "沿主体檐线建立转角控制站点，与正身檐口共享边界；用连续曲面或局部扫掠接入屋壳。",
+      "method": {
+        "tool": "curved_corner / section_sweep",
+        "route": [
+          "reuse the si_shan shell boundary",
+          "compile the corner method",
+          "sketchup_project_step"
+        ]
+      },
+      "actions": [
+        "保留已生成的 si_shan 主屋壳，只提取正身檐线和转角边界。",
+        "用连续转角控制站点生成翼角曲面或 section_sweep，不抬高四个平面角点。",
+        "调用 sketchup_project_step 更新转角，再查看斜视和檐下近景。"
+      ],
+      "key_parameters": [
+        "eave_curve",
+        "corner_lift",
+        "corner_station_spacing",
+        "shell_thickness"
+      ],
+      "common_errors": [
+        "只抬角点",
+        "转角与正身檐线断开",
+        "用厚水平板遮盖接缝"
+      ],
+      "inspect": "斜视和檐下近景检查檐线连续、曲率变化和屋壳接缝。",
+      "if_failed": "保留主屋壳，局部替换转角表示；不要重建整栋或先铺瓦。"
     },
     "generic_ancient_roof": {
       "match": [
