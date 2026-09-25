@@ -64,6 +64,26 @@ def compose(source, candidate, width=800, height=900):
     return sheet, maps
 
 
+def compose_multi(sources, candidate, width=800, height=900):
+    """Keep every source visible in one bounded contact sheet plus the model."""
+    gap, header, columns = 12, 44, 2
+    cells = [(image, f'SOURCE REFERENCE {i + 1}') for i, image in enumerate(sources)]
+    cells.append((candidate, 'CURRENT MODEL'))
+    rows = math.ceil(len(cells) / columns)
+    sheet = Image.new('RGB', (width * columns + gap * (columns - 1), (height + header) * rows + gap * (rows - 1)), '#202328')
+    draw = ImageDraw.Draw(sheet)
+    maps = []
+    for i, (image, label) in enumerate(cells):
+        row, col = divmod(i, columns)
+        scale = min(width / image.width, height / image.height, 1.0)
+        size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        offset = (col * (width + gap) + (width - size[0]) // 2, row * (height + header + gap) + header + (height - size[1]) // 2)
+        sheet.paste(image.resize(size, Image.Resampling.LANCZOS), offset)
+        draw.text((col * (width + gap) + 12, row * (height + header + gap) + 14), label, fill='white')
+        maps.append({'label': label, 'original_size': list(image.size), 'display_size': list(size), 'scale_xy': [size[0] / image.width, size[1] / image.height], 'offset_xy': list(offset), 'cropped': False})
+    return sheet, maps
+
+
 def save_image(file, image):
     with file.open('xb') as stream:
         image.save(stream, format='PNG')
@@ -71,21 +91,30 @@ def save_image(file, image):
             'width': image.width, 'height': image.height}
 
 
-def make_sheet(source_file: Path, candidate_file: Path, output: Path, report_file: Path,
+def make_sheet(source_file: Path | list[Path], candidate_file: Path, output: Path, report_file: Path,
                width=800, height=900, regions=None, aligned=False, expected_source=None):
     if type(width) is not int or type(height) is not int or not (320 <= width <= 2048 and 320 <= height <= 2048):
         raise ValueError('PANEL_DIMENSIONS_INVALID')
-    source, sm = read_image(source_file, expected_source)
+    source_files = source_file if isinstance(source_file, list) else [source_file]
+    expected_sources = expected_source if isinstance(expected_source, list) else ([] if expected_source is None else [expected_source])
+    if not source_files or len(source_files) > 32 or len(expected_sources) not in (0, len(source_files)):
+        raise ValueError('SOURCE_LIST_INVALID')
+    loaded = [read_image(file, expected_sources[i] if expected_sources else None) for i, file in enumerate(source_files)]
+    sources = [item[0] for item in loaded]
+    source_meta = [item[1] for item in loaded]
     candidate, cm = read_image(candidate_file)
-    inputs = {source_file.resolve(), candidate_file.resolve()}
-    if len(inputs) != 2 or output.resolve() in inputs or report_file.resolve() in inputs or output.resolve() == report_file.resolve():
+    inputs = {file.resolve() for file in source_files} | {candidate_file.resolve()}
+    if len(inputs) != len(source_files) + 1 or output.resolve() in inputs or report_file.resolve() in inputs or output.resolve() == report_file.resolve():
         raise ValueError('OUTPUT_COLLIDES_WITH_INPUT')
-    if type(aligned) is not bool or aligned and source.size != candidate.size:
+    if type(aligned) is not bool or aligned and any(source.size != candidate.size for source in sources):
         raise ValueError('ALIGNED_COMPARISON_REQUIRES_EQUAL_PIXEL_FRAMES')
     regions = [] if regions is None else regions
     if not isinstance(regions, list) or len(regions) > 16:
         raise ValueError('REGION_LIMIT')
     prepared, names = [], set()
+    if len(sources) > 1 and regions:
+        raise ValueError('REGIONS_REQUIRE_SINGLE_SOURCE')
+    source = sources[0]
     for region in regions:
         if not isinstance(region, dict) or set(region) != {'name','source_box','candidate_box'}:
             raise ValueError('REGION_FIELDS_INVALID')
@@ -101,8 +130,8 @@ def make_sheet(source_file: Path, candidate_file: Path, output: Path, report_fil
         raise ValueError('OUTPUT_EXISTS')
     output.parent.mkdir(parents=True, exist_ok=True)
     report_file.parent.mkdir(parents=True, exist_ok=True)
-    sheet, maps = compose(source,candidate,width,height)
-    result = {'ok':True,'source':sm,'candidate':cm,'full_frame_maps':maps,
+    sheet, maps = (compose_multi(sources, candidate, width, height) if len(sources) > 1 else compose(source, candidate, width, height))
+    result = {'ok':True,'source':source_meta[0],'sources':source_meta,'candidate':cm,'full_frame_maps':maps,
               'review_sheet':save_image(output,sheet),'regions':[], 'additional_images':[],
               'registration':'caller_declared_same_pixel_frame' if aligned else 'not_registered',
               'architectural_verdict':'not_evaluated', 'warning':'No automatic crop, camera adjustment, similarity score or architectural approval.'}
@@ -121,21 +150,22 @@ def make_sheet(source_file: Path, candidate_file: Path, output: Path, report_fil
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    for field in ('source','candidate','output'):
+    parser.add_argument('--source', type=Path, action='append', required=True)
+    for field in ('candidate','output'):
         parser.add_argument('--'+field,type=Path,required=True)
     parser.add_argument('--report',type=Path)
     parser.add_argument('--panel-width',type=int,default=800)
     parser.add_argument('--panel-height',type=int,default=900)
     parser.add_argument('--regions-file',type=Path)
     parser.add_argument('--aligned',action='store_true')
-    parser.add_argument('--source-sha256')
+    parser.add_argument('--source-sha256', action='append')
     args=parser.parse_args()
     try:
         regions=None
         if args.regions_file:
             if args.regions_file.stat().st_size>100_000:raise ValueError('REGION_FILE_LIMIT')
             regions=json.loads(args.regions_file.read_text(encoding='utf-8-sig'))
-        make_sheet(args.source,args.candidate,args.output,args.report or args.output.with_suffix('.json'),args.panel_width,args.panel_height,regions,args.aligned,args.source_sha256)
+        make_sheet(args.source,args.candidate,args.output,args.report or args.output.with_suffix('.json'),args.panel_width,args.panel_height,regions,args.aligned,args.source_sha256 or [])
         print(json.dumps({'ok':True,'output':str(args.output),'report':str(args.report or args.output.with_suffix('.json'))}))
         return 0
     except (ValueError,OSError) as error:

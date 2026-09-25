@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.34',
+  version: '0.5.35',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -81,7 +81,8 @@ const tools = [
       type: 'object',
       properties: {
         mode: { type: 'string', enum: ['single_image', 'cad', 'freeform', 'refinement', 'test', 'attribution'] },
-        source_image: { type: 'string', description: 'Required for single_image mode.' },
+        source_image: { type: 'string', description: 'Backward-compatible single reference image path. Use source_images for multiple references.' },
+        source_images: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string' }, description: 'All user-provided reference image paths. Every item is hashed, retained in project state, and included in visual evidence; source_image remains supported for one-image callers.' },
         attribution_command:{type:'string',enum:['显源'],description:'Required for attribution mode; only explicit user command.'},
         projection_brief: { type: 'object', description: 'Optional source projection hints. If supplied, the MCP reports projection mismatches as diagnostics; boxes and registration never replace actual visual comparison.' },
         output_directory: { type: 'string' },
@@ -140,7 +141,7 @@ const tools = [
   {
     name: 'sketchup_project_recover',
     description: 'Inspect/reconcile/restore a signed checkpoint, or abort only the current frozen unreviewed phase after live scope verification. Recovery never grants visual approval or replays geometry.',
-    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore', 'abort_pending'] }, reason: {type:'string', minLength:8, description:'Required for abort_pending: withdraw only the current frozen unreviewed phase, retaining its audit history.'} }, required: ['project_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, action: { type: 'string', enum: ['inspect', 'reconcile', 'restore', 'restore_checkpoint_after_lost_geometry', 'abort_pending'] }, acknowledge_lost_commit: {type:'boolean', description:'Required only for restore_checkpoint_after_lost_geometry: the completed receipt is preserved, but its geometry is not claimed to exist in the reopened checkpoint.'}, reason: {type:'string', minLength:8, description:'Required for abort_pending: withdraw only the current frozen unreviewed phase, retaining its audit history.'} }, required: ['project_id'], additionalProperties: false },
   },
   {
     name:'sketchup_project_retry_evidence',description:'Capture current evidence for a new expert project or retry incomplete legacy evidence, without rebuilding geometry. Expert checkpoints default to the source/reference frame plus five whole-model views; request a smaller question-focused set when appropriate. Evidence creation never grants visual approval.',

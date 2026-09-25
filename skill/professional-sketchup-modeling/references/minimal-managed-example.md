@@ -4,7 +4,7 @@ This is the shortest complete production pattern. It demonstrates control flow, 
 
 ## Begin
 
-Inspect the source and call `sketchup_project_begin` with mode, source, output and project ID. If composition needs it, add 1–8 observed projection targets; this brief is optional guidance, not a universal building contract.
+Inspect every provided source and call `sketchup_project_begin` with mode, source(s), output and project ID. For one image `source_image` remains valid; for multiple images pass every absolute path in `source_images` in the user's order. If composition needs it, add 1–8 observed projection targets; this brief is optional guidance, not a universal building contract.
 
 Example `single_image` begin arguments (illustrative paths and bbox only; replace with inspected source data):
 
@@ -17,6 +17,17 @@ Example `single_image` begin arguments (illustrative paths and bbox only; replac
   "projection_brief": {
     "targets": [{"id":"main", "role":"focal_building", "bbox":[0.18,0.18,0.78,0.92]}]
   }
+}
+```
+
+For multiple user references, replace `source_image` with `source_images` and keep every image:
+
+```json
+{
+  "mode": "single_image",
+  "source_images": ["D:/project/front.jpg", "D:/project/side.jpg", "D:/project/detail.jpg"],
+  "output_directory": "D:/project/output",
+  "project_id": "BuildingStudy01"
 }
 ```
 

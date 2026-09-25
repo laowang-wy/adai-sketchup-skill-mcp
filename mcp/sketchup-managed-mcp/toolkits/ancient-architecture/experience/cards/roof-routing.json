@@ -24,5 +24,85 @@
   "historical_evidence_not_shipped": [
     "validation/xieshan-defect.json"
   ],
-  "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks."
+  "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks.",
+  "methods": {
+    "si_shan": {
+      "label": "歇山屋壳",
+      "selection_basis": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。",
+      "recognize": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    },
+    "wu_dian": {
+      "label": "庑殿屋壳",
+      "selection_basis": "四面坡连续汇向正脊，端部没有独立山面；适合连续主坡和统一檐口。",
+      "recognize": "四面坡连续汇向正脊，端部没有独立山面；适合连续主坡和统一檐口。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    },
+    "juan_peng": {
+      "label": "卷棚屋壳",
+      "selection_basis": "屋面以连续圆缓曲坡或卷棚断面为主，通常不靠单一正脊分隔前后坡。",
+      "recognize": "屋面以连续圆缓曲坡或卷棚断面为主，通常不靠单一正脊分隔前后坡。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    },
+    "zan_jian": {
+      "label": "攒尖屋壳",
+      "selection_basis": "多坡从中心脊顶或中心节点向周边放射；适合中心收束、平面多边形的屋盖。",
+      "recognize": "多坡从中心脊顶或中心节点向周边放射；适合中心收束、平面多边形的屋盖。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    },
+    "helmet": {
+      "label": "盔顶屋壳",
+      "selection_basis": "屋面向中心冠部连续收拢并形成穹曲外轮廓；适合无明确长正脊的冠顶关系。",
+      "recognize": "屋面向中心冠部连续收拢并形成穹曲外轮廓；适合无明确长正脊的冠顶关系。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    },
+    "xie_ding": {
+      "label": "简化四坡/悬山屋壳",
+      "selection_basis": "用简化的四坡或悬山外轮廓快速表达主屋壳；适合来源无法支持更复杂分区时的可编辑基础。",
+      "recognize": "用简化的四坡或悬山外轮廓快速表达主屋壳；适合来源无法支持更复杂分区时的可编辑基础。",
+      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "corner_lift"
+      ]
+    }
+  }
 }

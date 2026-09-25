@@ -24,6 +24,23 @@ async function processImages(processId = null) {
     return images;
   } catch { return null; }
 }
+async function processResponsive(processId) {
+  if (process.platform !== 'win32' || !Number.isFinite(Number(processId))) return null;
+  try {
+    const {stdout} = await execFileAsync('tasklist.exe', ['/V', '/FI', `PID eq ${Number(processId)}`, '/FO', 'CSV', '/NH'], {windowsHide:true, maxBuffer:1024 * 1024});
+    const line = String(stdout).split(/\r?\n/).find(value => value.trim().startsWith('"'));
+    if (!line) return false;
+    const fields = []; const re = /"((?:[^"]|"")*)"(?=,|$)/g; let match;
+    while ((match = re.exec(line))) fields.push(match[1].replace(/""/g, '"'));
+    const status = String(fields[5] || '').trim().toLowerCase();
+    if (!status) return null;
+    if (status === 'running') return true;
+    if (status === 'not responding') return false;
+    // Console/background processes often report "Unknown". This is not proof
+    // of a hung SketchUp window, so let the normal instance/receipt path decide.
+    return null;
+  } catch { return null; }
+}
 function requiresSketchUpImage(executable) {
   return process.platform === 'win32' && path.basename(String(executable)).toLowerCase() === 'sketchup.exe';
 }
@@ -180,6 +197,8 @@ class BridgeClient {
     // been replaced after target() returned; never send into a stale process
     // directory or silently switch to a different SketchUp instance.
     if (!(await this.targetStillRegistered(target))) throw bridgeError('INSTANCE_CHANGED: selected SketchUp instance is no longer registered; request was not published', 'INSTANCE_CHANGED', {delivery_state:'not_published', request_published:false, request_id:id});
+    const responsiveBeforePublish = await processResponsive(target.process_id);
+    if (responsiveBeforePublish === false) throw bridgeError('INSTANCE_NOT_RESPONDING: selected SketchUp instance is not accepting work; request was not published', 'INSTANCE_NOT_RESPONDING', {delivery_state:'not_published', request_published:false, request_id:id});
     try {
       await fs.writeFile(temp, JSON.stringify({...payload,id,protocol:'sketchup-file-bridge/v3',created_at:new Date().toISOString(),expires_at:new Date(deadline).toISOString()}), {flag:'wx'});
       await fs.rename(temp, request);
@@ -217,4 +236,4 @@ class BridgeClient {
   }
   async health() { return {protocol:'sketchup-file-bridge/v3',directory:this.root,instances:await this.instances(),selected:this.pinned,token_configured:await this.token().then(()=>true,()=>false)}; }
 }
-module.exports = {BridgeClient, __test:{processImageMatches, requiresSketchUpImage}};
+module.exports = {BridgeClient, __test:{processImageMatches, requiresSketchUpImage, processResponsive}};

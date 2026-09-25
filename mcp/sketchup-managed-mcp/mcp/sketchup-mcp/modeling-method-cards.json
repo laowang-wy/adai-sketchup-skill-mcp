@@ -211,7 +211,8 @@
         "把程序字段或数量当成形态判断"
       ],
       "inspect": "与来源对应的正面、侧面、斜视和关键局部；确认形制后再使用专门屋面卡。",
-      "if_failed": "如果形制仍不确定，保留候选和未知，先补看图或询问关键来源，不要强行选择si_shan。"
+      "if_failed": "如果形制仍不确定，保留候选和未知，先补看图或询问关键来源，不要强行选择si_shan。",
+      "selection_basis": "适合来源图尚未给出可靠类型时，先按轮廓、比例、退台和负空间建立完整主形；不把建筑名称当成屋面选择。"
     },
     "si_shan": {
       "match": [
@@ -261,7 +262,8 @@
       "related_methods": [
         "ancient_corner_lift"
       ],
-      "agent_action": "按这条顺序直接执行；不要先让Agent自行搜索经验包，也不要把已有 si_shan 路线降级为 generic_ancient_roof。"
+      "agent_action": "按这条顺序直接执行；不要先让Agent自行搜索经验包，也不要把已有 si_shan 路线降级为 generic_ancient_roof。",
+      "selection_basis": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。"
     },
     "ancient_corner_lift": {
       "match": [
@@ -296,7 +298,8 @@
         "用厚水平板遮盖接缝"
       ],
       "inspect": "斜视和檐下近景检查檐线连续、曲率变化和屋壳接缝。",
-      "if_failed": "保留主屋壳，局部替换转角表示；不要重建整栋或先铺瓦。"
+      "if_failed": "保留主屋壳，局部替换转角表示；不要重建整栋或先铺瓦。",
+      "selection_basis": "已确定主屋壳后，用于表达檐角起翘、转角接缝和边界连续；不替代整屋屋面选型。"
     },
     "generic_ancient_roof": {
       "match": [
@@ -339,7 +342,8 @@
         "先识别屋面类型、层级退台、支承体系和可见开敞空间；不确定时保留未知，不猜预设。",
         "按 construction_brief 返回的适用屋面调用 preset，再用返回参数 compile；没有明确适用预设时改用受管自定义 Ruby并说明原因。",
         "只使用返回的 ruby_file 调用 sketchup_project_step，随后按来源视角看图。"
-      ]
+      ],
+      "selection_basis": "来源只支持一般坡屋面或类型尚未确定时，提供可编辑基础屋壳；不冒充歇山、庑殿等专用形制。"
     }
   }
 }

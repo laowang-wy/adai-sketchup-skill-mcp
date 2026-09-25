@@ -27,7 +27,13 @@ if(-not $supported){throw 'MCP declared support scope is SketchUp 2018/2019. Age
 if($profileMismatch){throw 'Render profile belongs to a different executable; preserve it and resolve mismatch instead of launching another SU.'}
 $psi=[Diagnostics.ProcessStartInfo]::new()
 $psi.FileName=$current.executable
-$psi.Arguments=[string]$current.arguments
+$argumentText=[string]$current.arguments
+$loaderPath=Join-Path $env:APPDATA ("SketchUp\SketchUp $($current.version_year)\SketchUp\Plugins\sketchup_mcp_bridge.rb")
+if(-not (Test-Path -LiteralPath $loaderPath)){throw "Bound SketchUp bridge loader is missing: $loaderPath"}
+if($argumentText -notmatch '(?i)(^|\s)-RubyStartup(?:=|\s)'){
+ $argumentText=(($argumentText.Trim()) + ' -RubyStartup "' + $loaderPath + '"').Trim()
+}
+$psi.Arguments=$argumentText
 $psi.WorkingDirectory=if($current.working_directory){[string]$current.working_directory}else{Split-Path -Parent $current.executable}
 $psi.UseShellExecute=$false
 $psi.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
@@ -38,4 +44,4 @@ if($profile -and $profile.expected_renderer -eq 'software_opengl'){
  }
 }
 $started=[Diagnostics.Process]::Start($psi)
-[pscustomobject]@{started_pid=$started.Id;executable=$current.executable;arguments_preserved=$true;live_compatibility='unverified';next_action='Run -CheckOnly, verify MCP ping/model binding and nonblank window capture before production. Process launch alone is not success.'} | ConvertTo-Json
+[pscustomobject]@{started_pid=$started.Id;executable=$current.executable;arguments=$argumentText;bridge_loader=$loaderPath;arguments_preserved=$true;live_compatibility='unverified';next_action='Run -CheckOnly, verify MCP ping/model binding and nonblank window capture before production. Process launch alone is not success.'} | ConvertTo-Json

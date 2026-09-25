@@ -19,16 +19,21 @@ module PipClawManagedProject
   end
 
   def unit_fingerprint(group)
-    record = entity_record(group)
-    raise 'UNIT_READBACK_INCOMPLETE' if record['incomplete'] || record.dig('geometry_summary', 'complete') == false
+    # Keep the expert write path responsive on large roofs.  Full topology
+    # readback remains available through geometry_diagnose/recovery; the unit
+    # target guard only needs a stable identity/hierarchy/transform/bounds
+    # boundary plus the managed registries.
+    record = fast_boundary_record(group)
+    record['pid'] = (group.persistent_id rescue group.entityID rescue nil)
     record['registrations'] = %w[archetypes_json visible_detail_systems_json unique_details_json projection_subjects_json replication_systems_json variants_json].map { |key| [key, group.get_attribute(DICT, key, '[]')] }.to_h
     Digest::SHA256.hexdigest(canonical_json(record))
   end
 
   def unit_scope_record(group)
+    boundary = fast_boundary_record(group)
     {'work_unit_id'=>group.get_attribute(DICT, 'work_unit_id').to_s,
      'persistent_id'=>group.persistent_id, 'fingerprint'=>unit_fingerprint(group),
-     'counts'=>count_recursive(group.entities), 'bounds_inches'=>bounds_signature(group)}
+     'counts'=>boundary['counts'], 'bounds_inches'=>boundary['bounds_inches']}
   end
 
   def locked_scope_fingerprint(root)

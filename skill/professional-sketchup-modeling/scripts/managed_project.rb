@@ -114,6 +114,72 @@ module PipClawManagedProject
     [(entity.typename.to_s rescue ''), (entity.persistent_id rescue entity.entityID rescue 0).to_i, (entity.name.to_s rescue '')]
   end
 
+  # Recovery may trust an exact sealed SKP only while SketchUp still has the
+  # file open without unsaved edits. Keep this separate from ordinary identity:
+  # a path/object id alone never proves scene content.
+  def clean_checkpoint_identity
+    JSON.generate({'ok'=>true, 'identity'=>JSON.parse(model_identity), 'modified'=>model.modified?})
+  end
+
+  # Expert writes need a cheap boundary check after each append/update.  The
+  # full entity_record/geometry_summary walk is still used by recovery and
+  # explicit diagnostics, but repeating face-level geometry digests for a
+  # 200k-entity roof makes SketchUp appear hung after an otherwise completed
+  # Ruby build.  This digest keeps identity, hierarchy, transforms, bounds,
+  # materials and counts while intentionally omitting per-face topology.
+  def fast_boundary_record(entity, excluded_phase = nil, ignore_visibility_pids = nil)
+    digest = Digest::SHA256.new
+    counts = Hash.new(0)
+    root_object_id = entity.object_id
+    seen = {}
+    walk = lambda do |node, depth|
+      next unless node && (node.valid? rescue false)
+      key = node.object_id
+      next if seen[key]
+      seen[key] = true
+      type = (node.typename.to_s rescue '')
+      pid = (node.persistent_id rescue node.entityID rescue nil)
+      counts['entities'] += 1
+      counts['faces'] += 1 if defined?(Sketchup::Face) && node.is_a?(Sketchup::Face)
+      counts['edges'] += 1 if defined?(Sketchup::Edge) && node.is_a?(Sketchup::Edge)
+      counts['groups'] += 1 if defined?(Sketchup::Group) && node.is_a?(Sketchup::Group)
+      counts['component_instances'] += 1 if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
+      counts['max_depth'] = [counts['max_depth'], depth].max
+      # The protected project root contains the current mutable work unit.
+      # Its aggregate bounds may legitimately grow when an append adds a roof
+      # or other geometry; keep that changing extent out of the external
+      # boundary digest while retaining child identity and bounds for all
+      # non-mutable content.
+      node_bounds = (node.object_id == root_object_id && excluded_phase) ? [] : bounds_signature(node)
+      fields = {'pid'=>pid, 'type'=>type, 'name'=>(node.name.to_s rescue ''), 'bounds'=>node_bounds}
+      if node.respond_to?(:transformation)
+        fields['transform'] = node.transformation.to_a.map { |v| v.to_f.round(7) } rescue []
+      end
+      if node.respond_to?(:material) && node.material
+        fields['material'] = node.material.display_name.to_s rescue ''
+      end
+      if node.respond_to?(:definition) && node.definition
+        fields['definition_guid'] = node.definition.guid.to_s rescue ''
+      end
+      fields['hidden'] = '__managed_visibility__' if Array(ignore_visibility_pids).map(&:to_s).include?(pid.to_s)
+      digest.update(canonical_json(fields))
+      digest.update("\0")
+      children = child_entities(node)
+      # Component definitions are represented by guid/transform above. Do not
+      # expand the same roof mesh once per occurrence in the fast path.
+      children = nil if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
+      if children
+        list = children.to_a.select { |child| child.valid? rescue false }
+        list = list.reject { |child| mutable_member?(child, excluded_phase) } if node.object_id == root_object_id && excluded_phase
+        list.sort_by! { |child| entity_order_key(child) }
+        list.each { |child| walk.call(child, depth + 1) }
+      end
+    end
+    walk.call(entity, 0)
+    result_bounds = (excluded_phase && entity.object_id == root_object_id) ? [] : bounds_signature(entity)
+    {'digest'=>digest.hexdigest, 'counts'=>counts, 'bounds_inches'=>result_bounds}
+  end
+
   # Face-me components legitimately rotate with the camera.  Their placement
   # origin, scale and vertical axis remain model facts; the camera-facing
   # rotation is viewport state and must not invalidate a protected-scene
@@ -258,6 +324,14 @@ module PipClawManagedProject
 
   def entity_record(entity, depth = 0, ignore_visibility_pids = nil, excluded_phase = nil, path = [], cache = nil)
     key = entity.object_id
+    # A component definition can appear many times in one protected scene.
+    # Its children have the same identity and geometry at every occurrence;
+    # retain their complete record for this fingerprint invocation instead of
+    # rebuilding the same nested tree for every instance. Never reuse an
+    # incomplete/cyclic record, and use a fresh cache for the post-write check.
+    record_cache = cache && (cache[:entity_record] ||= {})
+    record_key = [key, Array(ignore_visibility_pids).map(&:to_s).sort.join("\0"), excluded_phase.to_s]
+    return record_cache[record_key] if record_cache && !path.include?(key) && record_cache.key?(record_key)
     children = child_entities(entity)
     valid_children = children ? children.to_a.select { |child| child.valid? rescue false }.sort_by { |child| entity_order_key(child) } : []
     record = {
@@ -302,6 +376,7 @@ module PipClawManagedProject
         record['max_depth'] = 8 if record['incomplete']
       end
     end
+    record_cache[record_key] = record if record_cache && record['incomplete'] != true
     record
   end
 
@@ -319,7 +394,20 @@ module PipClawManagedProject
     result
   end
 
-  def external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, cache = nil)
+  def bounded_external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true)
+    top_level = model.entities.to_a.select { |entity| entity.valid? rescue false }
+    root = root_for(project_id, false)
+    external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
+    ignored = Array(ignore_visibility_pids).map(&:to_s)
+    records = external_entities.map { |entity| fast_boundary_record(entity, nil, ignored).merge('pid'=>(entity.persistent_id rescue entity.entityID rescue nil), 'type'=>(entity.typename.to_s rescue '')) }
+    if root && include_protected_root
+      records << fast_boundary_record(root, mutable_phase, ignored).merge('pid'=>(root.persistent_id rescue root.entityID rescue nil), 'type'=>'managed_root')
+    end
+    Digest::SHA256.hexdigest(canonical_json({'entities'=>records.sort_by { |record| [record['type'].to_s, record['pid'].to_i, record['digest'].to_s] }, 'mutable_phase'=>mutable_phase.to_s}))
+  end
+
+  def external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, cache = nil, boundary_mode = false)
+    return bounded_external_fingerprint(project_id, mutable_phase, ignore_visibility_pids, include_protected_root) if boundary_mode
     top_level = model.entities.to_a.select { |entity| entity.valid? rescue false }
     root = root_for(project_id, false)
     external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
@@ -1060,12 +1148,11 @@ module PipClawManagedProject
       if File.exist?(args[1])
         result = {'ok'=>false,'error'=>'OUTPUT_EXISTS','write_attempted'=>false,'transaction_started'=>false}
       else
-        before = project_audit_data(project_id)
+        # save_copy already records before/after document bindings. Do not run
+        # two recursive geometry audits on SketchUp's UI thread for a save.
         result = JSON.parse(save_copy(*args))
         if result['ok']
           result['saved_file'] = {'path'=>args[1],'bytes'=>File.size(args[1]),'sha256'=>Digest::SHA256.file(args[1]).hexdigest}
-          result['pre_save_audit'] = before
-          result['post_save_audit'] = project_audit_data(project_id)
           root_for(project_id,false).set_attribute(DICT,'operation_commit_' + request['operation_id'],Digest::SHA256.hexdigest(canonical_json(request)))
         end
       end
@@ -1154,8 +1241,8 @@ module PipClawManagedProject
     include_protected_root = !existing_root.nil?
     managed_visibility_pids = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }.map { |entity| (entity.persistent_id rescue entity.entityID).to_s }
     before_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
-    before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root)
-    rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__')
+    before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
+    rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert)
     locked_before = new_expert ? locked_scope_fingerprint(existing_root) : nil
     started = false
     committed = false
@@ -1222,8 +1309,7 @@ module PipClawManagedProject
         'work_unit_id'=>operation_context['work_unit_id'],
         'execution_policy_version'=>operation_context['policy_version'],
         'dimension_targets'=>operation_context['dimension_targets'] || [],
-        'execution_strategy'=>operation_context['strategy'],
-        'typed_operations_allowed'=>operation_context['typed_operations_allowed'] == true
+        'execution_strategy'=>operation_context['strategy']
       }
       result = PipClawManagedBuild.build(phase.entities, context)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }
@@ -1232,7 +1318,7 @@ module PipClawManagedProject
         (entity.hidden? rescue false) != true
       end
       raise 'Managed isolation violation: tool-owned project roots must remain hidden during an isolated step' if visibility_violation
-      after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root)
+      after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
       unless before == after
         after_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
         debug_path = File.join(ENV['APPDATA'].to_s, 'SketchUpLiveMCP', 'last-isolation-diff.json')
@@ -1288,7 +1374,7 @@ module PipClawManagedProject
         'transaction_started'=>started,
         'commit_unconfirmed'=>commit_unconfirmed,
         'rollback_unconfirmed'=>rollback_unconfirmed,
-        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__'),
+        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, nil, new_expert),
         'rollback_fingerprint'=>rollback_baseline,
         'rollback_error'=>rollback_error
       })
@@ -1620,9 +1706,9 @@ module PipClawManagedProject
     end
   end
 
-  def project_audit_data(project_id, reuse_geometry = true)
-    # The cache is deliberately scoped to this audit call. Tests may disable it
-    # to compare the exact same correctness path without creating cross-request state.
+  def project_audit_data(project_id, reuse_geometry = true, mode = 'full')
+    detail = mode.to_s == 'compact' ? 'compact' : 'full'
+    full = detail == 'full'
     audit_cache = reuse_geometry ? {} : nil
     root = root_for(project_id, false)
     raise "Managed project not found: #{project_id}" unless root
@@ -1648,18 +1734,24 @@ module PipClawManagedProject
         'bounds_inches'=>(entity && entity.valid? ? bounds_signature(entity) : [])
       )
     end
-    {
+    root_counts = count_recursive(root.entities)
+    root_record = {
+      'name'=>root.name.to_s,
+      'persistent_id'=>(root.persistent_id rescue nil),
+      'bounds_inches'=>bounds_signature(root),
+      'counts'=>root_counts
+    }
+    if full
+      root_record['geometry_summary'] = geometry_summary(root, nil, audit_cache)
+    else
+      root_record['audit_detail'] = 'compact'
+    end
+    result = {
       'schema_version'=>1,
+      'audit_detail'=>detail,
       'project_id'=>project_id.to_s,
       'model'=>JSON.parse(model_identity),
-      'recapture_protection'=>recapture_protection(project_id, audit_cache),
-      'root'=>{
-        'name'=>root.name.to_s,
-        'persistent_id'=>(root.persistent_id rescue nil),
-        'bounds_inches'=>bounds_signature(root),
-        'counts'=>count_recursive(root.entities),
-        'geometry_summary'=>geometry_summary(root, nil, audit_cache)
-      },
+      'root'=>root_record,
       'phases'=>phases,
       'work_units'=>registered_groups(root).select { |g| g.get_attribute(DICT,'phase') == 'work_unit' }.map { |g| unit_scope_record(g) },
       'visible_detail_systems'=>detail_systems,
@@ -1672,12 +1764,14 @@ module PipClawManagedProject
       'scale_diagnostics'=>scale_diagnostics(root),
       'created_at'=>Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ')
     }
+    result['recapture_protection'] = recapture_protection(project_id, audit_cache) if full
+    result
   end
 
-  def export_project_audit(project_id, output_path)
-    data = project_audit_data(project_id)
+  def export_project_audit(project_id, output_path, mode = 'full')
+    data = project_audit_data(project_id, true, mode)
     File.open(output_path.to_s, 'wb') { |file| file.write(JSON.pretty_generate(data)) }
-    JSON.generate({'ok'=>true, 'path'=>output_path.to_s, 'project_id'=>project_id.to_s, 'counts'=>data['root']['counts']})
+    JSON.generate({'ok'=>true, 'path'=>output_path.to_s, 'project_id'=>project_id.to_s, 'audit_detail'=>data['audit_detail'], 'counts'=>data['root']['counts']})
   end
 
   def save_copy(project_id, output_path)

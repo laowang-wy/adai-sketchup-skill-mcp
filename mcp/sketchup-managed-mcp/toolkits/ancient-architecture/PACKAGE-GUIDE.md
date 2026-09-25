@@ -1,7 +1,7 @@
 
 # 古建工具与经验包指南
 
-当前 MCP 发行版 0.5.34；来源算法 0.4，经验包 0.4.2，可执行工具包 0.4.5。经验包内的 REF 1.3.0 与 MCP 默认随附 REF 1.4.0 为不同副本，以实际读取路径及版本为准。
+当前 MCP 发行版 0.5.35；来源算法 0.4，经验包 0.4.2，可执行工具包 0.4.5。经验包内的 REF 1.3.0 与 MCP 默认随附 REF 1.4.0 为不同副本，以实际读取路径及版本为准。
 
 先读 `roof-types.json` 与 `experience/README.md`。六类基础屋壳均有独立算法；最新运行范围以对应 review.json 为准，不能把闭合网格等同古制还原。
 
@@ -56,4 +56,3 @@ FIELD_MISMATCH：修正拼写或用preset生成完整字段。HEIGHT_CHAIN/APRON
 盔顶 sources.json 与 profile.json 分开公开文字和推定剖面；未找到确认的盔顶源SKP。不能声称来源三维实测。
 
 最新证据目录：validation/xieshan-details-v04、validation/eave-v04、validation/helmet-source-v04。数值回归：v4/test_roofs.py、v4/test_details.py、source_templates与bearing测试。经验包只交付工具、配方及诊断证据；整栋岳阳楼不在本轮范围。
-

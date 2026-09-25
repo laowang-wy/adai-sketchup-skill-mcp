@@ -12,7 +12,8 @@ const { resolveAssistanceMode, normalizeAssistanceMode, assistanceGuidance, SKIL
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
-const { resolveMethodBinding } = require('./toolkit-registry');
+const { resolveMethodBinding, readConstructionCatalog } = require('./toolkit-registry');
+const modelingGuidance = require('./modeling-guidance');
 const { applyCommittedProgress, pendingExecution, classifyEvidenceFailure } = require('./operation-outcome');
 const {normalizeTargets, evaluateMeasurements, assertTargets} = require('./source-dimensions');
 const { createPolicy, policyFor, isExpert, initialStage, initialStageName, isAutonomous, planForState, resolveUnit, commitUnit, UNIT_PHASE, UNIT_HINT } = require('./execution-policy');
@@ -23,6 +24,17 @@ const { requiredSystems, validateDetails } = require('./detail-contract');
 // Guided stage plans are a teaching strategy, not expert permissions.
 const MANAGED_CONTRACT = require('./contracts/managed-contract.json');
 const PHASES = MANAGED_CONTRACT.mode_plans.single_image;
+
+// Real SketchUp 2019 can spend several minutes serializing a medium-sized
+// document or producing a complete audit/view set.  Keep the bridge timeout
+// bounded and configurable so a slow SU write becomes a normal receipt/recovery
+// case instead of being mistaken for a hung process at 120 seconds.  This does
+// not bypass the responsiveness preflight or any evidence/identity checks.
+const DEFAULT_SU_OPERATION_TIMEOUT_MS = 420000;
+function suOperationTimeout() {
+  const value = Number(process.env.PIPCLAW_SU_OPERATION_TIMEOUT_MS || DEFAULT_SU_OPERATION_TIMEOUT_MS);
+  return Number.isFinite(value) ? Math.min(1800000, Math.max(120000, Math.trunc(value))) : DEFAULT_SU_OPERATION_TIMEOUT_MS;
+}
 
 // Tool replies are an agent-facing projection, not the source of truth.  Keep
 // complete journals and readbacks in the signed state/files, but return the
@@ -137,50 +149,24 @@ function validateSourceAnalysis(value) {
   });
   return { analyzer: { provider: String(analyzer.provider || 'unavailable'), status: String(analyzer.status || 'unavailable'), model: String(analyzer.model || '').slice(0,128), ...(analyzer.image_sha256 ? {image_sha256:String(analyzer.image_sha256).toLowerCase()} : {}) }, images: normalizedImages, conflicts: list(value.conflicts || [], 'conflicts', 64) };
 }
-function ancientRoofPresetId(profile) {
-  const words=[...(profile?.topics||[]), ...(profile?.features||[])].join(' ');
-  // The old guided route treated a named Chinese tower/photo reconstruction as
-  // an executable roof-method route. Keep that route in the new transaction
-  // kernel: a tower task gets a concrete xieshan starting method instead of a
-  // generic card with the placeholder "matched roof candidate".
-  if (/(黄鹤楼|yellow[ _-]?crane)/i.test(words) || /^(chinese[_ -]?tower|yellow[_ -]?crane[_ -]?tower)$/i.test(String(profile?.method_family||''))) return 'si_shan';
-  if (/(歇山|xieshan|xie[_ -]?shan)/i.test(words)) return 'si_shan';
-  if (/(卷棚|juan[_ -]?peng)/i.test(words)) return 'juan_peng';
-  if (/(攒尖|zan[_ -]?jian)/i.test(words)) return 'zan_jian';
-  if (/(盔顶|盔|helmet)/i.test(words)) return 'helmet';
-  return null;
+function ancientRoofPresetId(profile) { return modelingGuidance.ancientRoofPresetId(profile); }
+function inferProfileFromTaskText(profile, taskText) { return modelingGuidance.inferProfile(profile, taskText, normalizedProfile); }
+function constructionBriefFor(profile, taskText = '', mode = '', phase = 'massing', catalog = null) { return modelingGuidance.constructionBriefFor(profile, taskText, mode, phase, catalog); }
+function ancientMethodRoute(profile) { return modelingGuidance.ancientMethodRoute(profile); }
+function ancientRoofRoute(profile) { return modelingGuidance.ancientRoofRoute(profile); }
+function sourceAnalysisHint(value) {
+  const images = Array.isArray(value?.images) ? value.images : [];
+  return images.flatMap(image => [
+    ...(image.visible_facts || []), ...(image.geometry_cues || []),
+    ...(image.spatial_relations || []), ...(image.possible_roof_types || []),
+  ]).map(String).filter(Boolean).slice(0, 24).join('；');
 }
-function inferProfileFromTaskText(profile, taskText) {
-  const text = String(taskText || '');
-  const words = [...(profile?.topics || []), ...(profile?.features || [])].join(' ');
-  const combined = `${words} ${text}`;
-  const ancient = /(古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple|xieshan|xie[_ -]?shan|歇山|卷棚|攒尖|盔顶)/i.test(combined);
-  const namedTower = /(黄鹤楼|yellow[ _-]?crane|楼阁|塔|tower)/i.test(combined);
-  const topics = [...(profile?.topics || [])];
-  const features = [...(profile?.features || [])];
-  if (/歇山|xieshan|xie[_ -]?shan/i.test(text) && !features.some((x) => /歇山|xieshan|xie[_ -]?shan/i.test(x))) features.push('歇山顶');
-  if (/古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple/i.test(text) && !topics.some((x) => /古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple/i.test(x))) topics.push('古建');
-  const methodFamily = profile?.method_family || (namedTower ? 'chinese_tower' : undefined);
-  return normalizedProfile({ ...profile, topics, features, method_family: methodFamily, roof_route: profile?.roof_route === 'custom' ? 'custom' : ancient ? 'ancient_roof' : profile?.roof_route });
+function guidanceTaskText(state) {
+  const task = String(state?.task_text || '');
+  const hint = sourceAnalysisHint(state?.source_analysis);
+  return hint ? `${task} 来源可见特征：${hint}` : task;
 }
-function constructionBriefFor(profile, taskText = '', mode = '') {
-  const effective = inferProfileFromTaskText(profile || {}, taskText);
-  const methods = modelingMethodCards.construction_methods || {};
-  const id = ancientRoofPresetId(effective);
-  const methodId = id || 'generic_ancient_roof';
-  const imageOnly = mode === 'single_image' && !ancientRoofRoute(effective) && !/(歇山|卷棚|攒尖|盔顶|古建|楼阁|塔|庙|殿|pagoda|temple)/i.test(String(taskText || ''));
-  if (imageOnly && methods.image_primary_form) {
-    const method = methods.image_primary_form;
-    return { method_id: 'image_primary_form', ...JSON.parse(JSON.stringify(method)), selection_state: 'candidate_selection_required', source: 'bundled_construction_method', agent_action: 'Inspect the source image and choose the applicable construction method; this card is not a roof-type match.' };
-  }
-  const method = methods[methodId] || methods.generic_ancient_roof;
-  if (!method || !ancientRoofRoute(effective)) return null;
-  const related = (method.related_methods || []).map((relatedId) => {
-    const card = methods[relatedId];
-    return card ? { method_id: relatedId, recognize: card.recognize, construct: card.construct, method: card.method, key_parameters: card.key_parameters, common_errors: card.common_errors, inspect: card.inspect, fallback: card.if_failed } : null;
-  }).filter(Boolean);
-  return { method_id: methodId, ...JSON.parse(JSON.stringify(method)), related_method_cards: related, experience_pack: { id: 'adai-ancient-experience', version: '0.4.2', generator: id ? `roof.${id}` : null }, source: 'bundled_construction_method', agent_action: 'Use this method now; do not search the package first. Ask for extra REF only when the source exceeds this method.' };
-}
+
 function phasePlanFor(mode, profile) {
   const standard=PHASE_PLANS[mode] || PHASES;
   const base=profile?.repetition==='none' && ['single_image','freeform','cad'].includes(mode) ? standard.filter(p=>!['archetypes','replication'].includes(p.name)) : standard;
@@ -288,6 +274,25 @@ async function fileEvidence(filePath) {
   return { path: path.resolve(filePath), bytes: stat.size, sha256: await hashFile(filePath) };
 }
 
+function sourcePathsFromInput(input, mode) {
+  const values = [];
+  if (Array.isArray(input.source_images)) values.push(...input.source_images);
+  if (input.source_image) values.unshift(input.source_image);
+  const seen = new Set();
+  const paths = [];
+  for (const value of values) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const resolved = path.resolve(value);
+    const key = resolved.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); paths.push(resolved); }
+  }
+  if (mode === 'single_image' && !paths.length) throw new Error('Source image not found: no source_image or source_images supplied');
+  for (const sourcePath of paths) {
+    if (!fsSync.existsSync(sourcePath) || !fsSync.lstatSync(sourcePath).isFile()) throw new Error(`Source image not found: ${sourcePath}`);
+  }
+  return paths;
+}
+
 function sameModelBinding(expected, actual) {
   if (!expected || !actual) return false;
   const normalize = (value) => path.resolve(String(value || '')).toLowerCase();
@@ -311,6 +316,32 @@ function verifiedSaveCopyMigration(request, result, current, outputPath) {
   if (!result.active_model_path || path.resolve(String(result.active_model_path)) !== path.resolve(String(after.path))) return false;
   const savedPath = result.saved_file?.path || result.path;
   return !!savedPath && path.resolve(String(savedPath)) === path.resolve(String(outputPath || ''));
+}
+
+// A timed-out save_copy may leave a durable, nonzero checkpoint and the user
+// may reopen that exact file before recovery.  The bridge receipt can remain
+// `started` because its final response was lost.  Treat this as a narrow,
+// evidence-backed recovery only when the live document is that exact target;
+// arbitrary files and the old document binding still fail the normal checks.
+async function verifiedPendingSaveCopyArtifact(request, current, outputPath) {
+  const target = path.resolve(String(outputPath || ''));
+  if (!target || !request?.model_binding || !current?.path || path.resolve(String(current.path)) !== target) return null;
+  try {
+    const stat = await fs.stat(target);
+    if (!stat.isFile() || stat.size <= 0) return null;
+    const saved = await fileEvidence(target);
+    return {
+      ok: true,
+      path: target,
+      bytes: saved.bytes,
+      saved_file: saved,
+      strategy: 'save_copy',
+      model_binding_before: request.model_binding,
+      model_binding_after: current,
+      path_migrated: false,
+      recovery_basis: 'exact_reopened_target_after_started_receipt'
+    };
+  } catch (_) { return null; }
 }
 
 function collectEvidenceFiles(value, found = []) {
@@ -436,7 +467,7 @@ function validateStructureAudit(state, phase, audit) {
   return null;
 }
 
-function phaseTaskCard(phase, mode, taskProfile = {}) {
+function phaseTaskCard(phase, mode, taskProfile = {}, constructionCatalog = null, taskText = '') {
   const method = mode === 'test'
     ? { version: modelingMethodCards.version, scope: 'diagnostic_only', evidence_checks: ['Validate the requested diagnostic contract; do not invent source-image observations or claim photographic acceptance.'] }
     : { version: modelingMethodCards.version, scope: modelingMethodCards.scope, review_record_fields: [...modelingMethodCards.review_record_fields], ...JSON.parse(JSON.stringify(modelingMethodCards.phases[phase.name] || {})) };
@@ -450,15 +481,10 @@ function phaseTaskCard(phase, mode, taskProfile = {}) {
     if (ancientRoofRoute(taskProfile)) required.push('For an ancient roof, make the ridge, eave, corner lift, shell thickness and open gallery relationships visible in the chosen construction; use a control contract only when the selected method needs one.');
     const forbidden = ['Premature detail arrays without source justification (necessary multi-roof/faceted primary form is allowed)', 'Facade grids', 'Context used to hide a wrong form'];
     if (ancientRoofRoute(taskProfile)) forbidden.push('Flat slab or single-frustum roof', 'Corner lift implemented only by raising plan-ring points', 'Solid tower body that fills source-visible galleries/corridors');
-    const route = ancientRoofRoute(taskProfile) ? {
-      recommended: 'sketchup_ancient_tool',
-      preset_id: ancientRoofPresetId(taskProfile),
-      sequence: [ancientRoofPresetId(taskProfile) ? `preset(family=roof,preset_id=${ancientRoofPresetId(taskProfile)})` : 'use the matched roof candidate from construction_brief', 'compile(family=recipe,parameters=returned_preset)', 'sketchup_project_step(ruby_file=returned_manifest.ruby_file)'],
-      fallback: 'Use custom managed Ruby only when no matching preset/recipe exists or the source visibly exceeds its scope; state the reason.'
-    } : null;
-    return {...shared,required,forbidden,...(route ? {method_route: route, construction_brief: constructionBriefFor(taskProfile)} : {})};
+    const route = ancientRoofRoute(taskProfile) ? ancientMethodRoute(taskProfile) : null;
+    return {...shared,required,forbidden,...(route ? {method_route: route, construction_brief: constructionBriefFor(taskProfile, taskText, mode, phase.name, constructionCatalog)} : {})};
   }
-  if (phase.name === 'roof_profile') return { ...shared, method_route: ancientRoofRoute(taskProfile) ? { recommended: 'sketchup_ancient_tool', preset_id: ancientRoofPresetId(taskProfile), sequence: [ancientRoofPresetId(taskProfile) ? `preset(family=roof,preset_id=${ancientRoofPresetId(taskProfile)})` : 'use the matched roof candidate from construction_brief', 'compile(family=recipe,parameters=returned_preset)', 'sketchup_project_step(ruby_file=returned_manifest.ruby_file)'], fallback: 'Use custom managed Ruby only when no matching preset/recipe exists or the source visibly exceeds its scope; state the reason.' } : null, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
+  if (phase.name === 'roof_profile') return { ...shared, method_route: ancientRoofRoute(taskProfile) ? ancientMethodRoute(taskProfile) : null, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
   if (phase.name === 'archetypes') return { ...shared, required: ['Build a visually complete representative repeated family when repetition is actually present.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail when supported by the source.', 'Inspect the representative geometry and its actual contact/appearance before reuse.'], forbidden: ['Broad arrays used to hide a wrong form', 'Copying an unreviewed prototype through the building'] };
   if (phase.name === 'replication') return { ...shared, required: ['Reuse a reviewed component or construct the repeated geometry with a method appropriate to the source.', 'Check representative, middle, end and corner conditions when repetition exists.'], forbidden: ['Redrawing repeated floors independently when that would change the intended geometry', 'Changing roof/podium/unique levels without a source reason'] };
   if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only and preserve their actual host relationships.'], forbidden: ['Generic facade dressing'] };
@@ -565,14 +591,14 @@ function taskCard(state, phase, detail=false) {
       : 'Build complete representative components at their real hosts; inspect construction, contact and editability, then review separately before broad replication. No minimum component count or registration quota.'} : {}),
     work_unit: state.work_unit || null,
     building_guidance: 'Use the source, construction_brief and actual views as the architectural basis; the program handles unit, identity, evidence and recovery records.',
-    construction_brief: constructionBriefFor(state.task_profile, state.task_text),
+    construction_brief: constructionBriefFor(state.task_profile, guidanceTaskText(state), state.mode, phase.name, state.construction_catalog || null),
     method_focus: expertMethodFocus(state),
     open_findings: validationIssues(state),
     revision_required: state.revision_required || null,
     evidence: 'Choose useful views when ready; no per-operation visual report is required.'
   };
   const warning=abstractionRecheckNeeded(state,phase.name) ? {code:'abstraction_recheck_required',revision_attempts:Number(state.revision_attempts?.[phase.name]||0),required_action:'Re-read source evidence and change or defend the geometric abstraction. The next step must provide abstraction_note; adding detail to the same failed abstraction is forbidden.'} : null;
-  const card=phaseTaskCard(phase,state.mode,state.task_profile);
+  const card=phaseTaskCard(phase,state.mode,state.task_profile,state.construction_catalog || null,guidanceTaskText(state));
   if(!detail) {
     delete card.method.review_record_fields;
     card.method.guidance='Use the managed Ruby API described by the Skill only when the current construction needs custom Ruby.';
@@ -588,7 +614,8 @@ function assistanceSummary(state, detail=false) {
   const mode = isAutonomous(state) ? 'autonomous' : 'guided';
   const text=String(state?.task_text||'');
   const profile=state?.task_profile||{};const brief=state?.projection_brief||{};
-  const summary={ ...assistanceGuidance(mode), work_unit: state?.work_unit || null, source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(section=task)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:state?.source?.sha256||null,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
+  const sourceList = Array.isArray(state?.sources) ? state.sources : (state?.source ? [state.source] : []);
+  const summary={ ...assistanceGuidance(mode), work_unit: state?.work_unit || null, source: state?.assistance_selection?.source || 'default_guided', task_text_ref: {sha256:crypto.createHash('sha256').update(text).digest('hex'),length:text.length,version:Number(state?.task_text_version||1),read:'sketchup_project_status(section=task)'}, active_constraints:{mode:state?.mode||null,topics:Array.isArray(profile.topics)?profile.topics.slice(0,20):[],features:Array.isArray(profile.features)?profile.features.slice(0,20):[],roof_route:profile.roof_route||'auto',repetition:profile.repetition||null,source_sha256:sourceList[0]?.sha256||null,source_sha256s:sourceList.map(item=>item.sha256).slice(0,32),source_image_count:sourceList.length,projection_targets:Array.isArray(brief.targets)?brief.targets.map(x=>x.id).filter(Boolean):[]}, provider_attribution: SKILL_ATTRIBUTION, brand_delivery: 'tool_text_only' };
   if(detail) summary.task_text=text;
   return summary;
 }
@@ -761,14 +788,25 @@ class ManagedProjects {
     // Identity is read-only, but exporting it from a large accepted model can
     // exceed the generic bridge default. Keep identity verification mandatory
     // and use the same bounded window as managed evidence reads.
-    const response = await bridge('run_ruby', { code: this.rubyCall('model_identity', []), file: this.helperPath }, 120000);
+    const response = await bridge('run_ruby', { code: this.rubyCall('model_identity', []), file: this.helperPath }, suOperationTimeout());
     return parseManagedResult(response);
   }
 
   async assertModelBinding(state, bridge) {
     const current = await this.modelIdentity(bridge);
     const bound = state.model_binding || { path: state.model_path || '', object_id: null };
-    if (!sameModelBinding(bound, current)) throw this.stateError('MODEL_BINDING_MISMATCH', 'The active document/session differs from the bound project; use verified recovery.');
+    if (!sameModelBinding(bound, current)) {
+      // A phase checkpoint is a deliberate saved-document boundary. After a
+      // SketchUp restart its session/object identity changes, while the
+      // checkpoint path and sealed audit remain authoritative. Migrate only
+      // through that exact recorded checkpoint; arbitrary documents still
+      // fail the normal binding check.
+      const checkpointPath = state.last_checkpoint?.path;
+      const sameCheckpoint = checkpointPath && path.resolve(String(checkpointPath)).toLowerCase() === path.resolve(String(current.path || '')).toLowerCase();
+      if (!sameCheckpoint) throw this.stateError('MODEL_BINDING_MISMATCH', 'The active document/session differs from the bound project; use verified recovery.');
+      state.model_binding = current;
+      state.model_path = current.path;
+    }
     return current;
   }
 
@@ -932,8 +970,25 @@ class ManagedProjects {
       await handle.sync().catch(() => {});
     } catch (error) {
       await handle?.close().catch(() => {});
-      if (error.code === 'EEXIST') throw this.stateError('DOCUMENT_WRITE_BUSY', 'The bound SketchUp document has another write in progress; inspect its operation before retrying');
-      throw error;
+      if (error.code === 'EEXIST') {
+        // A client timeout can terminate the MCP process after the document
+        // write completed, leaving only the PID marker behind. Reclaim only
+        // when that recorded owner is demonstrably dead; a live owner remains
+        // a real serialization barrier.
+        if (await this.reclaimDeadProjectLock(lockPath)) {
+          try {
+            handle = await fs.open(lockPath, 'wx', 0o600);
+            await handle.writeFile(JSON.stringify({ pid: process.pid, acquired_at: new Date().toISOString(), binding }));
+            await handle.sync().catch(() => {});
+          } catch (retryError) {
+            await handle?.close().catch(() => {});
+            if (retryError.code === 'EEXIST') throw this.stateError('DOCUMENT_WRITE_BUSY', 'The bound SketchUp document has another write in progress; inspect its operation before retrying');
+            throw retryError;
+          }
+        } else {
+          throw this.stateError('DOCUMENT_WRITE_BUSY', 'The bound SketchUp document has another write in progress; inspect its operation before retrying');
+        }
+      } else throw error;
     }
     const owner = { key, active: true };
     try { return await this._documentLockContext.run(owner, operation); }
@@ -955,7 +1010,7 @@ class ManagedProjects {
         await this.saveState(state);
         try {
           const receipted = ['save_copy','remove_phase','remove_phases'].includes(method);
-          const response = await bridge('run_ruby', { code: receipted ? this.rubyCall('auxiliary_with_receipt',[JSON.stringify(operation.request)]) : this.rubyCall(method, args), file: this.helperPath }, 120000);
+          const response = await bridge('run_ruby', { code: receipted ? this.rubyCall('auxiliary_with_receipt',[JSON.stringify(operation.request)]) : this.rubyCall(method, args), file: this.helperPath }, suOperationTimeout());
           operation.result = parseManagedResult(response);
           operation.status = 'completed';
           state.status = priorStatus;
@@ -1148,10 +1203,22 @@ class ManagedProjects {
   async verifyEvidence(state, evidenceId, currentModel = null, options = {}) {
     const { record, path: target } = await this.verifyEvidenceIdentity(state, evidenceId, options);
     if (!isModelEvidence(record)) throw this.stateError('EVIDENCE_NOT_MODEL_RESULT', 'This record is an event, not a reviewable model result.');
-    if (!options.restoringCheckpoint && record.model_binding && state.model_binding && !sameModelBinding(record.model_binding, state.model_binding)) {
+    const checkpointPath = state.last_checkpoint?.path || record.files?.checkpoint?.path;
+    const exactReopenedCheckpoint = (candidate) => !!(candidate?.path && checkpointPath && path.resolve(String(candidate.path)).toLowerCase() === path.resolve(String(checkpointPath)).toLowerCase());
+    const stateCheckpointMigration = !options.restoringCheckpoint && exactReopenedCheckpoint(state.model_binding) && exactReopenedCheckpoint(record.model_binding);
+    if (!options.restoringCheckpoint && record.model_binding && state.model_binding && !sameModelBinding(record.model_binding, state.model_binding) && !stateCheckpointMigration) {
       throw this.stateError('EVIDENCE_MODEL_BINDING_MISMATCH', 'Evidence is bound to a different SketchUp document or session');
     }
-    if (currentModel && record.model_binding && !sameModelBinding(record.model_binding, currentModel)) {
+    const currentCheckpointMigration = currentModel && record.model_binding && !sameModelBinding(record.model_binding, currentModel)
+      && exactReopenedCheckpoint(currentModel) && exactReopenedCheckpoint(record.model_binding);
+    if (currentCheckpointMigration) {
+      // A deliberate reopen of the sealed checkpoint changes SketchUp's
+      // session/object id.  The exact path plus the later live-audit equality
+      // check is the migration proof; arbitrary documents still fail here.
+      state.model_binding = currentModel;
+      state.model_path = currentModel.path;
+    }
+    if (currentModel && record.model_binding && !sameModelBinding(record.model_binding, currentModel) && !currentCheckpointMigration) {
       throw this.stateError('EVIDENCE_MODEL_CHANGED', 'Current SketchUp document or session does not match sealed evidence');
     }
     if (record.scene_revision !== undefined && state.scene_revision !== undefined && Number(record.scene_revision) !== Number(state.scene_revision)) {
@@ -1163,10 +1230,32 @@ class ManagedProjects {
   async assertEvidenceCurrent(state, evidence, bridge) {
     const auditFile = evidence?.record?.files?.audit;
     if (!auditFile?.path) throw this.stateError('EVIDENCE_AUDIT_MISSING', 'Sealed evidence has no project audit attachment');
+    // A sealed checkpoint reopened in a new SketchUp session has a new object
+    // id.  Re-running the full Ruby audit here can also crash SU2019 on large
+    // recovered documents.  When the active binding and the evidence
+    // checkpoint are the exact same file and its sealed hash still matches,
+    // the sealed audit is the authoritative readback for this migration.
+    const checkpoint = state.last_checkpoint;
+    const checkpointFile = evidence.record.files?.checkpoint;
+    const sameCheckpoint = checkpoint?.path && checkpointFile?.path && state.model_binding?.path
+      && path.resolve(String(checkpoint.path)).toLowerCase() === path.resolve(String(checkpointFile.path)).toLowerCase()
+      && path.resolve(String(state.model_binding.path)).toLowerCase() === path.resolve(String(checkpoint.path)).toLowerCase();
+    if (sameCheckpoint) {
+      try {
+        const stat = await fs.stat(checkpoint.path);
+        const clean = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('clean_checkpoint_identity', []), file: this.helperPath }, suOperationTimeout()));
+        if (stat.isFile() && stat.size > 0 && clean.modified === false
+            && sameModelBinding(clean.identity, state.model_binding)
+            && String(checkpointFile.sha256).toLowerCase() === await hashFile(checkpoint.path)) {
+          return JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
+        }
+      } catch (_) { /* fall through to live audit */ }
+    }
     const livePath = path.join(this.projectDir(state.project_id), `.evidence-live-audit-${process.pid}-${Date.now()}.json`);
+    const recorded = JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
+    const auditDetail = recorded.audit_detail === 'compact' ? 'compact' : 'full';
     try {
-      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, livePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
-      const recorded = JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
+      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, livePath.replaceAll('\\', '/'), auditDetail]), file: this.helperPath }, suOperationTimeout()));
       const live = JSON.parse(await fs.readFile(livePath, 'utf8'));
       validateAuditReadback(recorded);
       validateAuditReadback(live);
@@ -1201,18 +1290,23 @@ class ManagedProjects {
     const mode = String(input.mode || 'single_image');
     if (!['single_image', 'cad', 'freeform', 'refinement', 'test','attribution'].includes(mode)) throw new Error('Unsupported managed project mode');
     if(mode==='attribution' && input.attribution_command!=='显源')throw new Error('EXPLICIT_ATTRIBUTION_COMMAND_REQUIRED');
-    const sourcePath = path.resolve(input.source_image || '');
-    if (mode === 'single_image' && (!input.source_image || !fsSync.existsSync(sourcePath) || !fsSync.lstatSync(sourcePath).isFile())) throw new Error(`Source image not found: ${sourcePath}`);
+    const sourcePaths = sourcePathsFromInput(input, mode);
     const outputDirectory = path.resolve(input.output_directory || path.join(process.cwd(), 'sketchup-managed-output'));
     await fs.mkdir(outputDirectory, { recursive: true });
     const projectId = safeId(input.project_id || `su_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`);
     if (fsSync.existsSync(this.statePath(projectId))) throw new Error(`Managed project already exists: ${projectId}`);
     const ping = await bridge('ping');
-    const source = mode === 'single_image' ? await fileEvidence(sourcePath) : null;
+    // Any uploaded image remains source evidence even when the caller is
+    // refining an existing model.  Refinement changes the execution plan; it
+    // must not make the user's references disappear from the project card.
+    const sources = sourcePaths.length ? await Promise.all(sourcePaths.map((sourcePath) => fileEvidence(sourcePath))) : [];
+    const source = sources[0] || null;
     const sourceAnalysis = validateSourceAnalysis(input.source_analysis);
     let projectionBrief = null;
     const taskProfile = inferProfileFromTaskText(normalizedProfile(input.task_profile), input.task_text || '');
-    const toolkitBinding = taskProfile.method_family ? await resolveMethodBinding(this.appDataDir, taskProfile.method_family) : null;
+    const methodFamily = taskProfile.method_family || (ancientRoofRoute(taskProfile) ? 'ancient_roof' : '');
+    const toolkitBinding = methodFamily ? await resolveMethodBinding(this.appDataDir, methodFamily) : null;
+    const constructionCatalog = toolkitBinding ? await readConstructionCatalog(this.appDataDir, toolkitBinding) : null;
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
     // Explicit assistance_mode is a host-supported preference.  The Chinese
@@ -1228,17 +1322,18 @@ class ManagedProjects {
     const phasePlan = expert ? [{ name: UNIT_PHASE, hint: UNIT_HINT }] : execution_policy.phase_plan;
     if (workUnit) workUnit.name = execution_policy.initial_stages ? 'Whole-building massing' : 'Main architectural system';
     const state = {
-      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, source_analysis: sourceAnalysis, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
+      schema_version: 1, project_id: projectId, mode, assistance_mode: assistance.mode, work_unit: workUnit, assistance_selection: { source: assistance.source, command_detected: assistance.command_detected, selected_at: new Date().toISOString() }, task_text: assistance.task_text, attribution_command:mode==='attribution'?'显源':null, source, sources, source_analysis: sourceAnalysis, projection_brief: projectionBrief, task_profile: taskProfile, output_directory: outputDirectory,
       model_path: modelBinding.path || ping.model_path || '', model_binding: modelBinding,
       toolkit_bindings: toolkitBinding ? [toolkitBinding] : [],
+      construction_catalog: constructionCatalog,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       status: 'ready_for_step', step_index: 0, phase: phasePlan[0].name, ...(expert ? { work_units: { [workUnit.id]: { id: workUnit.id, name: workUnit.name, revision: 0 } }, scene_revision: 0 } : { phase_plan: phasePlan }), execution_policy,
       ...(execution_policy.initial_stages ? {initial_stage_unit_id:workUnit.id, initial_stage_reviews:[]} : {}),
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
-    const constructionBrief = constructionBriefFor(taskProfile, assistance.task_text, mode);
-    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), source_analysis: sourceAnalysis, projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, construction_brief: constructionBrief, matched_method: constructionBrief?.selection_state === 'candidate_selection_required' ? null : (constructionBrief ? { method_id: constructionBrief.method_id, method: constructionBrief.method } : null), task_card: taskCard(state,phasePlan[0]), next_action: constructionBrief?.actions?.[0] || phasePlan[0].hint };
+    const constructionBrief = constructionBriefFor(taskProfile, `${assistance.task_text || ''} 来源可见特征：${sourceAnalysisHint(sourceAnalysis)}`, mode, phasePlan[0].name, constructionCatalog);
+    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), sources, source_image_count: sources.length, source_analysis: sourceAnalysis, projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, construction_brief: constructionBrief, matched_method: constructionBrief?.selection_state === 'candidate_selection_required' ? null : (constructionBrief ? { method_id: constructionBrief.method_id, method: constructionBrief.method } : null), task_card: taskCard(state,phasePlan[0]), next_action: constructionBrief?.actions?.[0] || phasePlan[0].hint };
   }
 
   async captureViewportSet(state, phase, directory, bridge, requestedViews = null) {
@@ -1248,10 +1343,14 @@ class ManagedProjects {
     // This helper is read-only; keep the existing capture and identity checks
     // intact while using the same bounded 120-second limit as the evidence
     // capture calls below.
-    const runHelper=async(name,args=[])=>parseManagedResult(await bridge('run_ruby',{code:this.rubyCall(name,args),file:this.helperPath},120000));
+    const processAlive=(pid)=>{ try { process.kill(Number(pid), 0); return true; } catch (_) { return false; } };
+    let plan, prepared=false, selectionSaved=false;
+    const runHelper=async(name,args=[])=>{
+      if (plan?.process_id && !processAlive(plan.process_id)) throw this.stateError('SKETCHUP_INSTANCE_NOT_RUNNING', 'SketchUp exited during evidence capture; preserve partial evidence and reopen the recorded checkpoint before retrying.');
+      return parseManagedResult(await bridge('run_ruby',{code:this.rubyCall(name,args),file:this.helperPath}, suOperationTimeout()));
+    };
     const savedCamera=await runHelper('camera_state');
     if (savedCamera.two_point === true) throw this.stateError('VIEWPORT_NATIVE_REQUIRED', 'Preserve the native two-point camera; use native evidence capture.');
-    let plan, prepared=false, selectionSaved=false;
     const files={},metadata=[];
     const script=path.join(path.dirname(this.helperPath),'capture_window.py');
     const prepareOutput=path.join(directory,'window-prepare.png');
@@ -1304,9 +1403,11 @@ class ManagedProjects {
     } finally {
       // Attempt every restoration even if a preceding restoration fails.
       const errors=[];
-      try {await runHelper('restore_camera',[JSON.stringify(savedCamera)]);} catch(e){errors.push(e.message);}
-      if(selectionSaved)try{await runHelper('restore_viewport_selection');}catch(e){errors.push(e.message);}
-      if(prepared && plan)try{await capture(prepareOutput,plan.process_id,'--restore');}catch(e){errors.push(e.message);}
+      if (!plan?.process_id || processAlive(plan.process_id)) {
+        try {await runHelper('restore_camera',[JSON.stringify(savedCamera)]);} catch(e){errors.push(e.message);}
+        if(selectionSaved)try{await runHelper('restore_viewport_selection');}catch(e){errors.push(e.message);}
+        if(prepared && plan)try{await capture(prepareOutput,plan.process_id,'--restore');}catch(e){errors.push(e.message);}
+      }
       if(errors.length)throw new Error('Window capture restoration incomplete: '+errors.join('; '));
     }
     return {files,camera:sourceCamera};
@@ -1330,7 +1431,13 @@ class ManagedProjects {
 
   async automaticEvidence(state, phase, scriptPath, scriptHash, bridge, buildResult, options = {}) {
     const expert = isExpert(state);
-    const requestedViews = expert ? [...new Set(['reference', ...(options.views || ['reference'])])] : null;
+    // Guided replication already has a reviewed archetype.  Keep a compact
+    // source/evidence set for this intermediate write so SketchUp 2019 is not
+    // forced through five full geometry renders after every instance.  The
+    // checkpoint, audit, receipt and explicit review gate remain unchanged.
+    const requestedViews = options.views
+      ? [...new Set(options.views)]
+      : (expert ? [...new Set(['reference', ...(options.views || ['reference'])])] : null);
     // Evidence generation never changes the user's inspection camera. A saved
     // source camera is used only by the legacy route; expert supplies its own
     // current inspection camera and may ask for complementary geometry views.
@@ -1361,7 +1468,7 @@ class ManagedProjects {
     state.model_binding = await this.modelIdentity(bridge);
     state.last_checkpoint = { path: checkpointPath, phase, evidence_id: evidenceId, review_status: 'not_yet_reviewed' };
     const beforeAuditPath=path.join(evidenceDir,'pre-capture-audit.json');
-    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,beforeAuditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,beforeAuditPath.replaceAll('\\','/'),'compact']),file:this.helperPath}, suOperationTimeout()));
     state.pending_evidence={phase,script_path:scriptPath,script_hash:scriptHash,build_result:evidenceBuildResult,checkpoint:await fileEvidence(checkpointPath),audit:await fileEvidence(beforeAuditPath)};
     delete state.recovered_checkpoint;
     // Persist the frozen-capture state before any viewport or OS work. If the
@@ -1370,7 +1477,7 @@ class ManagedProjects {
     state.status='evidence_pending';
     await this.saveState(state);
     if (state.source_camera && !expert) {
-      const sourceRestore = await bridge('run_ruby', { code: this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]), file: this.helperPath }, 120000);
+      const sourceRestore = await bridge('run_ruby', { code: this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]), file: this.helperPath }, suOperationTimeout());
       parseManagedResult(sourceRestore);
     }
     const referencePath = path.join(evidenceDir, 'reference.png');
@@ -1390,19 +1497,23 @@ class ManagedProjects {
       }
     }
     if (!viewportCaptured) {
-    const capture = await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
+    const capture = await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout());
     parseManagedResult(capture);
-    const cameraBridge = await bridge('run_ruby', { code: this.rubyCall('camera_state', []), file: this.helperPath }, 120000);
+    const cameraBridge = await bridge('run_ruby', { code: this.rubyCall('camera_state', []), file: this.helperPath }, suOperationTimeout());
     cameraState = parseManagedResult(cameraBridge);
     // The sealed geometry views below cover the whole model. The legacy
     // diagnostic export remains callable explicitly but adds no sealed views.
-    if (phase === 'archetypes') {
-      const prototypeBridge = await bridge('run_ruby', { code: this.rubyCall('capture_archetype_views', [state.project_id, evidenceDir.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
+    // Explicit view requests are a real budget/control input.  Do not append
+    // the expensive prototype gallery to a focused retry unless the caller
+    // asked for prototype views (the old unconditional branch could make a
+    // heavy SU document appear hung during an otherwise small recapture).
+    if (phase === 'archetypes' && (!requestedViews || requestedViews.some(name => String(name).startsWith('prototype')))) {
+      const prototypeBridge = await bridge('run_ruby', { code: this.rubyCall('capture_archetype_views', [state.project_id, evidenceDir.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout());
       const prototypes = parseManagedResult(prototypeBridge);
       for (const [index, prototypePath] of (prototypes.paths || []).entries()) detailViews[prototypes.labels?.[index] || `prototype_${index}`] = prototypePath;
     }
-    if (phase === 'facade_detail') {
-      const detailBridge = await bridge('run_ruby', { code: this.rubyCall('capture_detail_views', [state.project_id, evidenceDir.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
+    if (phase === 'facade_detail' && (!requestedViews || requestedViews.some(name => String(name).startsWith('detail')))) {
+      const detailBridge = await bridge('run_ruby', { code: this.rubyCall('capture_detail_views', [state.project_id, evidenceDir.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout());
       const detail = parseManagedResult(detailBridge);
       for (const [index, detailPath] of (detail.paths || []).entries()) detailViews[`detail_${detail.labels?.[index] || index}`] = detailPath;
     }
@@ -1411,7 +1522,7 @@ class ManagedProjects {
     const geometrySelection = requestedViews ? requestedViews.filter(name => name !== 'reference') : null;
     const geometryViews = geometrySelection && !geometrySelection.length ? {ok:true, views:[]} : parseManagedResult(await bridge('run_ruby', {
       code: this.rubyCall('capture_geometry_views', [state.project_id, phase, evidenceDir.replaceAll('\\','/'), geometrySelection ? JSON.stringify(geometrySelection) : null]), file: this.helperPath
-    }, 120000));
+    }, suOperationTimeout()));
     const geometryCameraPath=path.join(evidenceDir,'geometry-cameras.json');
     await fs.writeFile(geometryCameraPath,JSON.stringify(geometryViews,null,2));
     detailViews.geometry_cameras=geometryCameraPath;
@@ -1420,7 +1531,7 @@ class ManagedProjects {
     const dimensionTargets = state.task_profile?.dimension_targets || [];
     let dimensionResults = [];
     if (dimensionTargets.length) {
-      const measured = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('measure_source_dimensions',[state.project_id,JSON.stringify(dimensionTargets)]),file:this.helperPath},120000));
+      const measured = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('measure_source_dimensions',[state.project_id,JSON.stringify(dimensionTargets)]),file:this.helperPath}, suOperationTimeout()));
       if (measured.project_id !== state.project_id) throw this.stateError('DIMENSION_PROJECT_MISMATCH','Measurement came from a different project.');
       dimensionResults = evaluateMeasurements(dimensionTargets, measured);
       const dimensionPath = path.join(evidenceDir,'source-dimensions.json');
@@ -1429,7 +1540,7 @@ class ManagedProjects {
     }
     const auditOutput = path.join(evidenceDir, 'audit.json');
     const auditPreview = path.join(evidenceDir, 'audit-preview.png');
-    const auditBridge = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditOutput.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
+    const auditBridge = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditOutput.replaceAll('\\', '/'), 'compact']), file: this.helperPath }, suOperationTimeout());
     parseManagedResult(auditBridge);
     const beforeAudit = JSON.parse(await fs.readFile(beforeAuditPath, 'utf8'));
     const afterAudit = JSON.parse(await fs.readFile(auditOutput, 'utf8'));
@@ -1445,12 +1556,15 @@ class ManagedProjects {
     let reviewSheet = '';
     let reviewReport = '';
     const comparisonImages = {};
-    if (state.source) {
-      await verifyEvidenceFiles({source:state.source});
+    const sourceEvidence = state.sources || (state.source ? [state.source] : []);
+    if (sourceEvidence.length) {
+      await verifyEvidenceFiles({sources:sourceEvidence});
       reviewSheet = path.join(evidenceDir, 'review-sheet.png');
       reviewReport = path.join(evidenceDir, 'review-evidence.json');
       const python = process.env.PIPCLAW_PYTHON || 'python';
-      const args=[this.sheetScript,'--source',state.source.path,'--source-sha256',state.source.sha256,'--candidate',referencePath,'--output',reviewSheet,'--report',reviewReport];
+      const args=[this.sheetScript];
+      for (const item of sourceEvidence) args.push('--source',item.path,'--source-sha256',item.sha256);
+      args.push('--candidate',referencePath,'--output',reviewSheet,'--report',reviewReport);
       if(options.comparison?.aligned) args.push('--aligned');
       if(options.comparison?.regions) {
         const regionFile=path.join(evidenceDir,'comparison-regions.json');
@@ -1490,7 +1604,7 @@ class ManagedProjects {
     }
     const record = {
       schema_version: 1, evidence_id: evidenceId, project_id: state.project_id, mode: state.mode,
-      phase, step_index: state.step_index, created_at: new Date().toISOString(), source: state.source,
+      phase, step_index: state.step_index, created_at: new Date().toISOString(), source: state.source, sources: sourceEvidence,
       record_type: 'model_snapshot',
       script: { path: path.resolve(scriptPath), sha256: scriptHash }, build_result: evidenceBuildResult, files,
       ...(expert ? {work_unit_ids:Object.keys(state.work_units || {}), capture_scope:'current_project', requested_views:requestedViews} : {}),
@@ -1622,7 +1736,7 @@ class ManagedProjects {
         await this.saveState(state);
         operationPersisted = true;
         ruby = this.rubyCall('execute_step_with_receipt', [state.project_id, phase.name, continuationTarget, scriptPath.replaceAll('\\', '/'), JSON.stringify(state.projection_brief || {}), operation.operation_id, JSON.stringify(operationContext)]);
-        return bridge('run_ruby', { code: ruby, file: scriptPath, operation_id: operation.operation_id }, input.timeout_ms || 120000);
+        return bridge('run_ruby', { code: ruby, file: scriptPath, operation_id: operation.operation_id }, input.timeout_ms || suOperationTimeout());
       });
     } catch (error) {
       if (!operationPersisted) throw error;
@@ -1706,7 +1820,13 @@ class ManagedProjects {
     try {
       validateCurrentOutput(state, phase, buildResult);
       let evidence;
-      try { evidenceStage = 'evidence'; evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult); }
+      try {
+        evidenceStage = 'evidence';
+        const evidenceOptions = ['replication', 'variants', 'facade_detail'].includes(phase.name)
+          ? { views: ['reference', 'perspective', 'front', 'side'] }
+          : {};
+        evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult, evidenceOptions);
+      }
       catch (e) { e.capturePending = !!state.pending_evidence; throw e; }
       evidenceStage = 'validation';
       const audit = JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8'));
@@ -1813,7 +1933,10 @@ class ManagedProjects {
       if (await hashFile(execution.script_path) !== execution.script_hash) throw this.stateError('RECOVERY_SCRIPT_CHANGED', 'Recorded build source changed; do not replay it');
       const phase = executionPlan(state)[state.step_index];
       if (!phase || phase.name !== execution.phase) throw this.stateError('RECOVERY_PHASE_MISMATCH', 'Receipt phase does not match current project');
-      const evidence = await this.automaticEvidence(state, phase.name, execution.script_path, execution.script_hash, bridge, execution.build_result);
+      const evidenceOptions = ['replication', 'variants', 'facade_detail'].includes(phase.name)
+        ? { views: ['reference', 'perspective', 'front', 'side'] }
+        : {};
+      const evidence = await this.automaticEvidence(state, phase.name, execution.script_path, execution.script_hash, bridge, execution.build_result, evidenceOptions);
       try {
         validateCurrentOutput(state,phase,execution.build_result);
         const audit=JSON.parse(await fs.readFile(evidence.files.audit.path,'utf8'));
@@ -1834,8 +1957,8 @@ class ManagedProjects {
       const auditPath = path.join(dir, 'after-audit.json');
       const referencePath = path.join(dir, 'after-reference.png');
       try {
-        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
-        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
+        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
+        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
         if (!fsSync.existsSync(referencePath) || (await fs.stat(referencePath)).size <= 0) throw this.stateError('PATCH_EVIDENCE_CAPTURE_FAILED', 'Patch evidence retry did not deliver a nonzero visual file');
         const evidence = await this.writeEvidence(state, { schema_version: 1, evidence_id: `patch_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: state.project_id, phase: recovery.phase, record_type: 'patch_applied', created_at: new Date().toISOString(), patch_preview_id: recovery.patch_id, target_semantic_id: recovery.target_semantic_id, scope: recovery.scope, change: recovery.change, reason: recovery.reason, scene_revision: recovery.applied_scene_revision, model_binding: current, files: { audit: await fileEvidence(auditPath), reference: await fileEvidence(referencePath) }, visual: 'unverified' });
         const operation = (state.operation_journal || []).find((item) => item.operation_id === state.transaction_result.operation_id);
@@ -1862,8 +1985,37 @@ class ManagedProjects {
       await fs.mkdir(dir, { recursive: true });
       const auditPath = path.join(dir, 'final-audit.json');
       const referencePath = path.join(dir, 'final-reference.png');
-      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
-      const audit = JSON.parse(await fs.readFile(auditPath, 'utf8'));
+      // A reopened, byte-verified checkpoint with no unsaved edits has the
+      // geometry in its sealed audit. Reuse those machine measurements rather
+      // than making SU recursively expand every component twice just to
+      // recapture camera-dependent images. This path is never used for a
+      // changed document or an ordinary continuation recapture.
+      let sealedClean = false;
+      let cleanCheckpoint = null;
+      if (state.recapture_exact && state.recapture_basis && state.last_checkpoint?.path) {
+        const sealed = await this.verifyEvidence(state, state.last_checkpoint.evidence_id, null, {restoringCheckpoint:true});
+        const checkpointFile = sealed.record.files?.checkpoint;
+        if (checkpointFile && path.resolve(checkpointFile.path) === path.resolve(state.last_checkpoint.path)
+            && await hashFile(checkpointFile.path) === checkpointFile.sha256) {
+          const clean = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('clean_checkpoint_identity', []), file: this.helperPath }, suOperationTimeout()));
+          sealedClean = clean.modified === false && sameModelBinding(clean.identity, current)
+            && path.resolve(clean.identity?.path || '').toLowerCase() === path.resolve(checkpointFile.path).toLowerCase();
+          if (sealedClean) cleanCheckpoint = checkpointFile;
+        }
+      }
+      let audit;
+      if (sealedClean) {
+        await verifyEvidenceFiles({basis:state.recapture_basis});
+        audit = JSON.parse(await fs.readFile(state.recapture_basis.path,'utf8'));
+        audit.model = current;
+        audit.camera = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('camera_state', []), file: this.helperPath }, suOperationTimeout()));
+        for (const subject of audit.projection_subjects || []) delete subject.screen_bbox_normalized;
+        audit.created_at = new Date().toISOString();
+        await fs.writeFile(auditPath,JSON.stringify(audit,null,2));
+      } else {
+        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
+        audit = JSON.parse(await fs.readFile(auditPath, 'utf8'));
+      }
       validateAuditReadback(audit);
       const recapturePlan = executionPlan(state);
       const phase = state.recapture_phase || recapturePlan[Math.min(state.step_index,recapturePlan.length-1)]?.name || state.phase;
@@ -1874,18 +2026,26 @@ class ManagedProjects {
           if (checkpointContent(basis) !== checkpointContent(audit)) throw this.stateError('RECAPTURE_SCOPE_CONFLICT','Restored scene changed before recapture');
         } else assertRecaptureScope(basis,audit,phase);
       }
-      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
+      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [state.project_id, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
       if (!fsSync.existsSync(referencePath) || (await fs.stat(referencePath)).size <= 0) throw this.stateError('EVIDENCE_CAPTURE_FAILED', 'Final recapture did not deliver a nonzero visual file');
       const isFinal = state.step_index >= executionPlan(state).length;
       const files = {audit:await fileEvidence(auditPath),reference:await fileEvidence(referencePath)};
-      const geometry = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_geometry_views',[state.project_id,phase,dir.replaceAll('\\','/')]),file:this.helperPath},120000));
+      const geometry = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_geometry_views',[state.project_id,phase,dir.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
       for (const view of geometry.views || []) files['geometry_'+view.label] = await fileEvidence(view.path);
       if (['archetypes','facade_detail'].includes(phase)) {
-        const detail = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall(phase==='archetypes'?'capture_archetype_views':'capture_detail_views',[state.project_id,dir.replaceAll('\\','/')]),file:this.helperPath},120000));
+        const detail = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall(phase==='archetypes'?'capture_archetype_views':'capture_detail_views',[state.project_id,dir.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
         for (const [i,file] of (detail.paths || []).entries()) files['detail_'+i] = await fileEvidence(file);
       }
       const afterPath = path.join(dir,'post-capture-audit.json');
-      parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,afterPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+      if (sealedClean) {
+        if (await hashFile(cleanCheckpoint.path) !== cleanCheckpoint.sha256) throw this.stateError('EVIDENCE_MODEL_CHANGED','Sealed checkpoint changed during recapture');
+        const afterClean = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('clean_checkpoint_identity', []), file: this.helperPath }, suOperationTimeout()));
+        if (afterClean.modified !== false || !sameModelBinding(afterClean.identity,current)) throw this.stateError('EVIDENCE_MODEL_CHANGED','Document changed during recapture');
+        const afterAudit = {...audit,camera:parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('camera_state',[]),file:this.helperPath}, suOperationTimeout()))};
+        await fs.writeFile(afterPath,JSON.stringify(afterAudit,null,2));
+      } else {
+        parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,afterPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
+      }
       if (auditContent(audit) !== auditContent(JSON.parse(await fs.readFile(afterPath,'utf8')))) throw this.stateError('EVIDENCE_MODEL_CHANGED','Scene or camera changed during recapture');
       const currentPhase = !isFinal && state.recapture_return_status !== 'ready_for_step';
       const evidence = await this.writeEvidence(state, { schema_version: 1, evidence_id: `recapture_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: state.project_id, phase: isFinal ? 'finish' : phase, record_type: isFinal ? 'final_recapture' : currentPhase ? 'phase_evidence' : 'continuation_recapture', created_at: new Date().toISOString(), scene_revision: Number(state.scene_revision || 0), model_binding: current, files, visual: 'unverified', geometry_readback: 'unverified', missing_machine_inputs:['geometry_measurements','geometry_dependencies'], note:'Fresh audit and views only; historical geometric measurements were not relabelled.' });
@@ -1916,18 +2076,33 @@ class ManagedProjects {
     const phase=executionPlan(state)[state.step_index];
     if(phase.name!==pending.phase) throw new Error('Pending phase mismatch');
     const livePath=path.join(this.projectDir(state.project_id),'retry-live-audit.json');
-    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,livePath.replaceAll('\\','/')]),file:this.helperPath},120000));
-    const live=JSON.parse(await fs.readFile(livePath,'utf8'));const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
+    const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
+    // Compare like with like: the frozen pre-capture audit is compact. A full
+    // retry audit may add a cached geometry_summary even when the opened SKP
+    // has not changed, causing a false geometry mismatch.
+    const auditArgs=[state.project_id,livePath.replaceAll('\\','/')];
+    if(prior.audit_detail==='compact') auditArgs.push('compact');
+    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',auditArgs),file:this.helperPath}, suOperationTimeout()));
+    const live=JSON.parse(await fs.readFile(livePath,'utf8'));
     if (pending.consistency_retry) {
-      // The initial capture itself observed a scene transition. Permit only the
-      // existing mutable-phase recapture route; protected content remains exact.
-      assertRecaptureScope(prior, live, phase.name);
+      // Compact evidence deliberately omits the recursive protection digest.
+      // It still gives a bounded root readback; a changed root must be
+      // recaptured, while the strict protected-scope comparison remains for
+      // full recovery evidence.
+      if (prior.audit_detail === 'compact') {
+        if (canonical(live.root) !== canonical(prior.root)) throw this.stateError('EVIDENCE_MODEL_CHANGED', 'Live geometry changed since pending capture; refusing automatic approval');
+      } else assertRecaptureScope(prior, live, phase.name);
     } else if(canonical(live.root)!==canonical(prior.root)) {
       throw new Error('Live geometry changed since pending capture; refusing automatic approval');
     }
     validateCurrentOutput(state,phase,pending.build_result);
     let evidence;
-    try { evidence=await this.automaticEvidence(state,phase.name,pending.script_path,pending.script_hash,bridge,pending.build_result); }
+    try {
+      const evidenceOptions = ['replication', 'variants', 'facade_detail'].includes(phase.name)
+        ? { views: ['reference', 'perspective', 'front', 'side'] }
+        : {};
+      evidence=await this.automaticEvidence(state,phase.name,pending.script_path,pending.script_hash,bridge,pending.build_result,evidenceOptions);
+    }
     catch(error) { if(state.status==='recovery_required') throw error; state.status='evidence_pending';state.evidence_error=error.message;await this.saveState(state);throw new Error(`取证仍未完成：${error.message}。下一步只能调 sketchup_project_retry_evidence；禁止重放建模。`); }
     const audit=JSON.parse(await fs.readFile(evidence.files.audit.path,'utf8'));
     try {
@@ -1970,6 +2145,18 @@ class ManagedProjects {
         state.recovery_recapture_required=true; state.current_review=null;
         await this.saveState(state); throw error;
       }
+      // A routine compact audit is intentionally not a protected-scene proof.
+      // Do not manufacture a scope comparison from missing fields; preserve
+      // the model and require a fresh evidence capture instead.
+      if (error.recordedAudit?.audit_detail === 'compact') {
+        state.recapture_phase = phase;
+        state.recapture_return_status = 'review_required';
+        state.recapture_basis = sealedEvidence.record.files.audit;
+        state.recovery_recapture_required = true;
+        await this.saveState(state);
+        error.message += '; call sketchup_project_retry_evidence, then review the new evidence_id';
+        throw error;
+      }
       assertRecaptureScope(error.recordedAudit, error.liveAudit, phase);
       if (input.verdict !== 'revise') {
         state.recapture_phase = phase;
@@ -1990,6 +2177,9 @@ class ManagedProjects {
     const finalReview = ['final_recapture','continuation_recapture'].includes(sealedEvidence.record.record_type);
     const phase = patchReview ? { name: patchReview.phase, hint: 'Inspect the patch result and continue the existing managed phase.' } : finalReview ? { name: sealedEvidence.record.phase, hint: 'Review the fresh evidence before continuing.' } : phasePlan[state.step_index];
     if (!phase) throw new Error('No review phase is bound to the current project state');
+    if (!patchReview && !finalReview && sealedEvidence.record.phase && sealedEvidence.record.phase !== phase.name) throw this.stateError('EVIDENCE_PHASE_MISMATCH', `Evidence belongs to ${sealedEvidence.record.phase}, while the current project phase is ${phase.name}`);
+    const duplicateReview = (state.quality_reviews || []).some(item => item.phase === phase.name && item.evidence_id === input.evidence_id);
+    if (duplicateReview && verdict === 'continue') return { ok: true, project_id: state.project_id, phase: state.phase, status: state.status, idempotent: true, next_action: state.status === 'ready_for_step' ? 'Continue with the current phase using sketchup_project_step.' : 'Inspect the current project state before the next action.' };
     if (!['continue', 'revise'].includes(verdict)) throw new Error("verdict must be 'continue' or 'revise'");
     if (verdict === 'continue' && state.validation_failed) {
       const error = this.stateError('VALIDATION_FAILED', `The latest evidence failed ${state.validation_failed.kind || 'phase'} validation; revise the phase before continue`);
@@ -2174,7 +2364,7 @@ class ManagedProjects {
     try {
       parseManagedResult(await this.dispatchAuxiliaryWrite(state, 'save_copy', [state.project_id,checkpointPath.replaceAll('\\','/')], bridge));
       if (!fsSync.existsSync(checkpointPath) || (await fs.stat(checkpointPath)).size <= 0) throw new Error('Revision checkpoint did not produce a nonzero SKP.');
-      parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+      parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
       if (!fsSync.existsSync(auditPath) || (await fs.stat(auditPath)).size <= 0) throw new Error('Revision audit was not written.');
       const removalOrder = [...affected].reverse();
       const removal = parseManagedResult(await this.dispatchAuxiliaryWrite(state, 'remove_phases', [state.project_id,JSON.stringify(removalOrder)], bridge, {purpose:'upstream_revision',affected,targetIndex,targetName,reason,revisionId,checkpointPath,auditPath}));
@@ -2231,7 +2421,7 @@ class ManagedProjects {
     if (!targetPhase) throw Object.assign(new Error('PATCH_PHASE_REQUIRED'), { code: 'PATCH_PHASE_REQUIRED' });
     if (action === 'preview') {
       const binding = await this.assertModelBinding(state, bridge);
-      const target = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, 120000));
+      const target = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, suOperationTimeout()));
       const baseStateRevision = Number(state.state_revision || 0);
       const previewId = crypto.createHash('sha256').update(canonical({ project_id: projectId, base_state_revision: baseStateRevision, target_semantic_id: targetSemanticId, target_phase: targetPhase, scope, change, reason, protected_objects: Array.isArray(input.preserve_semantic_ids) ? input.preserve_semantic_ids.map(String) : [], target_fingerprint: target.target_fingerprint })).digest('hex');
       const preview = { schema_version: 1, preview_id: previewId, project_id: projectId, base_state_revision: baseStateRevision, target_phase: targetPhase, target_semantic_id: targetSemanticId, scope, change, reason, model_binding: binding, target, protected_objects: Array.isArray(input.preserve_semantic_ids) ? input.preserve_semantic_ids.map(String) : [], invalidated_evidence_ids: state.last_evidence_id ? [state.last_evidence_id] : [], write_set: { target_semantic_ids: [targetSemanticId], operation: 'instance_transform', definition_scope: 'instance' }, recovery_strategy: 'restore the recorded local transformation only after target fingerprint and state revision still match', created_at: new Date().toISOString() };
@@ -2254,7 +2444,7 @@ class ManagedProjects {
       const binding = await this.assertModelBinding(fresh, bridge);
       const unresolved = await this.unresolvedDocumentOperation(binding, projectId);
       if (unresolved) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `The bound SketchUp document has an unresolved write for project ${unresolved.project_id}; no patch write is permitted`);
-      const current = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, 120000));
+      const current = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, suOperationTimeout()));
       if (current.target_fingerprint !== preview.target.target_fingerprint) throw Object.assign(new Error('Patch target changed after preview; no write was attempted'), { code: 'PATCH_TARGET_CHANGED' });
       const operation = { operation_id: crypto.randomUUID(), kind: 'patch', project_id: projectId, target_semantic_id: targetSemanticId, scope, preview_id: previewId, dispatched_at: new Date().toISOString(), status: 'dispatched' };
       fresh.operation_journal = [...(Array.isArray(fresh.operation_journal) ? fresh.operation_journal : []), operation];
@@ -2263,7 +2453,7 @@ class ManagedProjects {
       await this.saveState(fresh);
       let applied;
       try {
-        applied = parseManagedResult(await this.withDocumentWriteLock(binding, () => bridge('run_ruby', { code: this.rubyCall('patch_apply', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, 120000)));
+        applied = parseManagedResult(await this.withDocumentWriteLock(binding, () => bridge('run_ruby', { code: this.rubyCall('patch_apply', [projectId, targetSemanticId, scope, JSON.stringify(change)]), file: this.helperPath }, suOperationTimeout())));
         operation.status = 'completed';
         operation.result = applied;
       } catch (error) {
@@ -2285,8 +2475,8 @@ class ManagedProjects {
       const referencePath = path.join(this.projectDir(projectId), 'patch-previews', `${previewId}-after-reference.png`);
       let evidence;
       try {
-        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [projectId, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
-        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [projectId, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
+        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [projectId, auditPath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
+        parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('capture_reference', [projectId, referencePath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
         if (!fsSync.existsSync(referencePath) || (await fs.stat(referencePath)).size <= 0) throw this.stateError('PATCH_EVIDENCE_CAPTURE_FAILED', 'Patch committed but no nonzero visual evidence was delivered; preserve the result and retry evidence before review');
         evidence = await this.writeEvidence(fresh, { schema_version: 1, evidence_id: `patch_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: projectId, phase: targetPhase, record_type: 'patch_applied', created_at: new Date().toISOString(), patch_preview_id: previewId, target_semantic_id: targetSemanticId, scope, change, reason, base_state_revision: preview.base_state_revision, scene_revision: revision, model_binding: binding, files: { audit: await fileEvidence(auditPath), reference: await fileEvidence(referencePath) }, target_before: applied.target_before, target_after: applied.target_after, visual: 'unverified' });
       } catch (error) {
@@ -2323,7 +2513,7 @@ class ManagedProjects {
       await this.assertModelBinding(fresh, bridge);
       const unresolved = await this.unresolvedDocumentOperation(fresh.model_binding || { path: fresh.model_path, object_id: null }, projectId);
       if (unresolved) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `The bound SketchUp document has an unresolved write for project ${unresolved.project_id}; no rollback write is permitted`);
-      const current = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, patch.target_semantic_id, patch.scope, JSON.stringify({ translation_mm: [0, 0, 0] })]), file: this.helperPath }, 120000));
+      const current = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('patch_preview', [projectId, patch.target_semantic_id, patch.scope, JSON.stringify({ translation_mm: [0, 0, 0] })]), file: this.helperPath }, suOperationTimeout()));
       if (current.target_fingerprint !== patch.after_target_fingerprint) throw Object.assign(new Error('Patch target changed after apply; rollback refused'), { code: 'PATCH_ROLLBACK_TARGET_CHANGED' });
       const result = parseManagedResult(await this.dispatchAuxiliaryWrite(fresh, 'patch_rollback', [projectId, patch.target_semantic_id, patch.scope, patch.original_transform], bridge));
       const rollbackEvidence = await this.writeEvidence(fresh, { schema_version: 1, evidence_id: `patch_rollback_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: projectId, phase: patch.phase, record_type: 'patch_rolled_back', created_at: new Date().toISOString(), patch_id: patchId, target_semantic_id: patch.target_semantic_id, target_after_rollback: result.target_after, visual: 'unverified' });
@@ -2356,7 +2546,7 @@ class ManagedProjects {
     const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
     if (!isExpert(state) && state.mode === 'single_image' && state.source_camera) {
       const restoreCode = this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]);
-      const restored = await bridge('run_ruby', { code: restoreCode, file: this.helperPath }, 120000);
+      const restored = await bridge('run_ruby', { code: restoreCode, file: this.helperPath }, suOperationTimeout());
       parseManagedResult(restored);
     }
     const outputPath = path.resolve(input.output_path || state.pending_delivery?.model?.path || path.join(state.output_directory, `${state.project_id}.skp`));
@@ -2383,7 +2573,7 @@ class ManagedProjects {
     const preflightAuditPath = path.join(this.projectDir(state.project_id), `final-preflight-audit-${process.pid}-${Date.now()}.json`);
     let preflightAudit;
     try {
-      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, preflightAuditPath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
+      parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, preflightAuditPath.replaceAll('\\', '/'), 'compact']), file: this.helperPath }, suOperationTimeout()));
       preflightAudit = JSON.parse(await fs.readFile(preflightAuditPath, 'utf8'));
       validateFinalAudit(state, preflightAudit, plannedNames);
     } finally {
@@ -2440,7 +2630,7 @@ class ManagedProjects {
     await fs.mkdir(finalDir, { recursive: true });
     const auditOutput = path.join(finalDir, 'final-audit.json');
     const previewPath = path.join(finalDir, 'final-preview.png');
-    const auditBridge = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditOutput.replaceAll('\\', '/')]), file: this.helperPath }, 120000);
+    const auditBridge = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, auditOutput.replaceAll('\\', '/'), 'compact']), file: this.helperPath }, suOperationTimeout());
     parseManagedResult(auditBridge);
     const savedAudit = JSON.parse(await fs.readFile(auditOutput,'utf8'));
     validateFinalAudit(state,savedAudit,plannedNames);
@@ -2463,11 +2653,11 @@ class ManagedProjects {
       }
     }
     if (!capturedFinal) {
-      const previewBridge = await bridge('run_ruby', {code:this.rubyCall('capture_reference',[state.project_id,previewPath.replaceAll('\\','/')]),file:this.helperPath},120000);
+      const previewBridge = await bridge('run_ruby', {code:this.rubyCall('capture_reference',[state.project_id,previewPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout());
       parseManagedResult(previewBridge);
     }
     const postCapture = path.join(finalDir,'post-capture-audit.json');
-    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,postCapture.replaceAll('\\','/')]),file:this.helperPath},120000));
+    parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,postCapture.replaceAll('\\','/'),'compact']),file:this.helperPath}, suOperationTimeout()));
     if (auditContent(savedAudit)!==auditContent(JSON.parse(await fs.readFile(postCapture,'utf8')))) {
       state.delivery_candidates=[...(state.delivery_candidates||[]),{model:await fileEvidence(outputPath),reason:'scene_changed_during_delivery_capture'}];
       delete state.pending_delivery;
@@ -2479,7 +2669,7 @@ class ManagedProjects {
     const record = {
       schema_version: 1, evidence_id: evidenceId, project_id: state.project_id, phase: 'final', created_at: new Date().toISOString(),
       quality_review_history: state.quality_reviews || [], quality_history_scope: 'Recorded since quality-review v1; absent earlier phases remain unverified',
-      source: state.source, model: await fileEvidence(outputPath), audit: await fileEvidence(auditOutput), preview: await fileEvidence(previewPath), save_result: save,
+      source: state.source, sources: state.sources || (state.source ? [state.source] : []), model: await fileEvidence(outputPath), audit: await fileEvidence(auditOutput), preview: await fileEvidence(previewPath), save_result: save,
       ...(pendingMigration ? {delivery_recovery:{operation_id:pending.operation_id,strategy:pending.save_result.strategy,path_migrated:true,model_binding_before:pending.model_binding_before,model_binding_after:pending.model_binding_after,approved_evidence_id:pending.approved_evidence_id}} : {}),
       readback: { status: 'save_copy_verified_nonzero', active_model: activeAfterSave, note: 'The copy is byte/hash verified; automatic reopen is intentionally avoided because opening another file can trigger a dirty-model modal.' },
     };
@@ -2492,7 +2682,7 @@ class ManagedProjects {
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
     const history=Array.isArray(state.quality_reviews)?state.quality_reviews:[];
-    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:qualityReviewSummary(state), ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
+    return { ok: true, project_id: state.project_id, status: state.status, output_path: outputPath, evidence_id: evidenceId, evidence_path: saved.path, evidence_index:{final:evidenceId,path:saved.path,source:record.source?.sha256||null,sources:(record.sources||[]).map(item=>item.sha256),model:record.model?.sha256||null,audit:record.audit?.sha256||null}, quality_review_summary:qualityReviewSummary(state), ...(input.detail===true?{quality_review_history:history}:{}), geometry_readback: 'unverified' };
   }
 
   async abortPendingEvidence(input, bridge) {
@@ -2510,7 +2700,7 @@ class ManagedProjects {
       if (!pending.checkpoint || !pending.audit) throw this.stateError('ABORT_PENDING_BASIS_MISSING', 'A verified checkpoint and frozen audit are required');
       await verifyEvidenceFiles({checkpoint: pending.checkpoint, audit: pending.audit});
       const livePath = path.join(this.projectDir(state.project_id), 'withdraw-live-' + crypto.randomUUID() + '.json');
-      parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,livePath.replaceAll('\\','/')]),file:this.helperPath},120000));
+      parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,livePath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
       const live = JSON.parse(await fs.readFile(livePath,'utf8'));
       const prior = JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
       validateAuditReadback(live); validateAuditReadback(prior);
@@ -2559,7 +2749,7 @@ class ManagedProjects {
       current_model: currentModel,
       model_error: modelError,
       can_retry_write: false,
-      allowed_actions: checkpoint ? (state.transaction_result?.commit_unconfirmed || state.transaction_result?.rollback_unconfirmed || state.transaction_result?.result_unknown || state.status === 'recovery_required' ? ['inspect', 'reconcile'] : ['inspect', 'reconcile', 'restore']) : state.operation_journal?.length ? ['inspect', 'reconcile'] : ['inspect'],
+      allowed_actions: checkpoint ? (state.transaction_result?.commit_unconfirmed || state.transaction_result?.rollback_unconfirmed || state.transaction_result?.result_unknown || state.status === 'recovery_required' ? ['inspect', 'reconcile', 'restore_checkpoint_after_lost_geometry'] : ['inspect', 'reconcile', 'restore']) : state.operation_journal?.length ? ['inspect', 'reconcile'] : ['inspect'],
       next_action: checkpoint ? 'Reconcile the current readback or open the exact recorded checkpoint before restore; do not replay geometry.' : 'Inspect the bridge and operation record; no write retry is safe yet.',
     };
   }
@@ -2586,7 +2776,7 @@ class ManagedProjects {
       return;
     }
     if(!result.post_action_audit) throw this.stateError('RECOVERY_AUDIT_MISSING','Deletion receipt lacks actual post-action readback');
-    const live=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('deletion_readback',[state.project_id]),file:this.helperPath},120000));validateAuditReadback(live);
+    const live=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('deletion_readback',[state.project_id]),file:this.helperPath}, suOperationTimeout()));validateAuditReadback(live);
     if(auditContent(live)!==auditContent(result.post_action_audit))throw this.stateError('RECOVERY_SCENE_CHANGED','Scene changed after deletion; preserve the receipt and inspect');
     const affected=operation.kind==='remove_phase'?[operation.arguments[1]]:context.affected;
     if(!Array.isArray(affected)||!affected.length)throw this.stateError('RECOVERY_CONTEXT_MISSING','Deletion has no recorded continuation context');
@@ -2628,13 +2818,40 @@ class ManagedProjects {
       // projection returned by the public tool.
       const receiptResult = await this.operationReceipt({ project_id: state.project_id, operation_id: unresolved.operation_id, detail: true }, bridge);
       const receipt = receiptResult.receipt;
+      let restoredCheckpoint = false;
+      let receiptCurrent = null;
       if (receipt?.found) {
         const request = receipt.receipt?.request;
-        const current = await this.assertModelBinding(state, bridge);
+        // Read the live identity before receipt matching. A save_copy receipt
+        // is precisely the migration boundary from the old active document
+        // to its sealed checkpoint; asserting the old binding first would
+        // reject the only document that can prove that migration.
+        const current = receiptCurrent = await this.modelIdentity(bridge);
         const receiptResult = receipt.receipt?.result;
         const directBinding = sameModelBinding(request?.model_binding, current);
         const migratedBinding = unresolved.kind === 'save_copy' && verifiedSaveCopyMigration(request, receiptResult, current, unresolved.arguments?.[1]);
-        if (!request || request.operation_id !== unresolved.operation_id || request.project_id !== state.project_id || (!directBinding && !migratedBinding) || (unresolved.script_hash && request.script_sha256 !== unresolved.script_hash) || (unresolved.request && canonical(request)!==canonical(unresolved.request))) {
+        // A confirmed failed geometry transaction may be reconciled from the
+        // exact, unchanged checkpoint sealed before that attempt. Its old
+        // process object_id is expected to differ after SketchUp restarts.
+        if (!directBinding && unresolved.kind === 'geometry_step' && receipt.receipt?.status === 'completed'
+          && receiptResult?.ok === false && receiptResult?.rollback_confirmed === true) {
+          const checkpoint = state.last_checkpoint;
+          if (checkpoint?.path && checkpoint?.evidence_id
+            && path.resolve(current.path || '').toLowerCase() === path.resolve(checkpoint.path).toLowerCase()
+            && sameModelBinding(request?.model_binding, state.model_binding)) {
+            const sealed = await this.verifyEvidenceIdentity(state, checkpoint.evidence_id, { verifyFiles: true });
+            const file = sealed.record.files?.checkpoint;
+            if (file?.path && path.resolve(file.path).toLowerCase() === path.resolve(checkpoint.path).toLowerCase()
+              && await hashFile(checkpoint.path) === file.sha256) {
+              const clean = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('clean_checkpoint_identity', []), file: this.helperPath }, suOperationTimeout()));
+              restoredCheckpoint = clean.modified === false && sameModelBinding(clean.identity, current);
+            }
+          }
+        }
+        const pendingArtifact = unresolved.kind === 'save_copy' && receipt.receipt?.status === 'started'
+          ? await verifiedPendingSaveCopyArtifact(request, current, unresolved.arguments?.[1])
+          : null;
+        if (!request || request.operation_id !== unresolved.operation_id || request.project_id !== state.project_id || (!directBinding && !migratedBinding && !pendingArtifact && !restoredCheckpoint) || (unresolved.script_hash && request.script_sha256 !== unresolved.script_hash) || (unresolved.request && canonical(request)!==canonical(unresolved.request))) {
           throw this.stateError('RECOVERY_RECEIPT_MISMATCH', 'Receipt identity, input hash or current document does not match the recorded operation; no write is unlocked');
         }
         const result = receipt.receipt?.result;
@@ -2643,12 +2860,17 @@ class ManagedProjects {
           if (receipt.commit_marker !== marker) throw this.stateError('RECOVERY_COMMIT_MARKER_MISMATCH', 'Receipt has no matching commit marker in the active model; preserve the unresolved result');
         }
       }
-      if (receipt?.found && receipt.receipt?.status === 'completed') {
-        const outcome = receipt.receipt.result;
+      const verifiedStartedSave = receipt?.found && receipt.receipt?.status === 'started' && unresolved.kind === 'save_copy'
+        ? await verifiedPendingSaveCopyArtifact(receipt.receipt?.request, await this.modelIdentity(bridge), unresolved.arguments?.[1])
+        : null;
+      if (receipt?.found && (receipt.receipt?.status === 'completed' || verifiedStartedSave)) {
+        const outcome = verifiedStartedSave || receipt.receipt.result;
         if (outcome?.ok !== true) {
-          if (!outcome || outcome.commit_unconfirmed || outcome.rollback_unconfirmed || !(outcome.transaction_started === false || (outcome.rollback_confirmed === true && outcome.rollback_fingerprint && outcome.rollback_fingerprint===receipt.current_rollback_fingerprint))) throw this.stateError('RECOVERY_RESULT_UNCERTAIN', 'The completed receipt contains an unconfirmed transaction result');
+          if (!outcome || outcome.commit_unconfirmed || outcome.rollback_unconfirmed || !(outcome.transaction_started === false || (outcome.rollback_confirmed === true && outcome.rollback_fingerprint && (outcome.rollback_fingerprint===receipt.current_rollback_fingerprint || restoredCheckpoint)))) throw this.stateError('RECOVERY_RESULT_UNCERTAIN', 'The completed receipt contains an unconfirmed transaction result');
           unresolved.status = 'failed_confirmed';
           state.status = unresolved.prior_status || 'ready_for_step';
+          if (restoredCheckpoint) state.model_binding = receiptCurrent;
+          delete state.pending_execution;
           state.transaction_result = outcome;
           delete state.recovery_error;
           await this.saveState(state);
@@ -2656,6 +2878,7 @@ class ManagedProjects {
         }
         unresolved.status = 'result_known';
         unresolved.result = receipt.receipt.result || null;
+        if (verifiedStartedSave) unresolved.result = outcome;
         unresolved.completed_at = new Date().toISOString();
         state.transaction_result = { code: 'RESULT_KNOWN', operation_id: unresolved.operation_id, result: unresolved.result, resolution: 'committed' };
         state.recovery_resolution = { resolved_at: new Date().toISOString(), result: 'committed_receipt', operation_id: unresolved.operation_id };
@@ -2695,7 +2918,7 @@ class ManagedProjects {
     if (bound.path && path.resolve(current.path || '').toLowerCase() !== path.resolve(bound.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Current SketchUp document does not match the recovery binding');
     if (bound.object_id !== undefined && bound.object_id !== null && Number(current.object_id) !== Number(bound.object_id)) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Current SketchUp model session does not match the recovery binding');
     const livePath = path.join(this.projectDir(state.project_id), 'reconcile-live-audit.json');
-    parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, livePath.replaceAll('\\', '/')]), file: this.helperPath }, 120000));
+    parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, livePath.replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout()));
     const live = JSON.parse(await fs.readFile(livePath, 'utf8'));
     const prior = JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
     const sameRoot = canonical(live.root) === canonical(prior.root);
@@ -2709,10 +2932,84 @@ class ManagedProjects {
     return this.withProjectLock(safeId(input.project_id), async () => this.withActions(await this._recoverUnlocked(input, bridge), input.project_id));
   }
 
+  // A geometry receipt can be completed by SketchUp after the client has
+  // timed out, while the user later reopens the older sealed checkpoint.  In
+  // that case the receipt proves what was attempted, but it does not prove
+  // that the completed geometry is present in the reopened file.  Keep the
+  // receipt as historical evidence, explicitly record that the active model
+  // was restored to the pre-operation checkpoint, and permit a new operation
+  // with a new id.  This is deliberately separate from normal reconciliation
+  // and never replays or silently marks the old geometry as present.
+  async restoreCheckpointAfterLostGeometry(input, bridge) {
+    const projectId = safeId(input.project_id);
+    const state = await this.loadState(projectId);
+    if (!['recovery_required', 'step_in_progress'].includes(state.status) && !(state.status === 'ready_for_step' && state.recovery_resolution?.result === 'checkpoint_restored')) throw this.stateError('RECOVERY_NOT_REQUIRED', 'Checkpoint restoration is only available while recovery is required or a dispatched write is unresolved');
+    if (input.acknowledge_lost_commit !== true) throw this.stateError('RECOVERY_CONFIRMATION_REQUIRED', 'Explicitly acknowledge that the completed geometry receipt is not present in the reopened checkpoint');
+    const unresolved = (Array.isArray(state.operation_journal) ? state.operation_journal : []).find((item) => ['result_unknown', 'dispatched'].includes(item.status));
+    if (!unresolved && state.recovery_resolution?.result === 'checkpoint_restored') {
+      const checkpoint = state.last_checkpoint;
+      if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING', 'No sealed checkpoint is available');
+      const current = await this.modelIdentity(bridge);
+      if (!current?.path || path.resolve(current.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Open the exact sealed checkpoint before reviewing its restored state');
+      state.model_binding = current;
+      state.model_path = current.path;
+      const checkpointIndex = (state.phase_plan || []).findIndex(item => item.name === checkpoint.phase);
+      const nextIndex = checkpointIndex >= 0 ? checkpointIndex + 1 : state.step_index;
+      state.quality_reviews = (state.quality_reviews || []).filter(item => {
+        const index = (state.phase_plan || []).findIndex(candidate => candidate.name === item.phase);
+        return index < 0 || checkpointIndex < 0 || index <= checkpointIndex;
+      });
+      state.step_index = nextIndex;
+      state.phase = nextIndex >= (state.phase_plan || []).length ? 'complete' : state.phase_plan[nextIndex].name;
+      state.status = nextIndex >= (state.phase_plan || []).length ? 'ready_to_finish' : 'ready_for_step';
+      delete state.recovery_error;
+      await this.saveState(state);
+      return { ok: true, project_id: projectId, status: state.status, restored: true, restored_checkpoint: checkpoint.path, next_phase: state.phase, next_action: state.status === 'ready_for_step' ? 'The sealed checkpoint was already reviewed; continue with a new managed step for the next phase.' : 'The sealed checkpoint covers the final phase; inspect and finish.' };
+    }
+    if (!unresolved || unresolved.kind !== 'geometry_step') throw this.stateError('RECOVERY_KIND_UNSUPPORTED', 'No unresolved geometry operation can be restored from a checkpoint');
+    const checkpoint = state.last_checkpoint;
+    if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING', 'No sealed checkpoint is available');
+    const evidence = await this.verifyEvidenceIdentity(state, checkpoint.evidence_id, { verifyFiles: true });
+    const sealedCheckpoint = evidence.record.files?.checkpoint;
+    if (!sealedCheckpoint?.path || path.resolve(sealedCheckpoint.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_CHECKPOINT_UNSEALED', 'Checkpoint does not match the sealed evidence');
+    if (await hashFile(checkpoint.path) !== sealedCheckpoint.sha256) throw this.stateError('RECOVERY_CHECKPOINT_CHANGED', 'Checkpoint hash changed; restoration remains blocked');
+    const current = await this.modelIdentity(bridge);
+    if (!current?.path || path.resolve(current.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Open the exact sealed checkpoint before restoring its pre-operation state');
+    const receiptResult = await this.operationReceipt({ project_id: projectId, operation_id: unresolved.operation_id, detail: true }, bridge);
+    const receipt = receiptResult.receipt;
+    const receiptStatus = String(receipt?.receipt?.status || '').toLowerCase();
+    if (!receipt?.found || !['completed', 'started'].includes(receiptStatus) || (receiptStatus === 'completed' && receipt.receipt?.result?.ok !== true)) throw this.stateError('RECOVERY_RECEIPT_REQUIRED', 'A matching started or completed geometry receipt is required before recording a checkpoint restoration');
+    const request = receipt.receipt.request;
+    if (!request || request.operation_id !== unresolved.operation_id || request.project_id !== projectId || unresolved.script_hash && request.script_sha256 !== unresolved.script_hash) throw this.stateError('RECOVERY_RECEIPT_MISMATCH', 'Completed receipt does not match the unresolved operation');
+    const priorPhase = unresolved.prior_status === 'ready_for_step' ? (state.last_checkpoint.phase || state.phase) : state.phase;
+    unresolved.status = 'superseded_checkpoint_restore';
+    unresolved.resolution = 'completed_receipt_not_present_in_reopened_checkpoint';
+    unresolved.resolved_at = new Date().toISOString();
+    state.transaction_result = { code: 'CHECKPOINT_RESTORED', operation_id: unresolved.operation_id, resolution: 'checkpoint_restored', completed_receipt_preserved: receiptStatus === 'completed', started_receipt_preserved: receiptStatus === 'started', geometry_present_in_active_document: false };
+    state.recovery_resolution = { resolved_at: new Date().toISOString(), result: 'checkpoint_restored', operation_id: unresolved.operation_id };
+    const checkpointIndex = (state.phase_plan || []).findIndex(item => item.name === checkpoint.phase);
+    const nextIndex = checkpointIndex >= 0 ? checkpointIndex + 1 : (Number.isInteger(state.last_checkpoint.step_index) ? state.last_checkpoint.step_index + 1 : 0);
+    state.quality_reviews = (state.quality_reviews || []).filter(item => {
+      const index = (state.phase_plan || []).findIndex(candidate => candidate.name === item.phase);
+      return index < 0 || checkpointIndex < 0 || index <= checkpointIndex;
+    });
+    state.step_index = nextIndex;
+    state.phase = nextIndex >= (state.phase_plan || []).length ? 'complete' : state.phase_plan[nextIndex].name;
+    state.status = nextIndex >= (state.phase_plan || []).length ? 'ready_to_finish' : 'ready_for_step';
+    state.model_binding = current;
+    state.model_path = current.path;
+    delete state.recovery_error;
+    delete state.pending_execution;
+    state.history_gaps = [...(state.history_gaps || []), { operation_id: unresolved.operation_id, kind: 'geometry_step', reason: 'completed receipt refers to geometry absent from reopened sealed checkpoint', recorded_at: new Date().toISOString() }];
+    await this.saveState(state);
+    return { ok: true, project_id: projectId, status: state.status, restored: true, restored_checkpoint: checkpoint.path, next_phase: state.phase, operation_id: unresolved.operation_id, old_geometry_replayed: false, completed_receipt_preserved: receiptStatus === 'completed', started_receipt_preserved: receiptStatus === 'started', next_action: state.status === 'ready_for_step' ? 'The sealed checkpoint was already reviewed; submit a new managed step with a new operation_id for the next phase.' : 'Inspect the sealed checkpoint and finish.' };
+  }
+
   async _recoverUnlocked(input, bridge) {
     const action = input.action || 'restore';
     if (action === 'abort_pending') return this.abortPendingEvidence(input, bridge);
-    if (!['inspect', 'reconcile', 'restore'].includes(action)) throw this.stateError('RECOVERY_ACTION_INVALID', 'Recovery action must be inspect, reconcile, or restore');
+    if (action === 'restore_checkpoint_after_lost_geometry') return this.restoreCheckpointAfterLostGeometry(input, bridge);
+    if (!['inspect', 'reconcile', 'restore'].includes(action)) throw this.stateError('RECOVERY_ACTION_INVALID', 'Recovery action must be inspect, reconcile, restore, or restore_checkpoint_after_lost_geometry');
     if (action === 'inspect') return this.recoveryInspect(input, bridge);
     if (action === 'reconcile') return this.recoveryReconcile(input, bridge);
     const state = await this.loadState(safeId(input.project_id));
@@ -2731,28 +3028,44 @@ class ManagedProjects {
     if (index < 0 || (state.status === 'ready_for_step' && state.step_index !== index + 1) || (state.status === 'review_required' && state.step_index !== index)) throw new Error('Checkpoint phase does not match current review/continuation state');
     const current = await this.modelIdentity(bridge);
     if (path.resolve(current.path || '').toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw new Error('Open the exact recorded checkpoint before recovery');
-    const liveResponse = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, path.join(this.projectDir(state.project_id), 'recovery-live-audit.json').replaceAll('\\', '/')]), file: this.helperPath }, 120000);
-    parseManagedResult(liveResponse);
-    const live = JSON.parse(await fs.readFile(path.join(this.projectDir(state.project_id), 'recovery-live-audit.json'), 'utf8'));
-    const old = JSON.parse(await fs.readFile(sealed.record.files.audit.path, 'utf8'));
-    validateAuditReadback(live);
-    validateAuditReadback(old);
-    if (checkpointContent(live) !== checkpointContent(old)) throw new Error('Loaded checkpoint content does not match sealed phase audit');
+    // The exact checkpoint bytes were verified above. If SketchUp confirms
+    // that same file is open and unmodified, the loaded scene is the sealed
+    // checkpoint; avoid recursively re-reading every face of a large model.
+    // Any unsaved change keeps the original full audit comparison path.
+    const clean = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('clean_checkpoint_identity', []), file: this.helperPath }, suOperationTimeout()));
+    const cleanCheckpoint = clean.modified === false && sameModelBinding(clean.identity, current)
+      && path.resolve(clean.identity?.path || '').toLowerCase() === path.resolve(checkpoint.path).toLowerCase();
+    if (!cleanCheckpoint) {
+      const liveResponse = await bridge('run_ruby', { code: this.rubyCall('export_project_audit', [state.project_id, path.join(this.projectDir(state.project_id), 'recovery-live-audit.json').replaceAll('\\', '/')]), file: this.helperPath }, suOperationTimeout());
+      parseManagedResult(liveResponse);
+      const live = JSON.parse(await fs.readFile(path.join(this.projectDir(state.project_id), 'recovery-live-audit.json'), 'utf8'));
+      const old = JSON.parse(await fs.readFile(sealed.record.files.audit.path, 'utf8'));
+      validateAuditReadback(live);
+      validateAuditReadback(old);
+      if (checkpointContent(live) !== checkpointContent(old)) throw new Error('Loaded checkpoint content does not match sealed phase audit');
+    }
     const returnStatus = state.status;
     state.model_binding = current;
-    state.recovery_recapture_required = true;
-    state.recapture_phase = checkpoint.phase;
-    state.recapture_return_status = returnStatus;
-    state.recapture_basis = sealed.record.files.audit;
-    state.recapture_exact = true;
-    state.status = 'review_required';
+    state.recovery_recapture_required = !cleanCheckpoint;
+    if (!cleanCheckpoint) {
+      state.recapture_phase = checkpoint.phase;
+      state.recapture_return_status = returnStatus;
+      state.recapture_basis = sealed.record.files.audit;
+      state.recapture_exact = true;
+    } else {
+      delete state.recapture_phase;
+      delete state.recapture_return_status;
+      delete state.recapture_basis;
+      delete state.recapture_exact;
+    }
+    state.status = cleanCheckpoint ? returnStatus : 'review_required';
     delete state.pending_evidence;
     const priorEvidenceId = state.last_evidence_id;
     await this.writeEvidence(state, { schema_version: 1, evidence_id: `recovery_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`, project_id: state.project_id, record_type: 'checkpoint_recovery', created_at: new Date().toISOString(), checkpoint: file, phase: checkpoint.phase, status_preserved: state.status });
     state.last_evidence_id = priorEvidenceId;
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, status: state.status, phase: state.phase, recovered_checkpoint: checkpoint.path, model_binding: current, next_action: 'Call sketchup_project_retry_evidence and review the new evidence_id; the continuation index is preserved.' };
+    return { ok: true, project_id: state.project_id, status: state.status, phase: state.phase, recovered_checkpoint: checkpoint.path, model_binding: current, verification: cleanCheckpoint ? 'sealed_file_hash_and_clean_open_document' : 'full_live_audit', next_action: cleanCheckpoint ? (returnStatus === 'review_required' ? 'Inspect and review the existing sealed evidence for this exact unchanged checkpoint; no geometry or image was relabelled.' : 'Continue at the recorded next phase; the sealed checkpoint and accepted evidence were retained.') : 'Call sketchup_project_retry_evidence and review the new evidence_id; the continuation index is preserved.' };
   }
 
   async readDimensionEvidence(state, record) {
@@ -2781,7 +3094,7 @@ class ManagedProjects {
       if (path.resolve(binding.path || '').toLowerCase() !== path.resolve(pending.checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH','Open the exact frozen checkpoint before recovering incomplete evidence.');
       const auditPath=path.join(this.projectDir(state.project_id),'pending-restore-audit-'+crypto.randomUUID()+'.json');
       try {
-        parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+        parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
         const live=JSON.parse(await fs.readFile(auditPath,'utf8'));
         const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
         validateAuditReadback(live); validateAuditReadback(prior);
@@ -2814,7 +3127,7 @@ class ManagedProjects {
       if (uncertain) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', 'The opened document has an unresolved write.');
       const auditPath = path.join(this.projectDir(state.project_id), 'restore-audit-' + crypto.randomUUID() + '.json');
       try {
-        parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath},120000));
+        parseManagedResult(await bridge('run_ruby', {code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
         const live = JSON.parse(await fs.readFile(auditPath, 'utf8'));
         const prior = JSON.parse(await fs.readFile(auditFile.path, 'utf8'));
         validateAuditReadback(live); validateAuditReadback(prior);
@@ -2880,7 +3193,7 @@ class ManagedProjects {
     if (!journal) throw this.stateError('OPERATION_NOT_FOUND', 'No operation with this ID is recorded for the project');
     let receipt = null;
     try {
-      receipt = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('operation_receipt', [projectId, operationId]), file: this.helperPath }, 30000));
+      receipt = parseManagedResult(await bridge('run_ruby', { code: this.rubyCall('operation_receipt', [projectId, operationId]), file: this.helperPath }, suOperationTimeout()));
     } catch (error) {
       receipt = { ok: false, code: error.code || 'RECEIPT_UNAVAILABLE', message: String(error.message || error) };
     }

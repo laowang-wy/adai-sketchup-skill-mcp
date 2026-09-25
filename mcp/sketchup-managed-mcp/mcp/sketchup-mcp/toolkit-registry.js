@@ -174,6 +174,50 @@ async function resolveMethodBinding(app, methodFamily){
  const candidate=registered[0]||found.map(p=>({id:p.manifest.id,version:p.manifest.version,fingerprint:p.fingerprint,method_family:p.manifest.method_family||null,origin:'bundled'})).find(p=>p.method_family===family);
  return candidate?{id:candidate.id,version:candidate.version,fingerprint:candidate.fingerprint,method_family:family,origin:candidate.origin}:null;
 }
+
+// Read the small, immutable method catalogue from an already discovered
+// toolkit.  This is deliberately read-only: it never executes the package or
+// changes the registry.  The returned data is a compact discovery surface;
+// presets and full cards remain available through the existing toolkit entry.
+async function readConstructionCatalog(app, binding){
+ if(!binding||!idOK(binding.id))return null;
+ const discovered=await bundled(),registered=await records(app),registeredRecord=registered.packages[binding.id];
+ let candidate=registeredRecord ? {...registeredRecord,root:path.join(store(app),binding.id),origin:'registered'} : discovered.packages.find(p=>p.manifest.id===binding.id);
+ if(!candidate) return null;
+ let root=path.resolve(candidate.root),snap=await snapshot(root);
+ if(binding.fingerprint&&snap.fingerprint!==binding.fingerprint){
+  const historical=(registered.history?.[binding.id]||[]).find(item=>item.fingerprint===binding.fingerprint);
+  if(!historical)throw Object.assign(new Error('TOOLKIT_VERSION_LOCK_MISMATCH'),{code:'TOOLKIT_VERSION_LOCK_MISMATCH',toolkit_id:binding.id});
+  root=path.resolve(historical.root);snap=await snapshot(root);
+ }
+ const read=async rel=>{
+  const target=path.resolve(root,rel);
+  if(!within(root,target)||!snap.files[rel])return null;
+  try{return JSON.parse(await fs.readFile(target,'utf8'));}catch(_){return null;}
+ };
+ const manifest=snap.manifest,caps=await read('v4/capabilities.json'),route=await read('experience/cards/roof-routing.json');
+ const candidates=[];
+ for(const [methodId,info] of Object.entries(caps?.roof_types||{})){
+  if(!idOK(methodId)||info?.executable!==true)continue;
+  const preset=await read(`v4/presets/${methodId}.json`);
+  if(!preset||preset.schema_version!==4||preset.roof_type!==methodId)continue;
+  const routeMethod=route?.methods?.[methodId]||{};
+  candidates.push({
+   method_id:methodId,
+   label:String(info.label||methodId),
+   selection_basis:String(routeMethod.selection_basis||routeMethod.recognize||info.current_visual_scope||'适用于当前来源特征的可执行屋壳；请按屋脊、坡面和檐角关系选择。'),
+   recognize:routeMethod.recognize||null,
+   construct:routeMethod.construct||null,
+   key_parameters:Array.isArray(routeMethod.key_parameters)?routeMethod.key_parameters:Object.keys(preset).filter(k=>!['schema_version','roof_type'].includes(k)),
+   common_errors:routeMethod.common_errors||[],
+   inspect:routeMethod.inspect||null,
+   if_failed:routeMethod.if_failed||null,
+   parameter_names:Object.keys(preset),
+   executable:true,
+  });
+ }
+ return {experience_pack:{id:manifest.id,version:manifest.version,fingerprint:snap.fingerprint},units:caps?.units||null,dimensions:caps?.dimensions||null,candidates,actions:Object.keys(manifest.actions||{}).filter(k=>['preset','validate','compile'].includes(k))};
+}
 const queues=new Map();
 function serial(app,fn){const old=queues.get(app)||Promise.resolve();const next=old.catch(()=>{}).then(fn);queues.set(app,next);return next.finally(()=>{if(queues.get(app)===next)queues.delete(app);});}
 async function withToolkitLock(app,toolkitId,operation){
@@ -347,4 +391,4 @@ async function toolkitTool(input,app){
   try{const result=JSON.parse(stdout.replace(/^\uFEFF/,''));resolve({...result,toolkit:{id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint},scope:'offline tool operation; no managed SketchUp execution'});}catch{resolve({ok:false,error:'INVALID_TOOLKIT_JSON'});}
  });p.stdin.on('error',()=>{});p.stdin.end(JSON.stringify({...args,...(output?{output_directory:output}:{}),action:input.operation}));});
 }
-module.exports={toolkitTool,snapshot,resolveMethodBinding,officialStatus};
+module.exports={toolkitTool,snapshot,resolveMethodBinding,readConstructionCatalog,officialStatus};
