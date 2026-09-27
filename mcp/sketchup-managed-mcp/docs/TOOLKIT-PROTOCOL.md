@@ -22,4 +22,4 @@ REF包内可放rules.json，例：{"schema_version":1,"rules":[{"id":"roof.main-
 读取REF可传expected_fingerprint=此前match返回的content_sha256，版本变化时拒绝静默读取。它是单次调用锁定，尚无全项目自动锁文件和依赖求解器。
 
 ## 标准经验包开发
-新增developer-kit/pack_tool.py提供scaffold/check/package；规范见../developer-kit/EXPERIENCE-PACK-SPEC.md。古建0.4.0采用同一experience-pack.json格式，REF与工具仍经各自接口安装。现有纯工具包保持兼容；规范检查是发布前静态检查，不替代MCP代码信任和SU验收。
+联合经验集合由 experience-pack.json 关联 REF 与可执行 toolkit；随包示例见 ../toolkits/ancient-architecture/experience-pack.json。REF 与工具仍经各自接口安装，版本分别维护；代码信任、指纹和真实 SU 验证沿用对应入口。

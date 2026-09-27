@@ -1,6 +1,7 @@
 {
-  "build_id": "0.5.37-framing-shared-parameters-20260928",
-  "source_baseline": "65f405368d2958f8520bb8bf091527b5a6805f6e",
-  "source_digest": "08000d41b322143ffc4de18284effddb45c4c483ace9c7d9f6c963aa249a54c1",
+  "version": "0.5.37",
+  "build_id": "0.5.37-framing-shared-parameters-20260928-docs-r1",
+  "source_baseline": "470ba28d24e401d599f5ae722eaecc7d1aaa6994",
+  "source_digest": "89855348cd0daceeef015b7c71c24757bb696529f03af1311c605428ca44d62a",
   "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

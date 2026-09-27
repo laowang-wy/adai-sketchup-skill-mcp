@@ -1,12 +1,17 @@
-# 版本与能力
+# 版本与验证范围
 
-开发基线2019。本 build 在 SU2019 19.0.685 / Ruby2.5.1 上执行了工程实体与审查、恢复、保存、重开编辑测试；详细范围见内嵌 Skill 的 references/verification-0.5.27-r3.md。SU2018、新机器、建筑来源质量和模型对照仍为 not_run。2024/2025记录为planned_not_implemented；更高或未知版本返回adaptation_required。
+当前主包为 **0.5.37**；构建见 [BUILD.json](../BUILD.json)，本构建与先前验证的关系见 [RELEASE.md](../RELEASE.md)。主包版本、古建工具版本、REF 版本分别维护。
 
-runtime capabilities读取版本适配目录，status检查用户明确提供的lnk或SketchUp.exe，不搜索猜版本。支持目录不是通过证明。新版本需逐项回归：进程与桥接、Ruby生成与读回、原生/回退截图、保存及重开、源解析SDK。
+| 环境或能力 | 当前范围 |
+|---|---|
+| Windows / SketchUp 2019 / Ruby 2.5.1 | 0.5.37 功能构建完成定向构造、取景、保存与公开入口重开；不等于全部参数和建筑来源质量通过 |
+| SketchUp 2018 | 在适配目录中，本轮真机 not_run |
+| SketchUp 2024/2025 | planned_not_implemented |
+| 其他 SU 版本或第二台机器 | 需独立适配与验证，不能沿用 SU2019 的结论 |
+| 独立强弱模型表现、token/费用收益 | 本轮 not_run |
 
-自主/引导是当前任务的辅助偏好：新项目默认 `guided`；用户首条非空行精确选择后，由 Skill 通过 begin 的 `assistance_mode` 或 `task_text` 转交，MCP 校验并保存。旧 `auto` 解析为 `guided`。全局 `SKETCHUP_ASSISTANCE_MODE` 不再为新任务选择专家模式；模型品牌仅用于诊断。错误结果从项目状态读取模式，guided 额外返回参数和纠错步骤；autonomous 保留失败码、关键约束和完整指导入口。质量、保护、事务、未知结果和正式工具权限一致。宿主原始用户输入真实性验证为 not_run。
+`sketchup_runtime` 的能力目录说明已声明支持范围；`startup/status` 核对用户指定程序及实际实例，目录存在不等于验收通过。
 
-已有模型局部修改走refinement。无可复用构件的新任务可在task_profile声明repetition=none并提供至少20字符的来源理由，阶段省略archetypes和replication，保留主形、必要屋面剖面、一次性细部和最终审查。该声明是任务依据，不能冒充机器已经证明没有重复件。
+新任务默认 guided，完整专家口令选择 autonomous；保存后的项目沿用自己的策略。参数与操作说明见随包 [Skill](../runtime-support/professional-sketchup-modeling/SKILL.md)、[引导操作](../runtime-support/professional-sketchup-modeling/references/guided-operation.md)及[专家操作](../runtime-support/professional-sketchup-modeling/references/expert-operation.md)。两种模式共用来源判断、文档/对象保护、事务、回执和未知结果恢复。
 
-任意任务仍不可用“强模型”跳过结果审查。完全自定义阶段计划、通用几何接触证明、独立视觉判断、所有包依赖自动求解尚未实现。
-
+局部修改用现有 `step(operation_intent=update)`；无重复系统时可用 `task_profile.repetition=none` 表达任务范围。实际状态、可用动作和历史项目兼容以保存策略及工具返回为准。

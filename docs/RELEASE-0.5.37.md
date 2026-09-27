@@ -1,5 +1,15 @@
 # 0.5.37：通用构造示例与取景改进
 
+## 当前说明修订
+
+构建 `0.5.37-framing-shared-parameters-20260928-docs-r1`，基线 `main@470ba28`。运行源码指纹 `89855348cd0daceeef015b7c71c24757bb696529f03af1311c605428ca44d62a`。当前下载指向本修订，原 `v0.5.37` 标签、功能构建 ZIP 与校验值保留。
+
+统一 README、安装、兼容性与包内说明；移除把旧阶段门槛、旧截图后端及旧验证范围写成当前规则的内容。安装助手原来写死 0.5.29，会拒绝 0.5.37；现从随包 BUILD.json 读取产品版本，仍拒绝不匹配版本。主 Skill、建模代码、桥接与古建算法不变。
+
+本修订 13 项安装/文档定向检查与 13 项发行检查通过：实际复现旧助手错误拒绝，再验证新助手登记、回读、异版拒绝及其他配置保留；核对 20 份修改说明的相对链接、110 个 Skill/runtime 文件及 113 项工具包指纹，并运行解压包公开 MCP 生命周期（SU 传输替身）。不重跑 SU 建模，不新增真机、视觉或模型效果结论。下面的实机结果属于原功能构建。
+
+## 原 0.5.37 功能构建
+
 构建 `0.5.37-framing-shared-parameters-20260928`；基线 `main@65f4053`；运行源码指纹 `08000d41b322143ffc4de18284effddb45c4c483ace9c7d9f6c963aa249a54c1`。
 
 ## 改动
@@ -37,8 +47,8 @@
 
 ## 发行文件
 
-- [Skill ZIP](../dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928.zip)
-- [MCP ZIP](../dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928.zip)
+- [Skill ZIP](../dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928-docs-r1.zip)
+- [MCP ZIP](../dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928-docs-r1.zip)
 - [SHA256 校验表](../SHA256SUMS.txt)
 
 运行包不含开发测试、用户模型、凭据或机器绑定；古建工具包仍为 0.4.6，REF 仍为 1.4.0。现行 CPAL、品牌口令及署名不变。

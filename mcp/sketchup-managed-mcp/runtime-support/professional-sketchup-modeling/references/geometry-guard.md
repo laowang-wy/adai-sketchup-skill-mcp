@@ -1,6 +1,6 @@
-# 公共几何契约（发行版 0.5.27 / 工具 0.4.4 / 核心 0.1.1）
+# 公共几何契约
 
-契约沿用 0.5.6 代码基线；工具与几何核心使用独立版本号。
+主包构建见 BUILD.json；当前古建工具为 0.4.6、公共几何核心为 0.1.1，各自独立版本。以下合同与历史样板记录分开使用；本轮验证范围见 RELEASE.md。
 
 入口分两类：已有屋面配方使用 `sketchup_ancient_tool(action=preset,family=roof,preset_id=...)`，随后以返回参数调用 `validate/compile(family=recipe)`；来源部件或显式 semantic parts 才使用 `action=compile,family=geometry`。parameters包含project_id、phase、source_evidence、task_contract及parts（1..100个唯一semantic_id）。正式编译阶段为massing、roof_profile、archetypes、primary_corrections、facade_detail；refinement是项目mode，不是phase。projection_subjects、archetypes、visible_detail_system、correction_targets 都是可选的追踪信息；适配器会生成受管登记调用，但登记、阶段名和数量不证明形态相符，也不应迫使自定义构造补写调用。真机执行、读回和视觉验收仍未由离线编译证明；须匹配真实当前context。roof_profile可返回roof_control_contract作为构造线索和诊断，缺少该字段不单独判定几何失败，最终以真实读回和视觉审核为准。旧roof/source/bearing/eave/measured只作test/massing诊断入口，不替代实际构造和视觉判断。
 每个part提供role、vertices、faces、topology。closed预期闭合；open_sheet须提供expected_boundary、thickness_mm、offset_direction。host_id、offset_mm、offset_semantics明确宿主与偏移。dependencies声明producer/consumer；contacts声明pair、points_mm、direction、expected_gap_mm、tolerance_mm。详细输入见geometry_tool.py；来源与尺寸不能猜填。
@@ -19,4 +19,4 @@ corridor-corner、corridor-xieshan保留读取，编译因源非流形拒绝，�
 
 瓦片跨折线时，逐点法线跳变会使薄瓦自交。当前以瓦片中心的实际宿主cell法线作为整片固定偏移方向，基底点仍从离散宿主采样；不是每点法向等距层。翼角裁切瓦仍明确使用竖直厚度。宿主边界按1e-6 mm距离容差处理量化误差，并将容差内的负权重夹回真实三角边界，不外推未知区域。
 
-工程修复 R02：阶段来自 MCP contracts/managed-contract.json；Ruby 常量由开发脚本生成并检查。上述 SU2019 记录属于历史基线，本轮合同调整尚未真机验收。
+工程修复 R02：阶段来自 MCP contracts/managed-contract.json；Ruby 常量由开发脚本生成并检查。上述 SU2019 样板记录属于历史基线，不能自动推广为当前构建的全参数或整栋建筑验收。

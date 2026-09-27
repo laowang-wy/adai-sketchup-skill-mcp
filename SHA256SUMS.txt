@@ -22,3 +22,5 @@ cc5ff3a35155c0960d295a4bbba08378225664c7a7f271e48f7caa38a602e013  dist/professio
 477b5bbb3ce8abb35dc42363a1dffe8b0ca9aa64bd1f3eb360ee96605585eb7a  dist/sketchup-managed-mcp-0.5.36-local-update-responsive-20260927-r20.zip
 34a769d100bcc9e24e4de0589310a35f725748b4e7bf160de60c6afa2310cc05  dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928.zip
 49ad390792fa16f362cd64f9078fdf8157c067909d721faebf517633aa94a2d5  dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928.zip
+8d7a584339b941161da12459280d0c449954bdcd8290ae6cfaca2cb7a7ffd963  dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928-docs-r1.zip
+6b5041a3c87e974e71eca12c49f869ce769b5fb79d560df265c8267054c41275  dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928-docs-r1.zip

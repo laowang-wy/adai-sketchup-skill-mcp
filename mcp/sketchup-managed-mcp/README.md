@@ -1,42 +1,34 @@
-# ADAI SketchUp 0.5.29 工程候选
+# ADAI SketchUp Managed MCP
 
-当前发行版为 0.5.29，在 0.5.23 基础上合入状态与并发保护、事务恢复、实际读回与证据校验、保存前审计及正式几何适配器修复。版本改动和验证边界见 RELEASE.md。文中历史实机记录不代表本候选构建已通过实机建模验收。接入参见 runtime-support/professional-sketchup-modeling/references/HOST-ENABLEMENT.md。
+当前产品版本：**0.5.37**。准确构建标识见 [BUILD.json](BUILD.json)，改动与验证边界见 [RELEASE.md](RELEASE.md)。这是面向 PipClaw 与 Codex 的本地 stdio MCP，由 ADAI 开发。
 
-## MCP 功能与接入
+## 安装与启动
 
-独立的 stdio MCP 资产，用于受管 SketchUp 建模、证据、审查、保存、运行时绑定和可插拔 REF。由 ADAI 开发。
+- Windows、Node.js 18+、Python 3.10+；Python 依赖见 `requirements.txt`。
+- SketchUp 2018/2019 列入适配目录；本轮真机验证使用 SU2019，SU2018 与其他版本需分别验证。
+- 宿主使用 `node` 启动本目录 `launch.cjs` 的绝对路径。
+- SketchUp 扩展管理器安装 `mcp/sketchup-mcp/plugin/su_mcp.rbz`；保存工作后重启目标实例。
 
-## 官方入口
+完整步骤见 [INSTALL.md](INSTALL.md)，工具不可见时读 [宿主接入](docs/HOST-ENABLEMENT.md)。`launch.cjs` 默认使用包内 `runtime-support/professional-sketchup-modeling`，不要求另一份 Skill 位于固定目录；显式的 `PIPCLAW_SKILL_ROOT` 才会覆盖此默认值。
 
-- command: `node`
-- args: `["launch.cjs"]`
-- transport: `stdio`
+## 当前建模入口
 
-`launch.cjs` 默认把 `PIPCLAW_SKILL_ROOT` 指向本资产内的 `runtime-support/professional-sketchup-modeling`，因此 MCP 不依赖另一个 Skill 被安装到固定目录。宿主显式提供 `PIPCLAW_SKILL_ROOT` 时才覆盖默认值。
+使用 `sketchup_project_begin/step/review/finish`，按返回的 `task_card.construction_brief` 取得当前方法；状态与恢复从 `sketchup_project_status` 和原操作回执接续。完整主形、真实宿主上的代表构件、复用与细化共用同一专业方法。
 
-## 运行依赖
+guided 使用保存的分步计划；专家以完整口令启用，完成起步的主形和适用代表构件确认后，可连续组织工作单元并合并审核。局部修改使用现有受管 update 路径，保留无关成果。准确用法见随包 [Skill](runtime-support/professional-sketchup-modeling/SKILL.md)。
 
-- Windows
-- Node.js 18 或更高版本
-- Python 3.10+，numpy 1.24+（源样板）；完整依赖见 requirements.txt
-- SketchUp 2018/2019；主要开发环境为 2019
-- 在 SketchUp 扩展管理器安装 `mcp/sketchup-mcp/plugin/su_mcp.rbz`
+## 方法与独立包版本
 
-其它 SketchUp 版本必须适配插件、截图、保存和 Ruby API 后再实测。历史 0.5.6 基线曾验证隔离 SU2019 六类默认屋壳、瓦脊与合成接触样板；离线 MCP 启动和工具发现不等于真实建模验收。
+| 内容 | 当前随附版本 | 用途 |
+|---|---|---|
+| 古建可执行工具包 | 0.4.6 | `sketchup_ancient_tool` 的参数、生成与编译 |
+| 古建经验集合 | 0.4.2 | 工具包内 `experience-pack.json` |
+| 默认古建 REF | 1.4.0 | 首次 REF list 安装到本机 store，按问题读取 |
+| 工具包内历史 REF 副本 | 1.3.0 | 保留来源版本，不与默认 REF 混称 |
+| 公共几何核心 | 0.1.1 | 网格合法性和真实读回 |
 
-## 内置知识库
+它们的版本独立于 MCP。以实际读取路径、版本和指纹确认使用对象；用户已有同 ID 包不会被静默覆盖。旧 REF 中的版本记录不替代当前工具合同。
 
-本 MCP 内置 `adai-ancient-architecture@1.4.0`，由老王开发、ADAI 整理与发布。首次调用 `sketchup_ref(action=list)` 时安装到本机 REF store；后续仍通过 match/read 分页按需读取。它不是独立 Skill，也不改变 MCP 安全策略。
+根据来源特征选择候选方法，需要屋壳时沿 `preset → compile → ruby_file → step` 构造；合法受管 Ruby 同样可用。见 [古建工具指南](toolkits/ancient-architecture/PACKAGE-GUIDE.md) 与 [几何契约](runtime-support/professional-sketchup-modeling/references/geometry-guard.md)。方法可用于相符的现代或古建形体，建筑名称不决定算法。
 
-## 古建工具
-
-sketchup_ancient_tool 可列出12张卡、7份配方、5个来源样板与6类屋面候选，并校验/编译参数。代码随本资产安装在相对目录 toolkits/ancient-architecture，无需素材库盘符或另一份Skill路径。Python 可由宿主设置 SKETCHUP_PYTHON 为明确可执行文件，默认使用 PATH 的 python；运行时不联网安装依赖。
-REF仅是知识，工具资产是可执行代码，两者在本MCP内分开。只有一个主Skill。读取 [古建工具指南](toolkits/ancient-architecture/PACKAGE-GUIDE.md) 了解诊断限制。SDK提取器需显式 SKETCHUP_SDK_DIR，常规生成无需SDK。
-历史 0.5.6 基线的限定小样实机回归记录为通过；完整建筑、全参数和新机器仍需复验。升级不自动覆盖用户同ID经验包；REF list返回升级信息，再明确import overwrite。
-
-## 通用扩展
-
-sketchup_toolkit提供显式信任注册及固定指纹调用。见docs/TOOLKIT-PROTOCOL.md、templates/toolkit-example。许可政策见docs/LICENSING-POLICY-DRAFT.md（未生效）。此版是候选版，不具备竞品硬封禁，也未完成新版SU适配。
-
-公共geometry阶段适配、当前源缺陷及验证边界见 [几何守卫](runtime-support/professional-sketchup-modeling/references/geometry-guard.md)。古建工具0.4.5、几何核心0.1.1。
-
+扩展工具使用 `sketchup_toolkit` 注册和固定指纹调用；见 [工具包协议](docs/TOOLKIT-PROTOCOL.md)。许可与归属见本目录 `LICENSE`、`NOTICE`，新机器和新 SU 版本的验证范围见 [兼容性说明](docs/COMPATIBILITY.md)。

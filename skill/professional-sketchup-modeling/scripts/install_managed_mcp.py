@@ -27,7 +27,7 @@ def package_entry_parents():
     return {str(PACKAGE.parent / "sketchup-managed-mcp"), str(PACKAGE.parent.parent)}
 
 
-VERSION = "0.5.29"
+VERSION = json.loads((PACKAGE / "BUILD.json").read_text(encoding="utf-8-sig"))["version"]
 OWN_SOURCES = ("explicit", "sibling_package", "one_click_layout", "runtime_support_layout", "standard_install_root")
 
 
