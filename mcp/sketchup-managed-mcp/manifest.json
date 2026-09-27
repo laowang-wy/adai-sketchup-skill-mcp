@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.36",
-  "build_id": "0.5.36-audit-live-su2019-20260927-r16",
+  "build_id": "0.5.36-audit-live-su2019-20260927-r17",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",

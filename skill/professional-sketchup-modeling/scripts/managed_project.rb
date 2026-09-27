@@ -191,11 +191,13 @@ module PipClawManagedProject
     []
   end
 
-  def material_signature(material)
+  def material_signature(material, cache = nil)
     return nil unless material
+    signatures = cache && (cache[:material_signatures] ||= {})
+    return signatures[material.object_id] if signatures && signatures.key?(material.object_id)
     texture = material.respond_to?(:texture) && material.texture
     texture_path = texture ? (texture.filename.to_s rescue '') : ''
-    {
+    signature = {
       'name'=>material.display_name.to_s,
       'color'=>(material.color.to_a.map { |value| value.to_f.round(7) } rescue []),
       'alpha'=>(material.alpha.to_f.round(7) rescue nil),
@@ -206,6 +208,8 @@ module PipClawManagedProject
         'height'=>(texture.height.to_i rescue nil)
       } : nil
     }
+    signatures[material.object_id] = signature if signatures
+    signature
   rescue StandardError
     {'name'=>material.to_s}
   end
@@ -227,10 +231,11 @@ module PipClawManagedProject
   # 200k-entity roof makes SketchUp appear hung after an otherwise completed
   # Ruby build.  This digest keeps identity, hierarchy, transforms, bounds,
   # materials and counts while intentionally omitting per-face topology.
-  def fast_boundary_record(entity, excluded_phase = nil, ignore_visibility_pids = nil)
+  def fast_boundary_record(entity, excluded_phase = nil, ignore_visibility_pids = nil, cache = {})
     digest = Digest::SHA256.new
     counts = Hash.new(0)
     root_object_id = entity.object_id
+    ignored = Array(ignore_visibility_pids).map(&:to_s)
     seen = {}
     walk = lambda do |node, depth|
       next unless node && (node.valid? rescue false)
@@ -255,18 +260,20 @@ module PipClawManagedProject
       if node.respond_to?(:transformation)
         fields['transform'] = node.transformation.to_a.map { |v| v.to_f.round(7) } rescue []
       end
-      if node.respond_to?(:material) && node.material
-        fields['material'] = node.material.display_name.to_s rescue ''
-      end
+      fields['appearance'] = appearance_summary(node, cache)
+      fields['locked'] = node.respond_to?(:locked?) ? node.locked? : false
       if node.respond_to?(:definition) && node.definition
         fields['definition_guid'] = node.definition.guid.to_s rescue ''
       end
-      fields['hidden'] = '__managed_visibility__' if Array(ignore_visibility_pids).map(&:to_s).include?(pid.to_s)
+      if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
+        fields['definition_state'] = fast_definition_record(node.definition, cache)
+      end
+      fields['appearance']['hidden'] = '__managed_visibility__' if ignored.include?(pid.to_s)
       digest.update(canonical_json(fields))
       digest.update("\0")
       children = child_entities(node)
-      # Component definitions are represented by guid/transform above. Do not
-      # expand the same roof mesh once per occurrence in the fast path.
+      # Include definition appearance once per unique definition, not once
+      # per instance. A material/tag change need not change the definition GUID.
       children = nil if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
       if children
         list = children.to_a.select { |child| child.valid? rescue false }
@@ -278,6 +285,20 @@ module PipClawManagedProject
     walk.call(entity, 0)
     result_bounds = (excluded_phase && entity.object_id == root_object_id) ? [] : bounds_signature(entity)
     {'digest'=>digest.hexdigest, 'counts'=>counts, 'bounds_inches'=>result_bounds}
+  end
+
+  def fast_definition_record(definition, cache)
+    records = (cache[:boundary_definitions] ||= {})
+    key = definition.object_id
+    return records[key] if records.key?(key)
+    visiting = (cache[:boundary_visiting] ||= {})
+    raise 'CYCLIC_PROTECTED_DEFINITION' if visiting[key]
+    visiting[key] = true
+    begin
+      records[key] = fast_boundary_record(definition, nil, nil, cache)
+    ensure
+      visiting.delete(key)
+    end
   end
 
   # Face-me components legitimately rotate with the camera.  Their placement
@@ -417,11 +438,11 @@ module PipClawManagedProject
     {'complete'=>false, 'digest'=>nil}
   end
 
-  def appearance_summary(entity)
+  def appearance_summary(entity, cache = nil)
     material = entity.respond_to?(:material) ? entity.material : nil
     {
-      'material'=>material_signature(material),
-      'back_material'=>material_signature(entity.respond_to?(:back_material) ? entity.back_material : nil),
+      'material'=>material_signature(material, cache),
+      'back_material'=>material_signature(entity.respond_to?(:back_material) ? entity.back_material : nil, cache),
       'layer'=>(entity.layer.name.to_s rescue nil),
       'layer_visible'=>(entity.layer.visible? rescue nil),
       'hidden'=>(entity.hidden? rescue nil),
@@ -506,9 +527,10 @@ module PipClawManagedProject
     root = root_for(project_id, false)
     external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
     ignored = Array(ignore_visibility_pids).map(&:to_s)
-    records = external_entities.map { |entity| fast_boundary_record(entity, nil, ignored).merge('pid'=>(entity.persistent_id rescue entity.entityID rescue nil), 'type'=>(entity.typename.to_s rescue '')) }
+    cache = {} # One read only; never carried across a write or rollback.
+    records = external_entities.map { |entity| fast_boundary_record(entity, nil, ignored, cache).merge('pid'=>(entity.persistent_id rescue entity.entityID rescue nil), 'type'=>(entity.typename.to_s rescue '')) }
     if root && include_protected_root
-      records << fast_boundary_record(root, mutable_phase, ignored).merge('pid'=>(root.persistent_id rescue root.entityID rescue nil), 'type'=>'managed_root')
+      records << fast_boundary_record(root, mutable_phase, ignored, cache).merge('pid'=>(root.persistent_id rescue root.entityID rescue nil), 'type'=>'managed_root')
     end
     Digest::SHA256.hexdigest(canonical_json({'entities'=>records.sort_by { |record| [record['type'].to_s, record['pid'].to_i, record['digest'].to_s] }, 'mutable_phase'=>mutable_phase.to_s}))
   end
@@ -1243,7 +1265,8 @@ module PipClawManagedProject
     root = root_for(project_id, false)
     marker = root && root.get_attribute(DICT, 'operation_commit_' + operation_id.to_s)
     marker ||= model.get_attribute(DICT, 'operation_commit_' + operation_id.to_s)
-    current_rollback = receipt.dig('result','rollback_confirmed') ? external_fingerprint(project_id, '__no_mutable_phase__') : nil
+    boundary = receipt.dig('result','rollback_fingerprint_mode') == 'boundary_attributes_v2'
+    current_rollback = receipt.dig('result','rollback_confirmed') ? external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, boundary) : nil
     JSON.generate({'ok'=>true, 'found'=>true, 'receipt'=>receipt, 'current_model_binding'=>JSON.parse(model_identity), 'commit_marker'=>marker, 'current_rollback_fingerprint'=>current_rollback})
   end
 
@@ -1504,6 +1527,7 @@ module PipClawManagedProject
         'rollback_unconfirmed'=>rollback_unconfirmed,
         'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert),
         'rollback_fingerprint'=>rollback_baseline,
+        'rollback_fingerprint_mode'=>new_expert ? 'boundary_attributes_v2' : 'full',
         'rollback_error'=>rollback_error
       })
     end

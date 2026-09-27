@@ -1,6 +1,6 @@
 {
-  "build_id": "0.5.36-audit-live-su2019-20260927-r16",
-  "source_baseline": "a57ff2dc853404d09b2eb9a771ce89891b14378c",
-  "source_digest": "53fc230b032eb8cb0240d9959efdce25af7750cbe229cd32859ce10a75536a46",
+  "build_id": "0.5.36-audit-live-su2019-20260927-r17",
+  "source_baseline": "a952090de84ca81a4463a1e45cd924724322e452",
+  "source_digest": "77093d36d6c381ef721b8ce591628dc27ba477f160db548804dc01c262eafb9c",
   "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

@@ -50,6 +50,8 @@ function methodFor(mode,phase,taskText=''){
  if(['massing','source_alignment'].includes(phase) && mode==='cad')return 'cad_primary_form';
  if(phase==='work_unit' && /曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(taskText))return 'curved_contour';
  if(phase==='work_unit' && /修改|修复|move|modify|repair|update/i.test(taskText))return 'local_correction';
+ // Work-unit is an execution container, not a change from CAD to image input.
+ if(mode==='cad' && phase==='work_unit')return 'cad_primary_form';
  return cards.phases[phase]||'image_primary_form';
 }
 function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalog=null){
