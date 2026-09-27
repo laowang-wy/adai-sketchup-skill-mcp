@@ -16,3 +16,5 @@ cd5c7f386aeb2f9b22037e0cacb3fa74bb72be67cb1b185532e90263b2afd9b8  dist\sketchup-
 a6dc85c418b6f905a281134636535d6bed53892d735fde359704b4a0b73b083f  dist\sketchup-managed-mcp-0.5.34-legacy-route-brief-20260924.zip
 34dcd16d8593c255cfe0e7915767a7e90fd22c8f115e21a96a70be97e7a10fc0  dist\professional-sketchup-modeling-0.5.35-real-su-recovery-20260926.zip
 e37873aac3992c70130a653f785fde4a0ed5189873097ad5614128156f7b5835  dist\sketchup-managed-mcp-0.5.35-real-su-recovery-20260926.zip
+7c629df5d6e0fa2ed8ce97805f35f34098d9dbfe9b08077db3573d57359f0eb7  dist/professional-sketchup-modeling-0.5.36-audit-live-su2019-20260927-r16.zip
+a02f57c423885c89f694956ab61dee9d9ef2b28e014cea4944e68ef1791b6211  dist/sketchup-managed-mcp-0.5.36-audit-live-su2019-20260927-r16.zip

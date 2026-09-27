@@ -1,349 +1,214 @@
 {
-  "version": "base-0.4.0",
-  "scope": "construction_guidance_first; review is a consequence, not the primary task",
-  "review_record_fields": [
-    "entity_or_view",
-    "source_constraint",
-    "observation_or_measurement",
-    "evidence_path",
-    "pass_fail_or_unknown",
-    "next_action",
-    "expected",
-    "measured",
-    "units",
-    "affected_dependencies",
-    "suggested_next_inspection"
-  ],
+  "version": "base-0.4.2",
+  "scope": "current executable construction guidance; not a visual certification",
   "phases": {
-    "massing": {
-      "decisions": [
-        "Identify the measured subject, source dimension basis and key unknowns before building the major form.",
-        "Construct the complete primary form before components: overall proportion, main roof volumes, setbacks, silhouette and negative spaces. Compare source views without decorative detail; open floors do not mean a bare structural frame."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "roof_profile": {
-      "decisions": [
-        "Derive one roof prototype from a shared ridge profile, body section, eave curve and corner-lift section before tier replication.",
-        "Use loft, sweep or a shared-boundary mesh; read only the relevant ancient-roof REF sections when needed."
-      ],
-      "evidence_checks": [
-        "Inspect the body section, corner transition, underside and shared seams in fixed views before accepting replication."
-      ],
-      "reject_if": [
-        "The roof is a flat slab, a single frustum, or only raises plan-ring corner points.",
-        "Body and corner prototypes do not share declared control geometry or contain visible open seams."
-      ]
-    },
-    "archetypes": {
-      "decisions": [
-        "Complete the source-required reusable component, its host relationship and critical end conditions before copying.",
-        "State the method boundary; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "replication": {
-      "decisions": [
-        "Use true instances with complete parent transforms; inspect first, middle, last and corner placements.",
-        "If the accepted prototype is wrong, use revise_from instead of redrawing every occurrence."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "variants": {
-      "decisions": [
-        "Read source evidence, use current managed phase variants.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "facade_detail": {
-      "decisions": [
-        "Read source evidence, use current managed phase facade_detail.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved.",
-        "Separate accepted massing from source-visible skin grammar: opaque/open ratio, band rhythm, recess/projection, corners, base and crown. Repair the wrong skin system before materials or decoration."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views against the same source views; compare skin relationships as well as geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence, component counts, or a generic curtain-wall/grid substitute when the source skin grammar is different."
-      ]
-    },
-    "finish": {
-      "decisions": [
-        "Read source evidence, use current managed phase finish.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "source_alignment": {
-      "decisions": [
-        "Read source evidence, use current managed phase source_alignment.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "correction_scope": {
-      "decisions": [
-        "Read source evidence, use current managed phase correction_scope.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "primary_corrections": {
-      "decisions": [
-        "Read source evidence, use current managed phase primary_corrections.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    },
-    "component_cleanup": {
-      "decisions": [
-        "Read source evidence, use current managed phase component_cleanup.",
-        "Use the construction_brief; read one relevant REF section only when the current construction question remains unresolved."
-      ],
-      "evidence_checks": [
-        "Inspect actual returned views; validate applicable geometry/dependencies. Record unknowns honestly."
-      ],
-      "reject_if": [
-        "Known source mismatch or unresolved user defect.",
-        "Claiming quality from file existence or component counts."
-      ]
-    }
-  },
-  "design_philosophy": {
-    "order": [
-      "recognize",
-      "construct",
-      "select_method",
-      "bind_key_parameters",
-      "avoid_common_errors",
-      "inspect",
-      "recover_or_change_method"
-    ],
-    "primary_form_label": "完整主形",
-    "primary_form_definition": "主体 + 定义性屋面 + 退台/收分 + 主要负空间 + 开敞关系",
-    "agent_message": "把经验直接作为当前构造建议返回；不要要求Agent先搜索经验包或填写审核字段。"
+    "massing": "image_primary_form",
+    "source_alignment": "cad_primary_form",
+    "correction_scope": "local_correction",
+    "primary_corrections": "local_correction",
+    "component_cleanup": "local_correction",
+    "archetypes": "representative_component",
+    "replication": "replication",
+    "roof_profile": "curved_contour",
+    "variants": "variants_and_skin",
+    "facade_detail": "variants_and_skin",
+    "finish": "finish",
+    "work_unit": "image_primary_form",
+    "delivery": "delivery"
   },
   "construction_methods": {
     "image_primary_form": {
-      "match": [
-        "source image",
-        "照片",
-        "效果图",
-        "图片"
-      ],
-      "recognize": "程序只能确认这是图像来源；主体、屋面类型、层级退台和开敞关系必须由Agent实际查看图像判断。",
-      "construct": "先从图像提取主体轮廓、相对宽高、主要屋面、退台和负空间，建立完整主形；不先用台基、墙盒或柱网替代来源形体。",
-      "method": {
-        "tool": "agent visual selection",
-        "route": [
-          "inspect source image",
-          "choose a candidate method card",
-          "compile selected method or managed Ruby",
-          "sketchup_project_step"
-        ]
-      },
+      "goal": "建立来源可辨识的完整主形，不是几个盒体，也不是先把全部细节做完。",
       "actions": [
-        "打开并逐张查看用户图片，先写下主体、屋面、退台和开敞空间的直接观察。",
-        "从候选方法中选择最符合图像的屋面/主形方法；不确定时保留两个候选并说明区别。",
-        "按选定方法生成完整主形，再调用 sketchup_project_step；不要先提交台基、墙盒或柱网代理块。"
+        "看来源整体与必要局部，分清主体、轮廓、主要屋盖/曲面、退台、主要开口和开敞空间；先用已知尺度推宽深高与标高，未知作推断。",
+        "在同一局部坐标下构造主体与决定识别度的轮廓。直体用轮廓拉伸，连续形体用截面/共享边界网格；主要屋盖和负空间现在就进入主形。",
+        "用 operations 或受管 Ruby 完成当前主形后提交 step；比较实际正侧/斜视的比例、屋盖、开口与空隙，再修主形，随后做代表构件。"
       ],
-      "key_parameters": [
-        "overall_width_depth_ratio",
-        "tier_setbacks",
-        "roof_profile",
-        "eave_height",
-        "open_space_depth"
-      ],
-      "common_errors": [
-        "仅凭建筑名称猜屋面",
-        "先搭盒体再把屋顶当后续细节",
-        "把程序字段或数量当成形态判断"
-      ],
-      "inspect": "与来源对应的正面、侧面、斜视和关键局部；确认形制后再使用专门屋面卡。",
-      "if_failed": "如果形制仍不确定，保留候选和未知，先补看图或询问关键来源，不要强行选择si_shan。",
-      "selection_basis": "适合来源图尚未给出可靠类型时，先按轮廓、比例、退台和负空间建立完整主形；不把建筑名称当成屋面选择。"
-    },
-    "si_shan": {
-      "match": [
-        "歇山",
-        "xieshan",
-        "xie_shan",
-        "xie-shan"
-      ],
-      "recognize": "正身屋面与山面、侧坡、正脊/垂脊、翼角和檐下开敞共同组成；不能用平板或单一棱锥代替。",
-      "construct": "先按照片确定主体宽深、层间退台和檐底标高，再生成连续歇山屋壳；正身、山面、侧坡、翼角、脊部与开敞廊空间保持真实关系。",
       "method": {
-        "tool": "sketchup_ancient_tool",
-        "preset_id": "si_shan",
-        "route": [
-          "preset(family=roof,preset_id=si_shan)",
-          "compile(family=recipe,parameters=returned_preset,output_directory=<new absolute directory>)",
-          "sketchup_project_step(ruby_file=returned_manifest.ruby_file)"
+        "tool": "sketchup_project_step",
+        "inputs": "operations 或 ruby_file，二选一",
+        "ruby_entry": "PipClawManagedBuild.build(entities, context)",
+        "reference": "references/managed-ruby-api.md"
+      },
+      "key_parameters": [
+        "来源尺度与宽深高比",
+        "各部分标高/退台",
+        "轮廓点和截面",
+        "主要开口及负空间"
+      ],
+      "inspect": "选择能分辨轮廓、进深和空隙的实际视图；先排除镜头和裁切差异，再改几何。",
+      "if_failed": "主形不对先改比例、轮廓或表示方法；无匹配预设时直接使用受管 Ruby，不为解除提示添加占位构件。"
+    },
+    "cad_primary_form": {
+      "goal": "从 CAD 来源单位与坐标构造可编辑墙、洞口和楼板。",
+      "actions": [
+        "读取已授权 CAD 的单位、基点、闭合轮廓、墙厚和门窗位置；仅有平面时把高度作为推断，不编造已标注尺寸。",
+        "按闭合外轮廓及内环组织墙/板。正交墙段可同批 wall → window_frame；斜墙和复杂洞口用局部轮廓 Ruby，再按真实变换定位。",
+        "提交实际墙洞结构，检查墙厚、洞口贯通、房间开敞与框的宿主关系；不要用平面线框宣称已建三维。"
+      ],
+      "method": {
+        "tool": "sketchup_project_step",
+        "operations": [
+          "wall",
+          "window_frame",
+          "mesh"
         ],
-        "validation": "compile内部完成参数验证"
+        "reference": "references/scoped-operations.md",
+        "ruby_reference": "references/ruby-snippets.md"
       },
-      "actions": [
-        "先逐张查看来源图，记录主体宽深比、层间退台、檐底标高、正脊/山面/侧坡、翼角上扬和廊下开敞；先用比例关系，不编造绝对尺寸。",
-        "先调用 sketchup_ancient_tool(action=preset,family=roof,preset_id=si_shan)，用返回参数调整 width/depth/rise/eave_height/setback/corner_lift，使一个代表性屋壳对应来源。",
-        "调用 sketchup_ancient_tool(action=compile,family=recipe,parameters=returned_preset,output_directory=<新的绝对目录>)；compile 已包含参数校验，随后只使用返回的 ruby_file 调用 sketchup_project_step。只根据来源和工具返回的可行范围调整参数，不为了绕过冲突硬改约束。",
-        "step 返回后看正面、侧面、斜视和檐下视图；确认完整主形、屋脊/檐线、翼角、廊下负空间后，再沿同一方法组织其他楼层和构件。",
-        "若来源明显不是歇山，或 si_shan 不能表达关键形体，先说明超出范围，再改用相关方法或受管自定义 Ruby；不得因为省一步而直接写盒体代理。"
-      ],
       "key_parameters": [
-        "width",
-        "depth",
-        "rise",
-        "thickness",
-        "ridge_length",
-        "corner_lift",
-        "eave_height",
-        "gable_span_ratio"
+        "wall: width_mm,height_mm,thickness_mm,origin_mm",
+        "openings: id,x_mm,z_mm,width_mm,height_mm",
+        "window_frame: id,wall,opening,frame_mm,depth_mm,recess_mm"
       ],
-      "common_errors": [
-        "把台基/墙盒/柱网当完整主形",
-        "用任意硬编码比例替代来源比例",
-        "只抬平面角点表示翼角",
-        "先铺瓦或加斗拱掩盖屋壳错误",
-        "corner_lift 与屋壳比例冲突：使用工具返回的可行范围并重新检查翼角，不退回盒体或无依据 Ruby。"
-      ],
-      "inspect": "正面、侧面、斜视和檐下近景；比较总宽深、各层退台、屋脊/檐线、翼角和廊下开敞。",
-      "if_failed": "先调整共享比例或屋壳表示；若来源超出si_shan范围，再查对应REF或使用受管自定义Ruby并说明原因。",
-      "related_methods": [
-        "ancient_corner_lift"
-      ],
-      "agent_action": "按这条顺序直接执行；不要先让Agent自行搜索经验包，也不要把已有 si_shan 路线降级为 generic_ancient_roof。",
-      "selection_basis": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。"
+      "inspect": "对照来源尺寸和局部坐标；查看洞口两侧及墙角，而不只看顶视线条。",
+      "if_failed": "轮廓不闭合先修当前来源轮廓；复杂轮廓换局部拉伸/网格。导入/读 CAD 仍需宿主实际支持，不把图片识别当精确 CAD 测量。"
     },
-    "ancient_corner_lift": {
-      "match": [
-        "翼角",
-        "corner lift",
-        "curved corner"
+    "local_correction": {
+      "goal": "只修用户指定对象与受影响的连接，不重建无关建筑。",
+      "actions": [
+        "在当前项目中定位目标对象/实例路径和宿主，区分单实例、共享定义及人工编辑；确认真实缺陷后选修改范围。",
+        "已有专家工作单元中的受支持对象可用 translate、set_wall_openings、material；改洞口后检查关联框，改单实例不改共享定义。",
+        "需要 Ruby 时在授权容器内修复。guided 的当前阶段是替换写入，typed operations 只引用同批对象；不能拿它当任意既有 SU 对象的通用补丁工具。"
       ],
-      "recognize": "翼角是连续檐线和转角曲率，不是四个平面角点的独立抬高。",
-      "construct": "沿主体檐线建立转角控制站点，与正身檐口共享边界；用连续曲面或局部扫掠接入屋壳。",
       "method": {
-        "tool": "curved_corner / section_sweep",
-        "route": [
-          "reuse the si_shan shell boundary",
-          "compile the corner method",
-          "sketchup_project_step"
-        ]
+        "tool": "sketchup_project_step",
+        "reference": "references/scoped-operations.md",
+        "ruby_reference": "references/managed-ruby-api.md",
+        "operation_intent": "专家受管单元明确选择 update/replace；不要把 create-only 生成器伪装成 update"
       },
-      "actions": [
-        "保留已生成的 si_shan 主屋壳，只提取正身檐线和转角边界。",
-        "用连续转角控制站点生成翼角曲面或 section_sweep，不抬高四个平面角点。",
-        "调用 sketchup_project_step 更新转角，再查看斜视和檐下近景。"
-      ],
       "key_parameters": [
-        "eave_curve",
-        "corner_lift",
-        "corner_station_spacing",
-        "shell_thickness"
+        "目标 entity_path / object id",
+        "受影响宿主与尺寸",
+        "translate.delta_mm 或 openings",
+        "实际操作范围与实例变换"
       ],
-      "common_errors": [
-        "只抬角点",
-        "转角与正身檐线断开",
-        "用厚水平板遮盖接缝"
-      ],
-      "inspect": "斜视和檐下近景检查檐线连续、曲率变化和屋壳接缝。",
-      "if_failed": "保留主屋壳，局部替换转角表示；不要重建整栋或先铺瓦。",
-      "selection_basis": "已确定主屋壳后，用于表达檐角起翘、转角接缝和边界连续；不替代整屋屋面选型。"
+      "inspect": "同时看目标、接口及可能受影响的相邻实例；新读回与原参数回显分开。",
+      "if_failed": "目标不存在、共享范围不明或人工编辑冲突时停在具体对象定位；说明当前工具不支持的编辑，不复制一份重叠模型冒充修改。"
     },
-    "generic_ancient_roof": {
-      "match": [
-        "古建",
-        "楼阁",
-        "塔",
-        "庙",
-        "殿",
-        "pagoda",
-        "temple"
+    "representative_component": {
+      "goal": "在真实宿主位置做可复用代表构件，形体与连接正确后再复制。",
+      "actions": [
+        "按来源选择确有重复的窗组、栏杆、承托或屋面段；先定局部原点、截面、接触点和实例变换。",
+        "在真实宿主处校对母型的基座、出挑终点及净空；直段与转角分别处理局部坐标，形态不同的部位用变体。重复细件先调好一个可编辑母型，保留定义复用后再展开。",
+        "在 definition.entities 构造完整母型，放一个真实实例验证。轮廓件可用 profile_prism；连接不同站点可用 section_sweep。",
+        "检查厚度、凹凸、洞口及承托相接；修母型后再生成相同实例，端部/转角差异另做变体。无重复需求不凑数量。"
       ],
-      "recognize": "先识别屋面类型、层级退台、支承体系和可见开敞空间。",
-      "construct": "先完成完整主形和定义性屋面，再做重复构件；不得用盒体框架代替建筑轮廓。",
       "method": {
-        "tool": "sketchup_ancient_tool",
-        "route": [
-          "preset(family=roof,preset_id=construction_brief 返回的适用屋面)",
-          "compile(family=recipe, parameters=returned_preset)",
-          "sketchup_project_step(ruby_file=returned_manifest.ruby_file)"
+        "tool": "sketchup_project_step",
+        "ruby_entry": "PipClawManagedBuild.build(entities, context)",
+        "helper_file": "references/examples/ruby/ancient-construction-patterns.rb",
+        "helpers": [
+          "ADAIAncientConstructionPatterns.profile_prism(entities,name,profile_xz,y0_mm,y1_mm,material=nil)",
+          "ADAIAncientConstructionPatterns.section_sweep(entities,name,section_xz,x0_mm,x1_mm,y0_mm,y1_mm,z0_mm,z1_mm,material=nil)"
         ],
-        "validation": "compile内部完成参数验证"
+        "operations": "box(component=true) → instance，仅适用于相应形体，不替代复杂母型"
       },
       "key_parameters": [
-        "width",
-        "depth",
-        "rise",
-        "thickness",
-        "eave_height",
-        "setback",
-        "corner_lift"
+        "截面坐标 mm",
+        "真实宿主接触点",
+        "局部轴向与实例变换",
+        "母型与变体边界"
       ],
-      "common_errors": [
-        "先做柱网后补屋顶",
-        "把经验包当作可选阅读",
-        "用细部登记代替形态判断"
-      ],
-      "inspect": "整体正/侧/斜视和最能暴露屋面、檐口、转角的近景。",
-      "if_failed": "回查形制和来源比例，改变构造表示，不通过增加登记或数量过门。",
+      "inspect": "看实际宿主处的近景和背侧接口，不以注册名称判断构件完整。",
+      "if_failed": "接口错先改基准与母型；section_sweep 保持平行截面，不是任意旋转截面的通用放样。"
+    },
+    "replication": {
+      "goal": "复用已检查的母型，保持实例与宿主关系。",
       "actions": [
-        "先识别屋面类型、层级退台、支承体系和可见开敞空间；不确定时保留未知，不猜预设。",
-        "按 construction_brief 返回的适用屋面调用 preset，再用返回参数 compile；没有明确适用预设时改用受管自定义 Ruby并说明原因。",
-        "只使用返回的 ruby_file 调用 sketchup_project_step，随后按来源视角看图。"
+        "由来源的开间/层高或路径推导各实例变换；相同母型共用定义，非等比例变化用变体而非随意拉伸。",
+        "用 definition + add_instance 或 instantiate_archetype；typed instance 只引用当前允许作用域中真实存在的原型。",
+        "比较首尾、中间及存在的转角，发现重复错误先修母型/变换，不逐个复制错误。"
       ],
-      "selection_basis": "来源只支持一般坡屋面或类型尚未确定时，提供可编辑基础屋壳；不冒充歇山、庑殿等专用形制。"
+      "method": {
+        "tool": "sketchup_project_step",
+        "ruby": "entities.add_instance(definition, transform)",
+        "managed_helper": "PipClawManagedProject.instantiate_archetype(phase,entities,root,archetype_id,transform,options)",
+        "reference": "references/managed-ruby-api.md"
+      },
+      "key_parameters": [
+        "prototype / definition",
+        "origin_mm 或 Geom::Transformation",
+        "来源间距与端部条件"
+      ],
+      "inspect": "核对实际节奏、朝向、连接和端部，不用实例数证明相似。",
+      "if_failed": "共同错误修母型；只有一个实例错误时修它的变换或做独立变体。"
+    },
+    "curved_contour": {
+      "goal": "用连续截面和共享边界表达曲线/曲面，而不是用线框或粗平板代替。",
+      "actions": [
+        "确定可见轮廓、截面、路径和边界的局部坐标。等截面构件先轮廓拉伸，平行截面间用 section_sweep；转动截面/双曲面用自定义共享边界网格。",
+        "相邻片使用同一站点与边界采样，显式闭合厚度和端口；轮廓件、承托件与屋壳是不同方法，不混用名称。",
+        "由受管 Ruby 或 mesh(vertices_mm,triangles)提交实体；查看曲率、接缝、厚度和空隙，修改关键控制点后再加密。"
+      ],
+      "method": {
+        "tool": "sketchup_project_step",
+        "helper_file": "references/examples/ruby/ancient-construction-patterns.rb",
+        "helpers": [
+          "ADAIAncientConstructionPatterns.curved_corner(entities,name,stations,section_xz,material=nil)",
+          "ADAIAncientConstructionPatterns.section_sweep(entities,name,section_xz,x0_mm,x1_mm,y0_mm,y1_mm,z0_mm,z1_mm,material=nil)"
+        ],
+        "limits": "这些是 Ruby helper，不是名为 curved_corner / section_sweep 的 MCP 工具；平行截面方法不能冒充任意曲面生成器。"
+      },
+      "key_parameters": [
+        "stations: [[x,y,z],...] mm",
+        "section_xz: [[x,z],...] mm",
+        "共享边界索引/面朝向/厚度"
+      ],
+      "inspect": "检查完整轮廓与接缝近景；几何闭合不代表曲率和来源相符。",
+      "if_failed": "平行截面不能表达转动或双曲形体时换带显式截面方向的自定义网格；让成面失败回到事务，不跳过失败面。"
+    },
+    "variants_and_skin": {
+      "goal": "补足来源中的特殊层、入口、端部和立面层次。",
+      "actions": [
+        "从当前整体找到未覆盖的非重复条件，沿真实宿主补端部、转角、底层和冠部。",
+        "保持已正确的整体关系，按来源调整开敞/实体比例、框深、退进、分带与收口；可复用部分做母型。",
+        "实际看近景及整体轮廓；材质只表达已存在的形体，不掩盖空洞或比例问题。"
+      ],
+      "method": {
+        "tool": "sketchup_project_step",
+        "inputs": "ruby_file 或 operations",
+        "reference": "references/managed-ruby-api.md"
+      },
+      "key_parameters": [
+        "宿主位置",
+        "凹凸深度与厚度",
+        "端部/转角变体",
+        "来源立面节奏"
+      ],
+      "inspect": "检查局部材质前后的真实边界与接触，以及整体空间关系。",
+      "if_failed": "表皮与主体冲突时回到宿主基准修复，不增加一层遮挡。"
+    },
+    "finish": {
+      "goal": "完成当前收尾构造，并检查完整成果。",
+      "actions": [
+        "沿已确认的主形与母型补当前仍缺的连接、入口或收口，保持正确构件；确实没有新几何时让当前 build 返回简短结果即可，无须凑对象。",
+        "用 step 提交当前收尾，再看实际整体与局部并 review；返回 ready_to_finish 后才调用 finish 保存。"
+      ],
+      "method": {
+        "tool": "sketchup_project_step",
+        "inputs": "ruby_file 或 operations",
+        "after_review": "sketchup_project_finish"
+      },
+      "key_parameters": [
+        "当前实际缺口及宿主位置",
+        "当前 evidence_id 与实际观察"
+      ],
+      "inspect": "确认来源符合性与可编辑范围，文件保存重开只有实测后才能报告通过。",
+      "if_failed": "已完成状态不重复保存或循环查 status；未确认保存时查原状态/回执。"
+    },
+    "delivery": {
+      "goal": "保存已经审核的当前成果，交付真实文件和观察结论。",
+      "actions": [
+        "调用 sketchup_project_finish 保存当前成果，核对实际 SKP 路径；如任务要求重开或编辑验证，再在保留原文件的情况下执行。",
+        "说明来源符合范围、可编辑部分、推断与未验证项；finished 后已有交付文件直接交付，不再重复保存。"
+      ],
+      "method": {
+        "tool": "sketchup_project_finish",
+        "inputs": "project_id"
+      },
+      "inspect": "文件可读、来源形态相符及可编辑性分别按实际检查说明。",
+      "if_failed": "保存结果未知时查本次回执；几何仍有缺陷则按当前项目的返修入口继续修改。"
     }
   }
 }

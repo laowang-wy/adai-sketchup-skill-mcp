@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "ancient-architecture",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "author": "老王 / ADAI",
   "license": "See DISTRIBUTION.md and upstream asset terms",
   "runtime": "python",
@@ -32,6 +32,6 @@
     }
   },
   "requires_capabilities": [],
-  "produces": "legacy diagnostic managed Ruby or explicit phase-bound geometry; always requires live review",
+  "produces": "Roof shells, geometry and construction helpers for applicable guided phases or expert work units; visual source review remains separate.",
   "production_ready": false
 }

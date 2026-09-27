@@ -1,6 +1,7 @@
 require 'json'
 require 'digest'
 require 'fileutils'
+require_relative 'viewport_capture'
 
 module PipClawModelAudit
   extend self
@@ -191,7 +192,7 @@ module PipClawModelAudit
     hits = {}
     missing = []
     terms.each do |key, matcher|
-      hit = matcher == true ? true : !!(text =~ matcher)
+      hit = matcher.is_a?(Regexp) ? !!(text =~ matcher) : matcher == true
       hits[key] = hit
       missing << key unless hit
     end
@@ -217,16 +218,17 @@ module PipClawModelAudit
     unless preview_path.to_s.empty?
       FileUtils.mkdir_p(File.dirname(preview_path))
       view = model.active_view
-      view.zoom_extents
-      view.write_image({
-        filename: preview_path, width: 1600, height: 1000, antialias: true,
-        compression: 0.9, transparent: false
-      })
+      ADAIViewportCapture.with_saved_camera(view) do
+        view.zoom_extents
+        ok = ADAIViewportCapture.write(view, preview_path, 1600, 1000)
+        raise 'AUDIT_PREVIEW_FAILED' unless ok && File.file?(preview_path) && File.size(preview_path) > 0
+      end
     end
     {
       'ok' => true, 'output_path' => output_path, 'preview_path' => preview_path,
       'model_path' => model.path.to_s, 'summary' => result['quality_signals'],
-      'counts' => result['counts']
+      'counts' => result['counts'],
+      'preview_pixels' => preview_path.to_s.empty? ? nil : ADAIViewportCapture.image_size(model.active_view, 1600, 1000)
     }
   rescue => error
     {'ok' => false, 'error' => "#{error.class}: #{error.message}", 'backtrace' => error.backtrace}

@@ -6,7 +6,6 @@ const fsSync = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const modelingMethodCards = require('./modeling-method-cards.json');
 const { validateQualityReview, assembleVisualReview, reviewAvailability } = require('./quality-review.js');
 const { resolveAssistanceMode, normalizeAssistanceMode, assistanceGuidance, SKILL_ATTRIBUTION } = require('./agent-profile.js');
 const { execFile } = require('node:child_process');
@@ -123,13 +122,6 @@ function normalizedProfile(value) {
 
   return {topics:[...new Set(topics)],features:[...new Set(features)],roof_route:roofRoute,method_family:methodFamily,omit_phases:omitPhases,repetition,repetition_reason:rationale,required_detail_systems:requiredDetailSystems,dimension_targets:normalizeTargets(profile.dimension_targets)};
 }
-function ancientRoofRoute(profile) {
-  if (profile?.roof_route === 'custom') return false;
-  if (profile?.roof_route === 'ancient_roof') return true;
-  if (profile?.method_family && !['ancient_roof','chinese_ancient_roof','chinese_tower','yellow_crane_tower','yellow_crane'].includes(profile.method_family)) return false;
-  const words=[...(profile?.topics||[]),...(profile?.features||[])].join(' ');
-  return /(古建|楼阁|塔|庙|殿|黄鹤楼|yellow[ _-]?crane|tower|pagoda|temple|chinese[_ -]?ancient|multi[_ -]?tier[_ -]?roof|curved[_ -]?eave|upturned[_ -]?eave)/i.test(words);
-}
 function validateSourceAnalysis(value) {
   if (value === undefined || value === null) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('source_analysis must be an object');
@@ -149,16 +141,15 @@ function validateSourceAnalysis(value) {
   });
   return { analyzer: { provider: String(analyzer.provider || 'unavailable'), status: String(analyzer.status || 'unavailable'), model: String(analyzer.model || '').slice(0,128), ...(analyzer.image_sha256 ? {image_sha256:String(analyzer.image_sha256).toLowerCase()} : {}) }, images: normalizedImages, conflicts: list(value.conflicts || [], 'conflicts', 64) };
 }
-function ancientRoofPresetId(profile) { return modelingGuidance.ancientRoofPresetId(profile); }
+function ancientRoofPresetId(profile, taskText = "") { return modelingGuidance.roofSuggestion(profile, taskText); }
 function inferProfileFromTaskText(profile, taskText) { return modelingGuidance.inferProfile(profile, taskText, normalizedProfile); }
 function constructionBriefFor(profile, taskText = '', mode = '', phase = 'massing', catalog = null) { return modelingGuidance.constructionBriefFor(profile, taskText, mode, phase, catalog); }
-function ancientMethodRoute(profile) { return modelingGuidance.ancientMethodRoute(profile); }
 function ancientRoofRoute(profile) { return modelingGuidance.ancientRoofRoute(profile); }
 function sourceAnalysisHint(value) {
   const images = Array.isArray(value?.images) ? value.images : [];
   return images.flatMap(image => [
     ...(image.visible_facts || []), ...(image.geometry_cues || []),
-    ...(image.spatial_relations || []), ...(image.possible_roof_types || []),
+    ...(image.spatial_relations || []),
   ]).map(String).filter(Boolean).slice(0, 24).join('；');
 }
 function guidanceTaskText(state) {
@@ -166,7 +157,6 @@ function guidanceTaskText(state) {
   const hint = sourceAnalysisHint(state?.source_analysis);
   return hint ? `${task} 来源可见特征：${hint}` : task;
 }
-
 function phasePlanFor(mode, profile) {
   const standard=PHASE_PLANS[mode] || PHASES;
   const base=profile?.repetition==='none' && ['single_image','freeform','cad'].includes(mode) ? standard.filter(p=>!['archetypes','replication'].includes(p.name)) : standard;
@@ -467,29 +457,10 @@ function validateStructureAudit(state, phase, audit) {
   return null;
 }
 
-function phaseTaskCard(phase, mode, taskProfile = {}, constructionCatalog = null, taskText = '') {
-  const method = mode === 'test'
-    ? { version: modelingMethodCards.version, scope: 'diagnostic_only', evidence_checks: ['Validate the requested diagnostic contract; do not invent source-image observations or claim photographic acceptance.'] }
-    : { version: modelingMethodCards.version, scope: modelingMethodCards.scope, review_record_fields: [...modelingMethodCards.review_record_fields], ...JSON.parse(JSON.stringify(modelingMethodCards.phases[phase.name] || {})) };
-  const shared = { quality_review_contract: { version: 1, production_continue_required: mode !== 'test', checks: ['geometry','dependencies'], unverified_requires_reason: true, live_readback: 'unverified' }, phase: phase.name, objective: phase.name === 'massing' ? '完整主形' : phase.hint, method, agent_review: 'Inspect actual returned evidence; record object/view, source constraint, observation and unresolved defects. Continue only when this scale meets the source. A checklist is not approval evidence.' };
-  if (phase.name === 'source_alignment') return { ...shared, required: ['Preserve source units, coordinates, counts, rotation and host relationships; build only source-aligned primary geometry.'], forbidden: ['Invented source dimensions', 'Facade detail before source alignment'] };
-  if (phase.name === 'correction_scope') return { ...shared, required: ['Identify the user-authorized defect, affected entities and target constraints; preserve unrelated geometry.'], forbidden: ['Unrelated rebuilding', 'Invented defect evidence'] };
-  if (phase.name === 'primary_corrections') return { ...shared, required: ['Correct the identified host contacts, dimensions or primary form; verify affected dependencies.'], forbidden: ['Decoration that hides the defect', 'Unrelated changes'] };
-  if (phase.name === 'component_cleanup') return { ...shared, required: ['Repair authorized component hierarchy, definitions, variants and terminations; verify sibling instances.'], forbidden: ['Unintended shared-definition propagation', 'Deleting unrelated objects'] };
-  if (phase.name === 'massing') {
-    const required = mode === 'single_image' ? ['Establish the complete source-related massing: overall proportions, primary roof volumes, tier setbacks and negative spaces before component detail; a floor-and-column frame is not a substitute for the whole form.', 'Use a camera/view that makes the source relationship legible when useful.', 'Build visible primary solids and voids, including source-visible open corridors/recesses.', 'Projection subjects may be registered for comparison, but the registration is not a substitute for looking at the form.'] : ['Build primary solids, voids and source topology.'];
-    if (ancientRoofRoute(taskProfile)) required.push('For an ancient roof, make the ridge, eave, corner lift, shell thickness and open gallery relationships visible in the chosen construction; use a control contract only when the selected method needs one.');
-    const forbidden = ['Premature detail arrays without source justification (necessary multi-roof/faceted primary form is allowed)', 'Facade grids', 'Context used to hide a wrong form'];
-    if (ancientRoofRoute(taskProfile)) forbidden.push('Flat slab or single-frustum roof', 'Corner lift implemented only by raising plan-ring points', 'Solid tower body that fills source-visible galleries/corridors');
-    const route = ancientRoofRoute(taskProfile) ? ancientMethodRoute(taskProfile) : null;
-    return {...shared,required,forbidden,...(route ? {method_route: route, construction_brief: constructionBriefFor(taskProfile, taskText, mode, phase.name, constructionCatalog)} : {})};
-  }
-  if (phase.name === 'roof_profile') return { ...shared, method_route: ancientRoofRoute(taskProfile) ? ancientMethodRoute(taskProfile) : null, required: ['Choose a construction that expresses the source roof profile, underside and corner transition.', 'Build and inspect one representative body section and one corner condition when those conditions exist.', 'Keep the roof shell connected and compare the silhouette, thickness and open spaces to the source. A roof_control_contract is optional method metadata, not a phase requirement.'], forbidden: ['Flat slab used as a substitute when the source clearly shows a curved or lifted roof', 'Copying an unreviewed roof to every tier', 'Using dark material to hide missing curvature or open seams'] };
-  if (phase.name === 'archetypes') return { ...shared, required: ['Build a visually complete representative repeated family when repetition is actually present.', 'Include repeatable windows, balconies, railings, frames, recesses and shadow detail when supported by the source.', 'Inspect the representative geometry and its actual contact/appearance before reuse.'], forbidden: ['Broad arrays used to hide a wrong form', 'Copying an unreviewed prototype through the building'] };
-  if (phase.name === 'replication') return { ...shared, required: ['Reuse a reviewed component or construct the repeated geometry with a method appropriate to the source.', 'Check representative, middle, end and corner conditions when repetition exists.'], forbidden: ['Redrawing repeated floors independently when that would change the intended geometry', 'Changing roof/podium/unique levels without a source reason'] };
-  if (phase.name === 'variants') return { ...shared, required: ['Build source-visible non-repeating conditions only and preserve their actual host relationships.'], forbidden: ['Generic facade dressing'] };
-  if (phase.name === 'facade_detail') return { ...shared, required: ['Build source-visible one-off details that cannot belong to a reusable family.', 'Inspect the actual close views.', 'Compare the source skin grammar: opaque/open ratio, band rhythm, recess/projection depth, corner/termination conditions and base/crown transitions; accepted massing does not prove facade fidelity. Registration is optional bookkeeping.'], forbidden: ['Rebuilding repeated window/balcony systems', 'Generic grid or uniform curtain wall used as a substitute for source evidence', 'Treating geometry, entity count or material color as proof that the source facade is correct'] };
-  return { ...shared, required: ['Add restrained material/ground/roof closure only after form and visible detail already read correctly.'], forbidden: ['Changing accepted primary massing'] };
+function phaseTaskCard(phase, mode, taskProfile = {}, taskText = '', catalog = null) {
+  const brief=constructionBriefFor(taskProfile,taskText,mode,phase.name,catalog);
+  return {phase:phase.name,objective:brief.goal,construction_brief:brief,
+    agent_review:'Inspect actual views against the source. Supply visual_review with observations; machine geometry, receipts and dependency records are assembled by the program.'};
 }
 
 function stripRubyComments(source) {
@@ -564,51 +535,27 @@ function complexityWarning(result) {
     decision:'Inspect whether repetition is necessary primary form or premature detail; continue with rationale or explicitly revise. Geometry preserved.'} : null;
 }
 
-// Expert projects do not follow the guided phase cursor.  Keep only the names
-// of relevant architectural references in the task card; pushing decisions
-// and reject_if entries into every reply makes the expert optimize a checklist
-// instead of the source.  The full cards remain available on demand.
-function expertMethodFocus(state) {
-  const profile = state?.task_profile || {};
-  const names = ['massing'];
-  if (ancientRoofRoute(profile)) names.push('roof_profile', 'archetypes', 'replication', 'facade_detail');
-  else if (Array.isArray(profile.features) && profile.features.some((x) => /曲面|屋面|楼|塔|古建|roof|tower|curv/i.test(String(x)))) names.push('roof_profile', 'archetypes');
-  if (!names.length) return null;
-  const seen = new Set();
-  const focus = names.filter((name) => !seen.has(name) && seen.add(name));
-  return focus.length ? { source: 'existing_modeling_method_cards', available_sections: focus, read: 'sketchup_project_status(detail=true) or the matching reference when a construction question arises' } : null;
-}
 function abstractionRecheckNeeded(state, phaseName) {
   const attempts=Number(state?.revision_attempts?.[phaseName] || 0);
   const acknowledged=Number(state?.abstraction_rechecks?.[phaseName]?.attempt || 0);
   return attempts >= 3 && Math.floor(attempts / 3) > Math.floor(acknowledged / 3);
 }
-function taskCard(state, phase, detail=false) {
-  if (isExpert(state)) return {
-    objective: initialStage(state) ? initialStageName(initialStage(state)) : state.work_unit?.name || 'Current architectural system',
-    ...(initialStage(state) ? {initial_step:initialStage(state), required_next_milestone:initialStage(state) === 'massing'
-      ? 'Build complete primary proportions, roof volumes and voids; inspect actual views and review massing separately before component construction.'
-      : 'Build complete representative components at their real hosts; inspect construction, contact and editability, then review separately before broad replication. No minimum component count or registration quota.'} : {}),
-    work_unit: state.work_unit || null,
-    building_guidance: 'Use the source, construction_brief and actual views as the architectural basis; the program handles unit, identity, evidence and recovery records.',
-    construction_brief: constructionBriefFor(state.task_profile, guidanceTaskText(state), state.mode, phase.name, state.construction_catalog || null),
-    method_focus: expertMethodFocus(state),
-    open_findings: validationIssues(state),
-    revision_required: state.revision_required || null,
-    evidence: 'Choose useful views when ready; no per-operation visual report is required.'
-  };
-  const warning=abstractionRecheckNeeded(state,phase.name) ? {code:'abstraction_recheck_required',revision_attempts:Number(state.revision_attempts?.[phase.name]||0),required_action:'Re-read source evidence and change or defend the geometric abstraction. The next step must provide abstraction_note; adding detail to the same failed abstraction is forbidden.'} : null;
-  const card=phaseTaskCard(phase,state.mode,state.task_profile,state.construction_catalog || null,guidanceTaskText(state));
-  if(!detail) {
-    delete card.method.review_record_fields;
-    card.method.guidance='Use the managed Ruby API described by the Skill only when the current construction needs custom Ruby.';
-    card.method.detail_tool='sketchup_project_status(detail=true)';
-    if(assistanceSummary(state).mode==='autonomous') {
-      card.method.guidance='Use the current phase constraints; consult full guidance for unfamiliar operations.';
-      delete card.method.decisions;
-    }
+function taskCard(state, phase, detail=false, catalog=null) {
+  const current=state.status==='ready_to_finish' ? 'delivery' : (initialStage(state)||phase.name);
+  const card=phaseTaskCard({name:current},state.mode,state.task_profile,guidanceTaskText(state),catalog);
+  if(isExpert(state)) {
+    card.work_unit=state.work_unit||null;
+    if(initialStage(state))card.initial_step=current;
+    card.building_guidance='Use the same construction methods in an expert unit; combine related writes and choose useful observations. New projects retain separate complete-primary-form and applicable representative-component milestones; no-repetition tasks do not invent prototypes.';
+  } else {
+    card.building_guidance='Follow the current construction actions, inspect the result, correct the form, then advance. Methods are available in any applicable phase.';
   }
-  return {...card, work_unit: state.work_unit || null, building_guidance: 'Use the returned source constraints and actual views; do not replace architectural comparison with counts or registrations.', complexity_warning:state.complexity_warning || null, abstraction_warning:warning};
+  if(validationIssues(state).length)card.open_findings=validationIssues(state);
+  if(state.revision_required)card.revision_required=state.revision_required;
+  if(state.complexity_warning)card.complexity_warning=state.complexity_warning;
+  if(abstractionRecheckNeeded(state,phase.name))card.abstraction_warning={code:'abstraction_recheck_advisory',advisory:true,
+    next_action:'Repeated correction has not resolved the form. Revisit source proportions, boundaries or representation before adding detail; no abstraction_note is required.'};
+  return card;
 }
 function assistanceSummary(state, detail=false) {
   const mode = isAutonomous(state) ? 'autonomous' : 'guided';
@@ -1205,12 +1152,22 @@ class ManagedProjects {
     if (!isModelEvidence(record)) throw this.stateError('EVIDENCE_NOT_MODEL_RESULT', 'This record is an event, not a reviewable model result.');
     const checkpointPath = state.last_checkpoint?.path || record.files?.checkpoint?.path;
     const exactReopenedCheckpoint = (candidate) => !!(candidate?.path && checkpointPath && path.resolve(String(candidate.path)).toLowerCase() === path.resolve(String(checkpointPath)).toLowerCase());
-    const stateCheckpointMigration = !options.restoringCheckpoint && exactReopenedCheckpoint(state.model_binding) && exactReopenedCheckpoint(record.model_binding);
+    // A verified restore may open a save-copy checkpoint whose evidence was
+    // sealed against the original active document. Keep that historical binding;
+    // authorize only this exact signed restore, file, evidence and current object.
+    const restored = state.verified_checkpoint_restore;
+    const verifiedRestore = restored?.evidence_id === evidenceId
+      && restored.checkpoint?.sha256 === record.files?.checkpoint?.sha256
+      && path.resolve(String(restored.checkpoint?.path || '')).toLowerCase() === path.resolve(String(record.files?.checkpoint?.path || '')).toLowerCase()
+      && exactReopenedCheckpoint(restored.model_binding)
+      && sameModelBinding(restored.model_binding, state.model_binding)
+      && (!currentModel || sameModelBinding(restored.model_binding, currentModel));
+    const stateCheckpointMigration = !options.restoringCheckpoint && (verifiedRestore || (exactReopenedCheckpoint(state.model_binding) && exactReopenedCheckpoint(record.model_binding)));
     if (!options.restoringCheckpoint && record.model_binding && state.model_binding && !sameModelBinding(record.model_binding, state.model_binding) && !stateCheckpointMigration) {
       throw this.stateError('EVIDENCE_MODEL_BINDING_MISMATCH', 'Evidence is bound to a different SketchUp document or session');
     }
     const currentCheckpointMigration = currentModel && record.model_binding && !sameModelBinding(record.model_binding, currentModel)
-      && exactReopenedCheckpoint(currentModel) && exactReopenedCheckpoint(record.model_binding);
+      && (verifiedRestore || (exactReopenedCheckpoint(currentModel) && exactReopenedCheckpoint(record.model_binding)));
     if (currentCheckpointMigration) {
       // A deliberate reopen of the sealed checkpoint changes SketchUp's
       // session/object id.  The exact path plus the later live-audit equality
@@ -1259,8 +1216,9 @@ class ManagedProjects {
       const live = JSON.parse(await fs.readFile(livePath, 'utf8'));
       validateAuditReadback(recorded);
       validateAuditReadback(live);
-      const comparable = (value) => { const copy = JSON.parse(JSON.stringify(value)); delete copy.created_at; return copy; };
-      if (canonical(comparable(recorded)) !== canonical(comparable(live))) {
+      // Screenshots retain their sealed camera metadata. Navigating the live
+      // viewport does not change those images or the modeled result.
+      if (!sameModelBinding(live.model,state.model_binding) || checkpointContent(recorded) !== checkpointContent(live)) {
         const error = this.stateError('EVIDENCE_MODEL_CHANGED', 'Current SketchUp geometry or audit summary differs from sealed evidence');
         error.recordedAudit = recorded;
         error.liveAudit = live;
@@ -1283,6 +1241,28 @@ class ManagedProjects {
   async begin(input, bridge) {
     const projectId = safeId(input.project_id || `su_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`);
     return this.withProjectLock(projectId, () => this._beginUnlocked({...input, project_id:projectId}, bridge));
+  }
+
+  async currentTaskCard(state, phase, detail=false) {
+    let catalog=null,notice=null;
+    const current=state.status==='ready_to_finish' ? 'delivery' : (initialStage(state)||phase.name);
+    const methodText=guidanceTaskText(state);
+    const methodProfile=inferProfileFromTaskText(state.task_profile||{},methodText);
+    if((ancientRoofRoute(methodProfile)||/曲檐|曲坡屋盖|curved roof|curved eave/i.test(methodText))&&['massing','roof_profile','work_unit'].includes(current)) {
+      try {
+        const family=methodProfile.method_family||'ancient_roof';
+        const binding=(state.toolkit_bindings||[]).find(b=>b.method_family===family||b.id==='ancient-architecture') || await resolveMethodBinding(this.appDataDir,family);
+        catalog=await readConstructionCatalog(this.appDataDir,binding);
+      } catch(error) {
+        // Missing method metadata must not turn a committed write into a failed
+        // write. Keep the diagnostic visible; execution still verifies binding.
+        notice={code:error.code||error.message,scope:'method guidance unavailable; geometry and recovery state unchanged'};
+      }
+    }
+    const card=taskCard({...state,task_profile:methodProfile,task_text:methodText,source_analysis:null},phase,detail,catalog);
+    for(const call of card.construction_brief?.generator?.calls||[])call.arguments.project_id=state.project_id;
+    if(notice)card.method_notice=notice;
+    return card;
   }
 
   async _beginUnlocked(input, bridge) {
@@ -1309,9 +1289,8 @@ class ManagedProjects {
     const constructionCatalog = toolkitBinding ? await readConstructionCatalog(this.appDataDir, toolkitBinding) : null;
     if (Object.hasOwn(input, 'assistance_mode') && !normalizeAssistanceMode(input.assistance_mode)) throw this.stateError('ASSISTANCE_MODE_INVALID', 'assistance_mode must be guided, autonomous, or compatibility value auto');
     const assistance = resolveAssistanceMode(input);
-    // Explicit assistance_mode is a host-supported preference.  The Chinese
-    // command remains a shortcut, but a punctuation wrapper or a structured
-    // Codex request must not silently downgrade an autonomous task to guided.
+    // New expert tasks require the original first-line branded command.
+    // Existing tasks retain their saved assistance selection.
     projectionBrief = mode === 'single_image' && input.projection_brief ? validateProjectionBrief(input.projection_brief) : null;
     const workUnit = normalizedWorkUnit(input.work_unit_id, assistance.mode) || (assistance.mode === 'autonomous' ? { id: `unit_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`, strategy: 'autonomous_work_unit' } : null);
     const response = await bridge('run_ruby', { code: this.rubyCall('begin_project', [projectId]), file: this.helperPath });
@@ -1332,8 +1311,11 @@ class ManagedProjects {
       last_record_hash: '', last_evidence_id: '',
     };
     await this.saveState(state);
-    const constructionBrief = constructionBriefFor(taskProfile, `${assistance.task_text || ''} 来源可见特征：${sourceAnalysisHint(sourceAnalysis)}`, mode, phasePlan[0].name, constructionCatalog);
-    return { ok: true, project_id: projectId, status: state.status, assistance: assistanceSummary(state,input.detail===true), sources, source_image_count: sources.length, source_analysis: sourceAnalysis, projection_brief: projectionBrief, toolkit_bindings: state.toolkit_bindings, construction_brief: constructionBrief, matched_method: constructionBrief?.selection_state === 'candidate_selection_required' ? null : (constructionBrief ? { method_id: constructionBrief.method_id, method: constructionBrief.method } : null), task_card: taskCard(state,phasePlan[0]), next_action: constructionBrief?.actions?.[0] || phasePlan[0].hint };
+    const card = await this.currentTaskCard(state,phasePlan[0]);
+    return { ok:true, project_id:projectId, status:state.status,
+      task_card:card, ...describeActions(state),
+      assistance:assistanceSummary(state,input.detail===true), sources, source_image_count:sources.length,
+      source_analysis:sourceAnalysis, projection_brief:projectionBrief, toolkit_bindings:state.toolkit_bindings };
   }
 
   async captureViewportSet(state, phase, directory, bridge, requestedViews = null) {
@@ -1837,7 +1819,7 @@ class ManagedProjects {
       delete state.pending_evidence;
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, task_card: taskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
+      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, task_card: await this.currentTaskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
     } catch (error) {
       if (error.capturePending && state.pending_evidence) {
         const category = classifyEvidenceFailure(error, 'evidence');
@@ -2115,7 +2097,7 @@ class ManagedProjects {
     }
     state.status='review_required';delete state.pending_evidence;delete state.evidence_error;delete state.recovery_recapture_required;
     await this.saveState(state);
-    return {ok:true,project_id:state.project_id,status:state.status,phase:phase.name,task_card:taskCard(state,phase),...evidence,review_sheet:evidence.files.review_sheet?.path || '',next_action:'Inspect the sealed visual evidence and submit an explicit review. No geometry was rebuilt.'};
+    return {ok:true,project_id:state.project_id,status:state.status,phase:phase.name,task_card:await this.currentTaskCard(state,phase),...evidence,review_sheet:evidence.files.review_sheet?.path || '',next_action:'Inspect the sealed visual evidence and submit an explicit review. No geometry was rebuilt.'};
   }
 
   async review(input, bridge) {
@@ -2258,7 +2240,7 @@ class ManagedProjects {
       state.status = 'ready_for_step';
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      return { ok: true, project_id: state.project_id, status: state.status, task_card: taskCard(state, phase), next_action: `Rebuild ${phase.name}. ${phase.hint}` };
+      return { ok: true, project_id: state.project_id, status: state.status, task_card: await this.currentTaskCard(state, phase), ...describeActions(state) };
     }
     const mergedEvidenceIds=[...(state.pending_unit_reviews || []), input.evidence_id];
     const mergedCoverage=[];
@@ -2287,7 +2269,7 @@ class ManagedProjects {
     state.phase = phasePlan[state.step_index].name;
     state.status = 'ready_for_step';
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, phase: state.phase, status: state.status, review_checks:{state:qualityReview.state,visual_status:qualityReview.visual_status || 'not_checked',scope:qualityReview.scope,geometry_readback:qualityReview.geometry_readback,checks:qualityReview.checks?.map(({kind,state,reason})=>({kind,state,reason}))}, task_card: taskCard(state,phasePlan[state.step_index]), next_action: phasePlan[state.step_index].hint };
+    return { ok: true, project_id: state.project_id, phase: state.phase, status: state.status, review_checks:{state:qualityReview.state,visual_status:qualityReview.visual_status || 'not_checked',scope:qualityReview.scope,geometry_readback:qualityReview.geometry_readback,checks:qualityReview.checks?.map(({kind,state,reason})=>({kind,state,reason}))}, task_card: await this.currentTaskCard(state,phasePlan[state.step_index]), ...describeActions(state) };
   }
 
 
@@ -2329,7 +2311,7 @@ class ManagedProjects {
       }
     }
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, status: state.status, quality: qualityReviewSummary(state), ...describeActions(state) };
+    return { ok: true, project_id: state.project_id, status: state.status, task_card: await this.currentTaskCard(state,executionPlan(state)[0]), quality: qualityReviewSummary(state), ...describeActions(state) };
   }
 
   async reviseFrom(input, bridge) {
@@ -2390,7 +2372,7 @@ class ManagedProjects {
       const sealed = await this.writeEvidence(state, record);
       state.revision_history = [...(state.revision_history || []), {revision_id:revisionId,target_phase:targetName,affected_phases:affected,reason,checkpoint_path:checkpointPath,evidence_path:sealed.path,created_at:state.updated_at,status:'applied'}];
       await this.saveState(state);
-      return {ok:true,project_id:state.project_id,status:state.status,phase:state.phase,revision_id:revisionId,affected_phases:affected,invalidated_review_count:invalidated.length,rollback_checkpoint:checkpointPath,evidence_path:sealed.path,task_card:taskCard(state,plan[targetIndex]),next_action:`Rebuild ${targetName} from the corrected abstraction; only downstream affected phases were removed.`};
+      return {ok:true,project_id:state.project_id,status:state.status,phase:state.phase,revision_id:revisionId,affected_phases:affected,invalidated_review_count:invalidated.length,rollback_checkpoint:checkpointPath,evidence_path:sealed.path,task_card:await this.currentTaskCard(state,plan[targetIndex]),next_action:`Rebuild ${targetName} from the corrected abstraction; only downstream affected phases were removed.`};
     } catch (error) {
       state.status = 'recovery_required';
       state.recovery_error = `Upstream revision unconfirmed: ${error.message}`;
@@ -2544,11 +2526,8 @@ class ManagedProjects {
     if (isExpert(state) && (!state.current_review || state.current_review.scene_revision !== state.scene_revision)) throw this.stateError('DELIVERY_UNREVIEWED', 'Current geometry has not been reviewed.');
     const currentBinding = await this.assertModelBinding(state, bridge);
     const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
-    if (!isExpert(state) && state.mode === 'single_image' && state.source_camera) {
-      const restoreCode = this.rubyCall('restore_camera', [JSON.stringify(state.source_camera)]);
-      const restored = await bridge('run_ruby', { code: restoreCode, file: this.helperPath }, suOperationTimeout());
-      parseManagedResult(restored);
-    }
+    // Preserve the current presentation view in the delivered SKP. The source
+    // view remains sealed with its evidence, not a forced delivery camera.
     const outputPath = path.resolve(input.output_path || state.pending_delivery?.model?.path || path.join(state.output_directory, `${state.project_id}.skp`));
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     const pending = state.pending_delivery;
@@ -2596,8 +2575,9 @@ class ManagedProjects {
       const approved = await this.verifyEvidence(approvedState, approvedEvidenceId, approvedBinding);
       assertTargets(await this.readDimensionEvidence(state,approved.record),true);
       const recordedAudit = approved.record.files?.audit?.path ? JSON.parse(await fs.readFile(approved.record.files.audit.path, 'utf8')) : null;
-      const comparableAudit = pendingMigration ? auditContent : (value) => { const copy = JSON.parse(JSON.stringify(value)); delete copy.created_at; return copy; };
-      if (recordedAudit && canonical(comparableAudit(recordedAudit)) !== canonical(comparableAudit(preflightAudit))) {
+      // Identity is checked above (including receipt-verified save migration).
+      // As at review, navigating the camera does not edit the approved geometry.
+      if (recordedAudit && checkpointContent(recordedAudit) !== checkpointContent(preflightAudit)) {
         const stale = this.stateError('EVIDENCE_MODEL_CHANGED', 'Current final audit differs from the latest approved evidence; recapture and review before delivery');
         state.status = 'review_required';
         state.recovery_recapture_required = true;
@@ -2932,77 +2912,87 @@ class ManagedProjects {
     return this.withProjectLock(safeId(input.project_id), async () => this.withActions(await this._recoverUnlocked(input, bridge), input.project_id));
   }
 
-  // A geometry receipt can be completed by SketchUp after the client has
-  // timed out, while the user later reopens the older sealed checkpoint.  In
-  // that case the receipt proves what was attempted, but it does not prove
-  // that the completed geometry is present in the reopened file.  Keep the
-  // receipt as historical evidence, explicitly record that the active model
-  // was restored to the pre-operation checkpoint, and permit a new operation
-  // with a new id.  This is deliberately separate from normal reconciliation
-  // and never replays or silently marks the old geometry as present.
   async restoreCheckpointAfterLostGeometry(input, bridge) {
-    const projectId = safeId(input.project_id);
-    const state = await this.loadState(projectId);
-    if (!['recovery_required', 'step_in_progress'].includes(state.status) && !(state.status === 'ready_for_step' && state.recovery_resolution?.result === 'checkpoint_restored')) throw this.stateError('RECOVERY_NOT_REQUIRED', 'Checkpoint restoration is only available while recovery is required or a dispatched write is unresolved');
-    if (input.acknowledge_lost_commit !== true) throw this.stateError('RECOVERY_CONFIRMATION_REQUIRED', 'Explicitly acknowledge that the completed geometry receipt is not present in the reopened checkpoint');
-    const unresolved = (Array.isArray(state.operation_journal) ? state.operation_journal : []).find((item) => ['result_unknown', 'dispatched'].includes(item.status));
-    if (!unresolved && state.recovery_resolution?.result === 'checkpoint_restored') {
-      const checkpoint = state.last_checkpoint;
-      if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING', 'No sealed checkpoint is available');
-      const current = await this.modelIdentity(bridge);
-      if (!current?.path || path.resolve(current.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Open the exact sealed checkpoint before reviewing its restored state');
-      state.model_binding = current;
-      state.model_path = current.path;
-      const checkpointIndex = (state.phase_plan || []).findIndex(item => item.name === checkpoint.phase);
-      const nextIndex = checkpointIndex >= 0 ? checkpointIndex + 1 : state.step_index;
-      state.quality_reviews = (state.quality_reviews || []).filter(item => {
-        const index = (state.phase_plan || []).findIndex(candidate => candidate.name === item.phase);
-        return index < 0 || checkpointIndex < 0 || index <= checkpointIndex;
-      });
-      state.step_index = nextIndex;
-      state.phase = nextIndex >= (state.phase_plan || []).length ? 'complete' : state.phase_plan[nextIndex].name;
-      state.status = nextIndex >= (state.phase_plan || []).length ? 'ready_to_finish' : 'ready_for_step';
-      delete state.recovery_error;
-      await this.saveState(state);
-      return { ok: true, project_id: projectId, status: state.status, restored: true, restored_checkpoint: checkpoint.path, next_phase: state.phase, next_action: state.status === 'ready_for_step' ? 'The sealed checkpoint was already reviewed; continue with a new managed step for the next phase.' : 'The sealed checkpoint covers the final phase; inspect and finish.' };
-    }
-    if (!unresolved || unresolved.kind !== 'geometry_step') throw this.stateError('RECOVERY_KIND_UNSUPPORTED', 'No unresolved geometry operation can be restored from a checkpoint');
+    const state = await this.loadState(safeId(input.project_id));
+    const projectId = state.project_id;
+    const unresolved = (state.operation_journal || []).find(item => ['result_unknown','dispatched'].includes(item.status));
+    const repeated = !unresolved && state.recovery_resolution?.result === 'checkpoint_restored';
+    if (!['recovery_required','step_in_progress'].includes(state.status) && !repeated) throw this.stateError('RECOVERY_NOT_REQUIRED','No unresolved geometry operation requires checkpoint restoration.');
+    if (input.acknowledge_lost_commit !== true) throw this.stateError('RECOVERY_CONFIRMATION_REQUIRED','Acknowledge restoration of the sealed checkpoint; the old receipt remains in history.');
+    if (!repeated && (!unresolved || unresolved.kind !== 'geometry_step')) throw this.stateError('RECOVERY_KIND_UNSUPPORTED','Only the recorded unresolved geometry operation can use this action.');
+    if (repeated && (state.status !== state.recovery_resolution.restored_status || state.phase !== state.recovery_resolution.restored_phase || (isExpert(state) && state.scene_revision !== state.recovery_resolution.restored_scene_revision))) throw this.stateError('RECOVERY_NOT_REQUIRED','Work has advanced since restoration; an old recovery request cannot reset it.');
     const checkpoint = state.last_checkpoint;
-    if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING', 'No sealed checkpoint is available');
-    const evidence = await this.verifyEvidenceIdentity(state, checkpoint.evidence_id, { verifyFiles: true });
-    const sealedCheckpoint = evidence.record.files?.checkpoint;
-    if (!sealedCheckpoint?.path || path.resolve(sealedCheckpoint.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_CHECKPOINT_UNSEALED', 'Checkpoint does not match the sealed evidence');
-    if (await hashFile(checkpoint.path) !== sealedCheckpoint.sha256) throw this.stateError('RECOVERY_CHECKPOINT_CHANGED', 'Checkpoint hash changed; restoration remains blocked');
-    const current = await this.modelIdentity(bridge);
-    if (!current?.path || path.resolve(current.path).toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH', 'Open the exact sealed checkpoint before restoring its pre-operation state');
-    const receiptResult = await this.operationReceipt({ project_id: projectId, operation_id: unresolved.operation_id, detail: true }, bridge);
-    const receipt = receiptResult.receipt;
-    const receiptStatus = String(receipt?.receipt?.status || '').toLowerCase();
-    if (!receipt?.found || !['completed', 'started'].includes(receiptStatus) || (receiptStatus === 'completed' && receipt.receipt?.result?.ok !== true)) throw this.stateError('RECOVERY_RECEIPT_REQUIRED', 'A matching started or completed geometry receipt is required before recording a checkpoint restoration');
-    const request = receipt.receipt.request;
-    if (!request || request.operation_id !== unresolved.operation_id || request.project_id !== projectId || unresolved.script_hash && request.script_sha256 !== unresolved.script_hash) throw this.stateError('RECOVERY_RECEIPT_MISMATCH', 'Completed receipt does not match the unresolved operation');
-    const priorPhase = unresolved.prior_status === 'ready_for_step' ? (state.last_checkpoint.phase || state.phase) : state.phase;
-    unresolved.status = 'superseded_checkpoint_restore';
-    unresolved.resolution = 'completed_receipt_not_present_in_reopened_checkpoint';
-    unresolved.resolved_at = new Date().toISOString();
-    state.transaction_result = { code: 'CHECKPOINT_RESTORED', operation_id: unresolved.operation_id, resolution: 'checkpoint_restored', completed_receipt_preserved: receiptStatus === 'completed', started_receipt_preserved: receiptStatus === 'started', geometry_present_in_active_document: false };
-    state.recovery_resolution = { resolved_at: new Date().toISOString(), result: 'checkpoint_restored', operation_id: unresolved.operation_id };
-    const checkpointIndex = (state.phase_plan || []).findIndex(item => item.name === checkpoint.phase);
-    const nextIndex = checkpointIndex >= 0 ? checkpointIndex + 1 : (Number.isInteger(state.last_checkpoint.step_index) ? state.last_checkpoint.step_index + 1 : 0);
-    state.quality_reviews = (state.quality_reviews || []).filter(item => {
-      const index = (state.phase_plan || []).findIndex(candidate => candidate.name === item.phase);
-      return index < 0 || checkpointIndex < 0 || index <= checkpointIndex;
+    if (!checkpoint?.path || !checkpoint.evidence_id) throw this.stateError('RECOVERY_CHECKPOINT_MISSING','No sealed checkpoint is available.');
+    const sealed = await this.verifyEvidenceIdentity(state,checkpoint.evidence_id,{verifyFiles:true});
+    const file = sealed.record.files?.checkpoint, auditFile = sealed.record.files?.audit;
+    if (!file?.path || !auditFile?.path || path.resolve(file.path) !== path.resolve(checkpoint.path)) throw this.stateError('RECOVERY_CHECKPOINT_UNSEALED','Checkpoint and its scene audit must be sealed together.');
+    if (await hashFile(checkpoint.path) !== file.sha256) throw this.stateError('RECOVERY_CHECKPOINT_CHANGED','The sealed checkpoint bytes have changed.');
+    const binding = await this.modelIdentity(bridge);
+    if (!binding?.path || path.resolve(binding.path).toLowerCase() !== path.resolve(file.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH','Open the exact recorded checkpoint before recovery.');
+    return this.withDocumentWriteLock(binding,async()=>{
+      const current = await this.modelIdentity(bridge);
+      if (!sameModelBinding(binding,current)) throw this.stateError('RECOVERY_MODEL_MISMATCH','The active document changed during recovery.');
+      const other = await this.unresolvedDocumentOperation(current,projectId);
+      if (other) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN','Another project has an unresolved write in this document.');
+      // A completed receipt proves that dispatch has stopped. A merely started
+      // receipt must remain unresolved; a file path cannot cancel queued Ruby.
+      let receipt = null;
+      if (!repeated) {
+        const response = await this.operationReceipt({project_id:projectId,operation_id:unresolved.operation_id,detail:true},bridge);
+        receipt = response.receipt?.receipt;
+        if (!response.receipt?.found || receipt?.status !== 'completed' || receipt?.result?.ok !== true) throw this.stateError('RECOVERY_WRITE_UNCERTAIN','The original operation must have a confirmed terminal receipt before its result can be superseded.');
+        const request = receipt.request;
+        if (request?.operation_id !== unresolved.operation_id || request?.project_id !== projectId || (unresolved.script_hash && request.script_sha256 !== unresolved.script_hash)) throw this.stateError('RECOVERY_RECEIPT_MISMATCH','The receipt does not match the original geometry operation.');
+      }
+      const prior = JSON.parse(await fs.readFile(auditFile.path,'utf8'));
+      validateAuditReadback(prior);
+      const clean = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('clean_checkpoint_identity',[]),file:this.helperPath},suOperationTimeout()));
+      const cleanCheckpoint = clean.modified === false && sameModelBinding(clean.identity,current) && path.resolve(clean.identity?.path||'').toLowerCase() === path.resolve(file.path).toLowerCase();
+      if (!cleanCheckpoint) {
+        const auditPath = path.join(this.projectDir(projectId),'restore-lost-'+crypto.randomUUID()+'.json');
+        try {
+          parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[projectId,auditPath.replaceAll('\\','/')]),file:this.helperPath},suOperationTimeout()));
+          const live = JSON.parse(await fs.readFile(auditPath,'utf8'));
+          validateAuditReadback(live);
+          if (checkpointContent(live)!==checkpointContent(prior)) throw this.stateError('RECOVERY_SCENE_CHANGED','The open scene differs from the sealed checkpoint; no progress was changed.');
+        } finally {await fs.rm(auditPath,{force:true}).catch(()=>{});}
+      }
+      if (repeated) return {ok:true,project_id:projectId,status:state.status,restored:true,already_restored:true,verification:cleanCheckpoint?'sealed_file_and_clean_document':'full_live_audit',...describeActions(state)};
+      if (isExpert(state)) {
+        if (!Number.isInteger(sealed.record.scene_revision) || !Array.isArray(prior.work_units) || !sealed.record.script?.path) throw this.stateError('RECOVERY_CHECKPOINT_INCOMPLETE','The checkpoint lacks the original expert scope and input.');
+        const units={};
+        for(const u of prior.work_units){const old=state.work_units?.[u.work_unit_id];if(!old)throw this.stateError('RECOVERY_SCOPE_MISMATCH','Checkpoint contains an unknown work unit.');units[u.work_unit_id]={...old,...u,id:u.work_unit_id};}
+        state.work_units=units;
+        state.scene_revision=sealed.record.scene_revision;
+        state.initial_stage_reviews=(state.initial_stage_reviews||[]).filter(r=>r.scene_revision<=state.scene_revision);
+        const id=Object.hasOwn(units,state.work_unit?.id)?state.work_unit.id:Object.keys(units).at(-1);
+        if(!id)throw this.stateError('RECOVERY_SCOPE_MISMATCH','Checkpoint has no restorable work unit.');
+        state.work_unit={id,name:units[id].name,strategy:'autonomous_work_unit'};
+        if(initialStage(state))state.initial_stage_unit_id=id;
+        state.pending_execution={phase:UNIT_PHASE,script_path:sealed.record.script.path,script_hash:sealed.record.script.sha256};
+        state.phase=UNIT_PHASE;state.step_index=0;state.status='ready_for_step';
+        state.current_review=null;state.last_evidence_id='';state.recovery_recapture_required=true;
+      } else {
+        const plan=executionPlan(state),index=plan.findIndex(p=>p.name===checkpoint.phase);
+        if(index<0)throw this.stateError('RECOVERY_PHASE_MISMATCH','Checkpoint is outside the saved plan.');
+        const accepted=(state.quality_reviews||[]).some(r=>r.evidence_id===checkpoint.evidence_id && ['declared_checks_pass','accepted_with_unverified_items'].includes(r.state));
+        state.step_index=accepted?index+1:index;
+        state.phase=plan[state.step_index]?.name||'complete';
+        state.status=accepted?(state.step_index<plan.length?'ready_for_step':'ready_to_finish'):'review_required';
+        state.quality_reviews=(state.quality_reviews||[]).filter(r=>{const i=plan.findIndex(p=>p.name===r.phase);return i>=0&&i<=index;});
+        state.last_evidence_id=checkpoint.evidence_id;
+        delete state.pending_execution;
+      }
+      unresolved.status='superseded_checkpoint_restore';unresolved.resolved_at=new Date().toISOString();
+      unresolved.resolution='completed_receipt_not_present_in_reopened_checkpoint';
+      state.model_binding=current;state.model_path=current.path;
+      delete state.pending_evidence;delete state.recovery_error;
+      state.transaction_result={code:'CHECKPOINT_RESTORED',operation_id:unresolved.operation_id,completed_receipt_preserved:true,geometry_present_in_active_document:false};
+      state.recovery_resolution={result:'checkpoint_restored',operation_id:unresolved.operation_id,restored_status:state.status,restored_phase:state.phase,restored_scene_revision:state.scene_revision??null};
+      state.history_gaps=[...(state.history_gaps||[]),{operation_id:unresolved.operation_id,kind:'geometry_step',reason:unresolved.resolution,recorded_at:new Date().toISOString()}];
+      await this.saveState(state);
+      return {ok:true,project_id:projectId,status:state.status,restored:true,restored_checkpoint:file.path,operation_id:unresolved.operation_id,old_geometry_replayed:false,completed_receipt_preserved:true,...describeActions(state)};
     });
-    state.step_index = nextIndex;
-    state.phase = nextIndex >= (state.phase_plan || []).length ? 'complete' : state.phase_plan[nextIndex].name;
-    state.status = nextIndex >= (state.phase_plan || []).length ? 'ready_to_finish' : 'ready_for_step';
-    state.model_binding = current;
-    state.model_path = current.path;
-    delete state.recovery_error;
-    delete state.pending_execution;
-    state.history_gaps = [...(state.history_gaps || []), { operation_id: unresolved.operation_id, kind: 'geometry_step', reason: 'completed receipt refers to geometry absent from reopened sealed checkpoint', recorded_at: new Date().toISOString() }];
-    await this.saveState(state);
-    return { ok: true, project_id: projectId, status: state.status, restored: true, restored_checkpoint: checkpoint.path, next_phase: state.phase, operation_id: unresolved.operation_id, old_geometry_replayed: false, completed_receipt_preserved: receiptStatus === 'completed', started_receipt_preserved: receiptStatus === 'started', next_action: state.status === 'ready_for_step' ? 'The sealed checkpoint was already reviewed; submit a new managed step with a new operation_id for the next phase.' : 'Inspect the sealed checkpoint and finish.' };
   }
 
   async _recoverUnlocked(input, bridge) {
@@ -3013,6 +3003,7 @@ class ManagedProjects {
     if (action === 'inspect') return this.recoveryInspect(input, bridge);
     if (action === 'reconcile') return this.recoveryReconcile(input, bridge);
     const state = await this.loadState(safeId(input.project_id));
+    if (state.pending_evidence) return this.restorePendingEvidenceCheckpoint(state, bridge);
     if (isExpert(state)) return this.restoreExpertCheckpoint(state, bridge);
     const checkpoint = state.last_checkpoint;
     if (!checkpoint?.path || !checkpoint.evidence_id) throw new Error('No managed checkpoint is recorded');
@@ -3045,6 +3036,7 @@ class ManagedProjects {
       if (checkpointContent(live) !== checkpointContent(old)) throw new Error('Loaded checkpoint content does not match sealed phase audit');
     }
     const returnStatus = state.status;
+    state.verified_checkpoint_restore = {evidence_id: checkpoint.evidence_id, checkpoint: file, model_binding: current};
     state.model_binding = current;
     state.recovery_recapture_required = !cleanCheckpoint;
     if (!cleanCheckpoint) {
@@ -3081,33 +3073,49 @@ class ManagedProjects {
     return evaluateMeasurements(targets,{results:(data.results || []).map(r=>({...r,state:typeof r.measured_mm==='number'?'measured':'unverified'}))});
   }
 
+  async restorePendingEvidenceCheckpoint(state, bridge) {
+    const pending=state.pending_evidence;
+    if (!pending?.checkpoint?.path || !pending?.audit?.path) throw this.stateError('RECOVERY_CHECKPOINT_MISSING','Incomplete evidence has no frozen checkpoint and audit.');
+    if (pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('RECOVERY_WRITE_UNCERTAIN','Resolve the original write receipt before rebinding incomplete evidence.');
+    await verifyEvidenceFiles({checkpoint:pending.checkpoint,audit:pending.audit});
+    const binding=await this.modelIdentity(bridge);
+    if (path.resolve(binding.path || '').toLowerCase() !== path.resolve(pending.checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH','Open the exact frozen checkpoint before recovering incomplete evidence.');
+    return this.withDocumentWriteLock(binding, async () => {
+      const current=await this.modelIdentity(bridge);
+      if (!sameModelBinding(current,binding)) throw this.stateError('RECOVERY_MODEL_MISMATCH','Active document changed during recovery.');
+      const uncertain=await this.unresolvedDocumentOperation(current,state.project_id);
+      if (uncertain) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN','The opened document has an unresolved write.');
+      await verifyEvidenceFiles({checkpoint:pending.checkpoint,audit:pending.audit});
+      const auditPath=path.join(this.projectDir(state.project_id),'pending-restore-audit-'+crypto.randomUUID()+'.json');
+      try {
+        const clean=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('clean_checkpoint_identity',[]),file:this.helperPath},suOperationTimeout()));
+        const exactClean=clean.modified===false && sameModelBinding(clean.identity,current);
+        const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
+        validateAuditReadback(prior);
+        if (!exactClean) {
+          // A compact audit cannot prove arbitrary unsaved topology unchanged.
+          if (prior.audit_detail==='compact') throw this.stateError('RECOVERY_SCENE_CHANGED','The frozen checkpoint is open with unsaved changes; reopen its exact verified file before recovery.');
+          parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
+          const live=JSON.parse(await fs.readFile(auditPath,'utf8'));validateAuditReadback(live);
+          if (checkpointContent(live)!==checkpointContent(prior)) throw this.stateError('RECOVERY_SCENE_CHANGED','Opened checkpoint content differs from the frozen audit.');
+        }
+        state.model_binding=current;
+        state.model_path=current.path;
+        state.recovery_resolution={resolved_at:new Date().toISOString(),result:'incomplete_evidence_checkpoint_rebound',checkpoint:pending.checkpoint.path};
+        state.recovered_checkpoint=pending.checkpoint;
+        state.status='evidence_pending';
+        await this.saveState(state);
+        return {ok:true,project_id:state.project_id,status:state.status,model_binding:current,recovered_checkpoint:pending.checkpoint.path,...describeActions(state)};
+      } finally { await fs.rm(auditPath,{force:true}).catch(()=>{}); }
+    });
+  }
+
   async restoreExpertCheckpoint(state, bridge) {
     if (state.pending_evidence && state.status === 'ready_for_step') {
       state.status='evidence_pending';
       await this.saveState(state);
     }
-    if (state.pending_evidence) {
-      const pending=state.pending_evidence;
-      if (!pending.checkpoint?.path || !pending.audit?.path) throw this.stateError('RECOVERY_CHECKPOINT_MISSING','Incomplete evidence has no frozen checkpoint and audit.');
-      await verifyEvidenceFiles({checkpoint:pending.checkpoint,audit:pending.audit});
-      const binding=await this.modelIdentity(bridge);
-      if (path.resolve(binding.path || '').toLowerCase() !== path.resolve(pending.checkpoint.path).toLowerCase()) throw this.stateError('RECOVERY_MODEL_MISMATCH','Open the exact frozen checkpoint before recovering incomplete evidence.');
-      const auditPath=path.join(this.projectDir(state.project_id),'pending-restore-audit-'+crypto.randomUUID()+'.json');
-      try {
-        parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,auditPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout()));
-        const live=JSON.parse(await fs.readFile(auditPath,'utf8'));
-        const prior=JSON.parse(await fs.readFile(pending.audit.path,'utf8'));
-        validateAuditReadback(live); validateAuditReadback(prior);
-        if (checkpointContent(live)!==checkpointContent(prior)) throw this.stateError('RECOVERY_SCENE_CHANGED','Opened checkpoint content differs from the frozen audit.');
-        state.model_binding=binding;
-        state.model_path=binding.path;
-        state.recovery_resolution={resolved_at:new Date().toISOString(),result:'incomplete_evidence_checkpoint_rebound',checkpoint:pending.checkpoint.path};
-        state.recovered_checkpoint=pending.checkpoint;
-        state.status='evidence_pending';
-        await this.saveState(state);
-        return {ok:true,project_id:state.project_id,status:state.status,model_binding:binding,recovered_checkpoint:pending.checkpoint.path,next_action:'Call sketchup_project_retry_evidence; no geometry was replayed and the frozen evidence record was retained.'};
-      } finally { await fs.rm(auditPath,{force:true}).catch(()=>{}); }
-    }
+    if (state.pending_evidence) return this.restorePendingEvidenceCheckpoint(state, bridge);
     if (pendingOperation(state).pending_operation || state.pending_delivery || !['ready_for_step','review_required','ready_to_finish'].includes(state.status)) {
       throw this.stateError('RECOVERY_WRITE_UNCERTAIN', 'Resolve pending writes before rebinding an opened checkpoint.');
     }
@@ -3181,7 +3189,7 @@ class ManagedProjects {
       ...pendingOperation(state), evidence, evidence_error:state.evidence_error || null, quality,
       output_path:state.output_path || null, final_evidence_id:state.final_evidence_id || null,
       pending_delivery:state.pending_delivery ? {model:state.pending_delivery.model,remaining:state.pending_delivery.remaining} : null,
-      task_card:phase && state.status !== 'finished' ? taskCard(state,phase,input.detail===true) : null};
+      task_card:phase && state.status !== 'finished' ? await this.currentTaskCard(state,phase,input.detail===true) : null};
   }
 
   async operationReceipt(input, bridge) {

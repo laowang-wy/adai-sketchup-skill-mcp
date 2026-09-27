@@ -161,7 +161,7 @@ async function activeBindings(app, toolkitId, fingerprint){
  return {known:true,items};
 }
 async function resolveMethodBinding(app, methodFamily){
- const family=String(methodFamily||'').trim().toLowerCase();if(!family)return null;const discovered=await bundled(),found=discovered.packages,reg=await records(app);
+ const family=String(methodFamily||'').trim().toLowerCase();if(!family)return null;const discovered=await bundled(),found=discovered.packages,reg=await records(app,{recover:false});
  const registered=[];
  for(const p of Object.values(reg.packages).filter(p=>p.enabled!==false)){
   if((p.method_family||'').toLowerCase()!==family)continue;
@@ -175,49 +175,6 @@ async function resolveMethodBinding(app, methodFamily){
  return candidate?{id:candidate.id,version:candidate.version,fingerprint:candidate.fingerprint,method_family:family,origin:candidate.origin}:null;
 }
 
-// Read the small, immutable method catalogue from an already discovered
-// toolkit.  This is deliberately read-only: it never executes the package or
-// changes the registry.  The returned data is a compact discovery surface;
-// presets and full cards remain available through the existing toolkit entry.
-async function readConstructionCatalog(app, binding){
- if(!binding||!idOK(binding.id))return null;
- const discovered=await bundled(),registered=await records(app),registeredRecord=registered.packages[binding.id];
- let candidate=registeredRecord ? {...registeredRecord,root:path.join(store(app),binding.id),origin:'registered'} : discovered.packages.find(p=>p.manifest.id===binding.id);
- if(!candidate) return null;
- let root=path.resolve(candidate.root),snap=await snapshot(root);
- if(binding.fingerprint&&snap.fingerprint!==binding.fingerprint){
-  const historical=(registered.history?.[binding.id]||[]).find(item=>item.fingerprint===binding.fingerprint);
-  if(!historical)throw Object.assign(new Error('TOOLKIT_VERSION_LOCK_MISMATCH'),{code:'TOOLKIT_VERSION_LOCK_MISMATCH',toolkit_id:binding.id});
-  root=path.resolve(historical.root);snap=await snapshot(root);
- }
- const read=async rel=>{
-  const target=path.resolve(root,rel);
-  if(!within(root,target)||!snap.files[rel])return null;
-  try{return JSON.parse(await fs.readFile(target,'utf8'));}catch(_){return null;}
- };
- const manifest=snap.manifest,caps=await read('v4/capabilities.json'),route=await read('experience/cards/roof-routing.json');
- const candidates=[];
- for(const [methodId,info] of Object.entries(caps?.roof_types||{})){
-  if(!idOK(methodId)||info?.executable!==true)continue;
-  const preset=await read(`v4/presets/${methodId}.json`);
-  if(!preset||preset.schema_version!==4||preset.roof_type!==methodId)continue;
-  const routeMethod=route?.methods?.[methodId]||{};
-  candidates.push({
-   method_id:methodId,
-   label:String(info.label||methodId),
-   selection_basis:String(routeMethod.selection_basis||routeMethod.recognize||info.current_visual_scope||'适用于当前来源特征的可执行屋壳；请按屋脊、坡面和檐角关系选择。'),
-   recognize:routeMethod.recognize||null,
-   construct:routeMethod.construct||null,
-   key_parameters:Array.isArray(routeMethod.key_parameters)?routeMethod.key_parameters:Object.keys(preset).filter(k=>!['schema_version','roof_type'].includes(k)),
-   common_errors:routeMethod.common_errors||[],
-   inspect:routeMethod.inspect||null,
-   if_failed:routeMethod.if_failed||null,
-   parameter_names:Object.keys(preset),
-   executable:true,
-  });
- }
- return {experience_pack:{id:manifest.id,version:manifest.version,fingerprint:snap.fingerprint},units:caps?.units||null,dimensions:caps?.dimensions||null,candidates,actions:Object.keys(manifest.actions||{}).filter(k=>['preset','validate','compile'].includes(k))};
-}
 const queues=new Map();
 function serial(app,fn){const old=queues.get(app)||Promise.resolve();const next=old.catch(()=>{}).then(fn);queues.set(app,next);return next.finally(()=>{if(queues.get(app)===next)queues.delete(app);});}
 async function withToolkitLock(app,toolkitId,operation){
@@ -391,4 +348,48 @@ async function toolkitTool(input,app){
   try{const result=JSON.parse(stdout.replace(/^\uFEFF/,''));resolve({...result,toolkit:{id:s.manifest.id,version:s.manifest.version,fingerprint:s.fingerprint},scope:'offline tool operation; no managed SketchUp execution'});}catch{resolve({ok:false,error:'INVALID_TOOLKIT_JSON'});}
  });p.stdin.on('error',()=>{});p.stdin.end(JSON.stringify({...args,...(output?{output_directory:output}:{}),action:input.operation}));});
 }
+
+// Optional read-only method projection. Read the same immutable package bytes
+// that invoke will use, including a project's pinned historical version. This
+// is guidance, not a new toolkit protocol or permission to execute a preset.
+async function readConstructionCatalog(app, binding) {
+ if (!binding) return null;
+ const reg=await records(app,{recover:false});
+ const record=reg.packages[binding.id];
+ let selected;
+ if(record && record.enabled!==false){
+  selected=await snapshot(path.join(store(app),'packages',binding.id));
+  if(selected.fingerprint!==record.fingerprint)throw Error('TOOLKIT_CHANGED_REVIEW_REQUIRED');
+ } else selected=(await bundled()).packages.find(p=>p.manifest.id===binding.id);
+ if(!selected)throw Error('TOOLKIT_NOT_ENABLED');
+ if(selected.fingerprint!==binding.fingerprint){
+  const old=(reg.history[binding.id]||[]).find(p=>p.fingerprint===binding.fingerprint);
+  if(!old)throw Error('PACK_VERSION_UNAVAILABLE');
+  selected=await snapshot(old.root);
+  if(selected.fingerprint!==binding.fingerprint)throw Error('PACK_VERSION_UNAVAILABLE');
+ }
+ const read=async rel=>{
+  if(!Object.hasOwn(selected.files,rel))return null;
+  const bytes=await fs.readFile(path.join(selected.root,rel));
+  if(hash(bytes)!==selected.files[rel])throw Error('TOOLKIT_CHANGED_REVIEW_REQUIRED');
+  return JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/,''));
+ };
+ const caps=await read('v4/capabilities.json');
+ const route=await read('experience/cards/roof-routing.json');
+ const candidates=[];
+ for(const [id,info] of Object.entries(caps?.roof_types||{})){
+  if(!idOK(id)||info.executable!==true)continue;
+  const preset=await read(`v4/presets/${id}.json`);
+  if(!preset || preset.schema_version!==4 || preset.roof_type!==id)continue;
+  const method=route?.methods?.[id]||{};
+  // No historical 'verified' flags, development paths or full preset echo.
+  candidates.push({method_id:id,label:method.label||info.label||id,selection_basis:method.selection_basis||method.recognize||info.current_visual_scope||'当前包未提供适用摘要；查看方法说明与真实输入。',
+   ...Object.fromEntries(['selection_basis','recognize','construct','key_parameters','common_errors','inspect','if_failed'].filter(k=>method[k]!==undefined).map(k=>[k,method[k]])),
+   parameter_names:Object.keys(preset)});
+ }
+ return {experience_pack:{id:selected.manifest.id,version:selected.manifest.version,fingerprint:selected.fingerprint},
+  units:caps?.units||null,dimensions:caps?.dimensions||null,candidates,
+  actions:Object.keys(selected.manifest.actions)};
+}
+
 module.exports={toolkitTool,snapshot,resolveMethodBinding,readConstructionCatalog,officialStatus};

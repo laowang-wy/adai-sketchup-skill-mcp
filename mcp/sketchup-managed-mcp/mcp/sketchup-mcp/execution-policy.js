@@ -13,7 +13,7 @@ function policyError(message) {
 
 function createPolicy(mode, assistanceMode, profile, planFor) {
   if (assistanceMode === 'autonomous') {
-    return { version: EXPERT_VERSION, strategy: 'autonomous_work_unit', review_mode: 'current_result', ...(['single_image','freeform','cad'].includes(mode) ? { initial_stages: ['massing', 'archetypes'] } : {}) };
+    return { version: EXPERT_VERSION, strategy: 'autonomous_work_unit', review_mode: 'current_result', ...(['single_image','freeform','cad'].includes(mode) ? { initial_stages: profile?.repetition === 'none' ? ['massing'] : ['massing', 'archetypes'] } : {}) };
   }
   return { version: 1, strategy: 'guided_phase', review_mode: 'phase_review', phase_plan: planFor(mode, profile) };
 }

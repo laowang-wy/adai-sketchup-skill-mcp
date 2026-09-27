@@ -30,6 +30,6 @@
 }
 ```
 
-连续修改不切阶段：对`wall`用`set_wall_openings`更新参数，再按需取证查看。复杂曲面或其他构造调用现有经验包生成器，或者提交`PipClawManagedBuild.build(entities,context)`；`context['phase_group']`在新专家项目表示当前真实单元。该API兼容名不意味着只准构造某个旧阶段。
+专家可在当前授权单元连续修改：对`wall`用`set_wall_openings`更新参数，再按需取证查看。guided 如需改动旧阶段的墙，先走现有返修入口；同批新墙可直接调整。复杂曲面或其他构造调用现有经验包生成器，或者提交`PipClawManagedBuild.build(entities,context)`；`context['phase_group']`在新专家项目表示当前真实单元。该API兼容名不意味着只准构造某个旧阶段。
 
 系统之外、锁定对象、未经接受的用户手改受保护。当前提供单元级范围，不宣称任意拓扑补丁或跨单元共享定义编辑已开放。源码结果和几何数据不等于图像一致性通过，仍需看图和实际核对。

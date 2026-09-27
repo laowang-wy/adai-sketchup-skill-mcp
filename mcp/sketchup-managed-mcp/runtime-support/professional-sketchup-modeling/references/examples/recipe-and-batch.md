@@ -1,26 +1,28 @@
-# 配方与同阶段批量示例
+# 屋壳组装与批量实例
 
-这是两个独立工程小样，不代表客户建筑或古建形制验收。项目 ID、输出目录和来源说明须替换；输出用新的绝对目录，不能覆盖旧产物。尺寸单位为 mm，SketchUp 2019 可运行。
+## 当前方法已适用：取得参数并构造
 
-## 屋盖：直接使用现有 shell 配方
+使用 construction_brief 返回的真实 toolkit_id、版本/指纹和 method_id，调用时带当前 project_id：
 
-1. 读取一次 [roof-recipe.json](roof-recipe.json)，按真实任务修改 `project_id`、`phase`、来源和控制参数。示例为 12000 × 9000、rise 3200 的 wu_dian shell；它不是所有特殊屋面的替代方案。
-2. 调用 `sketchup_ancient_tool(action="compile", family="geometry", parameters=<该对象>, output_directory=<新绝对目录>)`。compile 已包含校验，不必为同输入再调 validate；单独诊断仍可使用 validate。
-3. 直接把返回的 `result.manifest.ruby_file` 交给 `sketchup_project_step(project_id=..., ruby_file=...)`。不读回整个 parts.json、不重写生成 Ruby、不补注释绕过预检查。项目先通过 `sketchup_project_begin` 建立；示例可选 freeform、features=["curved_eave"]、repetition="none" 并说明没有复制系统。massing 与 roof_profile 分别编译对应阶段，阶段边界仍须审查。
-4. 查看 step 返回的真实全景、剖向和底部近景。存在已封存的自动测量附件时，`sketchup_project_review(..., verdict="continue", visual_review={state:"pass", observations:<实际观察>, inspected_views:[<实际看过的返回图片路径>]})` 自动运行机器检查。未检查图片不能填 pass；缺少数值附件时用完整 quality_review 明确未知项。step 的 checkpoint 是可编辑 SKP 阶段副本，不等于最终建筑交付。
-5. 合法尺寸变体：rise 改为 3500，并同步 ridge_profile 和 corner_lift_section 中对应脊高。单独新项目，或通过 `sketchup_project_revise_from` 回到受影响阶段，再编译到新目录并重建、重审。不要把两张重叠的同位 shell 当作变体验收。
-6. 非法反例：width=-1，或删除 source_evidence；compile 必须失败，不应进入 step。
+```text
+sketchup_toolkit(action=invoke, operation=preset,
+  arguments={family:roof,preset_id:所选方法})
+→ 按来源修改 result.parameters
+→ sketchup_toolkit(action=invoke, operation=compile,
+  arguments={family:roof,parameters:调整后参数,output_directory:新的绝对目录})
+→ result.manifest.ruby_file
+```
 
-几何、语义 ID、真实实体读回和依赖附件由程序生成。仍需人工判断来源和形态；示例不包含瓦件、斗拱、历史形制或完整建筑交付。没有匹配 recipe 时继续用受管自定义 Ruby。
+compile 包含 validate。只修改 preset 实际返回的字段：width/depth 是檐外包，rise 是局部举高，单位 mm；eave_height/setback 不属于这些生成器参数，标高与退台通过装配变换表达。与来源冲突时换适用构造方法，合法受管 Ruby 可直接使用。
 
-## 重复框架：一个原型，三个额外实例
+本次只做该屋壳时，将 ruby_file 直接交给 step。完整主形包含多层屋盖和主体时，复用同目录 mesh-data.json 中 roof 数组的 vertices(mm)、triangles、offset，在同一受管 build 中按实际标高组装主体、洞口和各屋盖。具体代码见[受管 Ruby 的屋壳组装](../managed-ruby-api.md#roof-meshes-within-a-complete-primary-form)。屋壳产物不自动包含瓦、斗拱或整栋建筑。
 
-文件：[representative-and-batch.rb](ruby/representative-and-batch.rb)。用独立 cad 工程项目，按 source_alignment → archetypes → replication 依次把同一个文件交给 step；每阶段查看真实图像并 review。不要跨过原型审查。
+改同一屋壳时：新专家单元可明确 replace；编译屋壳是 create-only，不用 update 生成重叠副本。guided 按当前返修入口回到对应内容，保留检查点后重建。实际看图后的 visual_review 由程序补机器附件，缺项如实标为未验证，不要求改填完整机器表。
 
-source_alignment 建工程基座；archetypes 建两根立柱与一根横梁，转换为真实 ComponentInstance，注册 frame 原型以及立柱、横梁两个实际可见系统。replication 在**一次 step** 中循环现有 `instantiate_archetype`，使用 x=2500、5000、8700 的变换，末个做 X 镜像。最后一个镜像的实体占据 x=7500..8700。
+## 一次放置多个已确认实例
 
-成品计数为 **4 个框架 = 1 个代表原型 + 3 个额外实例**。replication audit 的 actual_instances 是 3，不包含原型。全部保持共享 Definition、独立真实路径和可编辑关系；expected_transform 记录每个预期变换，镜像不应误拒绝。
+直接调用 entities.add_instance(definition, transform)，或用 PipClawManagedProject.instantiate_archetype 定位已登记的真实母型。母型的局部基点对准宿主，平移/旋转/镜像各应用一次；构造显著不同的角部或端部使用变体。
 
-错位反例只在隔离测试副本执行：在 replication 创建完实例后，将第一个新实例再平移 `[0,150.mm,0]`，保留原 expected_transform。结构审计和 continue 必须拒绝；查看证据后可直接 `review(verdict="revise")` 撤回当前复制阶段，原型保持，再运行合法原文件。不要把错误位置写成新期望来通过。
+可运行参考：[代表框架与批量实例](ruby/representative-and-batch.rb)。它按 guided 的 source_alignment → archetypes → replication 展示一个母型和三个额外实例；数字是例子，不是模型必须达到的配额。对照实际首、中、末及存在的转角，发现错误先修母型或变换。
 
-接近现有限制时按现有受管阶段和资源规则处理；未知结果先查原 operation_id 并 reconcile，禁止整批重放。本例未提供绕过限制或一键整楼入口。
+`roof-recipe.json` 另展示 family=geometry 的高级参数示例，与上面的 family=roof preset 不互换；它包含自己的几何输入合同，仅在需要该算法时读取。历史项目沿保存计划执行，新项目不为这份示例添加 roof_profile 阶段。

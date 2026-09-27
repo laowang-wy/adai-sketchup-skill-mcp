@@ -92,7 +92,7 @@ function describeActions(state) {
     return result(call('sketchup_project_finish'), 'Save and verify the reviewed result.');
   }
   if (state.status === 'ready_for_step') {
-    return result(call('sketchup_project_step', {}, ['ruby_file']), 'Build the current guided phase.');
+    return result(call('sketchup_project_step', {}, ['ruby_file_or_operations']), 'Construct the current task_card goal using its method and parameters, then submit the managed step.');
   }
   return result(null, 'Inspect the project state; no safe automatic action is available.');
 }

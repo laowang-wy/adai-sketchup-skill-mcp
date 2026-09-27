@@ -1,62 +1,22 @@
-# Minimal Managed SketchUp Example
+# 最小受管建模调用
 
-This is the shortest complete production pattern. It demonstrates control flow, not a building template.
-
-## Begin
-
-Inspect every provided source and call `sketchup_project_begin` with mode, source(s), output and project ID. For one image `source_image` remains valid; for multiple images pass every absolute path in `source_images` in the user's order. If composition needs it, add 1–8 observed projection targets; this brief is optional guidance, not a universal building contract.
-
-Example `single_image` begin arguments (illustrative paths and bbox only; replace with inspected source data):
-
-```json
-{
-  "mode": "single_image",
-  "source_image": "D:/project/reference.jpg",
-  "output_directory": "D:/project/output",
-  "project_id": "BuildingStudy01",
-  "projection_brief": {
-    "targets": [{"id":"main", "role":"focal_building", "bbox":[0.18,0.18,0.78,0.92]}]
-  }
-}
-```
-
-For multiple user references, replace `source_image` with `source_images` and keep every image:
-
-```json
-{
-  "mode": "single_image",
-  "source_images": ["D:/project/front.jpg", "D:/project/side.jpg", "D:/project/detail.jpg"],
-  "output_directory": "D:/project/output",
-  "project_id": "BuildingStudy01"
-}
-```
-
-Each bbox is normalized `[x0,y0,x1,y1]` inside `[0,1]`. One isolated building may have one focal target. Do not copy example bounds without reading the image. For uncertain composition read [projection-brief-guide.md](projection-brief-guide.md).
-
-## Execute and Review
-
-For every returned `next_action`:
-
-1. write one `PipClawManagedBuild.build(entities, context)` file;
-2. build only the requested scale;
-3. use the applicable managed construction entry point; add registration metadata only when it helps track a real object or repeated system;
-4. call `sketchup_project_step`;
-5. inspect the returned review images yourself;
-6. call `sketchup_project_review` with `revise` or `continue`; production continue requires the bound [quality_review record](managed-quality-review.md), including concrete visual observations and both check statuses.
-
-Do not ask the user for routine phase approval.
-
-## Phase Meaning
+这是调用方式，不是建筑模板；路径、尺寸、观察必须来自当前任务。
 
 ```text
-massing: composition and major form
-→ archetypes: complete reusable component(s), including repeatable detail
-→ replication: true instances of accepted components
-→ variants: controlled differences
-→ facade_detail: non-repeating one-off details
-→ finish: materials, closure and delivery
+sketchup_project_begin(mode=single_image,source_image=真实图片,
+  output_directory=输出目录,task_text=原始任务)
+→ 依 task_card.construction_brief 组织完整主形
+→ sketchup_project_step(project_id,ruby_file=已写入的绝对路径)
+→ 用宿主图像工具实际查看返回证据
+→ sketchup_project_review(project_id,evidence_id,verdict,
+    visual_review={state:pass|fail|unverified,
+                   observations:实际观察,
+                   inspected_views:实际看过的视图})
+→ 修正或下一项 → ready_to_finish 后 sketchup_project_finish
 ```
 
-## Finish
+也可用 step 的 `operations` 替代 Ruby；两者不能同时传。guided 替换当前阶段，expert 允许在实际受管单元内连续写入，再 `retry_evidence` 取证。新 expert 主形与代表构件各自确认，随后按建筑系统组织。
 
-Call `sketchup_project_finish` only at `ready_to_finish`. Completion requires `finished`, a real final `.skp`, final evidence and a response naming both paths. Every earlier state is **未完成交付**.
+`visual_review` 是正常入口，机器检查由程序从封存附件组装，缺资料自动记未验证。兼容完整 `quality_review`，但不要求日常 Agent 抄写机器字段。主形包括定义性屋盖、主要开口及空间；单壳、计数或检查点不能冒充建筑完成。需要补充构造时看[受管 Ruby API](managed-ruby-api.md)。
+
+用户提供多张图时，begin 传 `source_images:[<第一张绝对路径>,<第二张绝对路径>,...]`，逐张查看，保留用户提供的完整来源组。

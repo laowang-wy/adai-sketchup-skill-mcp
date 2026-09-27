@@ -16,7 +16,7 @@ module PipClawManagedProject
  def capture_geometry_views(project_id,phase_name,directory,requested_json=nil)
   root=root_for(project_id,false);raise 'MANAGED_PROJECT_REQUIRED' unless root && root.valid?
   group=phase_group(root,phase_name);raise 'MANAGED_PHASE_REQUIRED' unless group
-  view=model.active_view;original=view.camera;records=[];visibility=[]
+  view=model.active_view;original_state=capture_camera_state;records=[];visibility=[]
   requested=requested_json.nil? ? nil : JSON.parse(requested_json)
   supported=%w[perspective front side plan underside]
   raise 'INVALID_GEOMETRY_VIEWS' if requested && (!requested.is_a?(Array) || (requested-supported).any? || requested.uniq.length!=requested.length)
@@ -47,15 +47,15 @@ module PipClawManagedProject
     if perspective;camera.fov=40.0
     else;camera.height=radius*2.6;end
     view.camera=camera;view.refresh
-    file=File.join(directory,'geometry-'+label+'-'+kind+'.png');ok=view.write_image(file,1600,1200,true,0.9);raise 'DIAGNOSTIC_CAPTURE_FAILED' unless ok && File.size(file)>0
-    metadata=JSON.parse(camera_state);metadata['bounds_mm']=[bounds.min,bounds.max].map{|p|p.to_a.map{|x|x.to_mm}};metadata['semantic_id']=id;metadata['extent_scope']='recursive Face vertices; excludes MCP ConstructionPoint anchor';metadata['image_pixels']=[1600,1200];metadata['clipping_check']='conservative enclosing-sphere camera fit; inspect image';metadata['projection_verified']=view.camera.perspective? == perspective;metadata['external_entities_temporarily_hidden']=visibility.length
+    file=File.join(directory,'geometry-'+label+'-'+kind+'.png');ok=write_evidence_image(view,file,1600,1200);raise 'DIAGNOSTIC_CAPTURE_FAILED' unless ok && File.size(file)>0
+    metadata=JSON.parse(camera_state);metadata['bounds_mm']=[bounds.min,bounds.max].map{|p|p.to_a.map{|x|x.to_mm}};metadata['semantic_id']=id;metadata['extent_scope']='recursive Face vertices; excludes MCP ConstructionPoint anchor';metadata['image_pixels']=evidence_image_size(view,1600,1200);metadata['render_backend']=evidence_framebuffer? ? 'framebuffer' : 'image';metadata['clipping_check']='conservative enclosing-sphere camera fit; inspect image';metadata['projection_verified']=view.camera.perspective? == perspective;metadata['external_entities_temporarily_hidden']=visibility.length
     records<<{'label'=>label+'_'+kind,'path'=>file,'camera'=>metadata}
    end
   end
   JSON.generate({'ok'=>true,'views'=>records,'omitted_closeups'=>[ids.length-8,0].max})
  ensure
   visibility.each{|e,hidden|e.hidden=hidden if e.valid?} if visibility
-  view.camera=original if original && view
+  restore_camera(original_state) if original_state && view
   view.refresh if view
  end
 end

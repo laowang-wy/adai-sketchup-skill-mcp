@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
-  "version": "0.5.35",
-  "build_id": "0.5.35-real-su-recovery-20260926",
+  "version": "0.5.36",
+  "build_id": "0.5.36-audit-live-su2019-20260927-r16",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -26,7 +26,7 @@
     "Pillow >= 10 (evidence helpers)",
     "interactive Windows desktop for viewport evidence"
   ],
-  "realSketchUpAcceptance": "Prior source revisions completed partial Windows SketchUp 2019 bridge, construction, readback, evidence recovery and review tests. This exact 0.5.35 build has not completed a fresh end-to-end SketchUp run; source matching, architectural similarity, finished model and other SketchUp versions remain not_run.",
+  "realSketchUpAcceptance": "This build is verified by the matching repository validation record. Scope, unresolved limitations, and unexecuted tests are recorded there; compilation is not architectural acceptance.",
   "bundledKnowledgePacks": [
     {
       "id": "adai-ancient-architecture",
@@ -40,10 +40,10 @@
     {
       "id": "ancient-architecture",
       "sourceVersion": "0.4",
-      "integrationVersion": "0.5.29",
+      "integrationVersion": "0.5.36",
       "entry": "sketchup_ancient_tool",
       "scope": "phase-role compiler used by guided phases or version-2 expert work units; actual readback and visual review remain required",
-      "version": "0.4.5",
+      "version": "0.4.6",
       "integrationBaseline": "0.5.6"
     },
     {

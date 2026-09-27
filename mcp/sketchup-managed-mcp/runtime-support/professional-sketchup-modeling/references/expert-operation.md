@@ -16,7 +16,7 @@
 
 ## 取证与合并审核
 
-完成有意义的构造后调用 `sketchup_project_retry_evidence`。在新专家项目里它同时是正常的当前成果取证入口，不必制造一次失败来获取图片。默认当前参考视图；可用 `views`选择 `reference/perspective/front/side/plan/underside` 的相关组合。程序附参考图和机器读回，不固定每次五视图。
+完成有意义的构造后调用 `sketchup_project_retry_evidence`。在新专家项目里它同时是正常的当前成果取证入口，不必制造一次失败来获取图片。默认返回参考视图与整体五视图；可用 `views`选择 `reference/perspective/front/side/plan/underside` 的相关组合。程序附参考图和机器读回，不固定每次五视图。
 
 查看返回的实际图片后调用 `review`，通常只提供 `visual_review.state/observations/inspected_views`。图片可用返回的键，如`reference`、`geometry_whole_front`；不能列未实际查看的图片。尺寸、源图、空腔、关键连接与材质按当前任务一起核对，不为凑通道另开数轮。
 

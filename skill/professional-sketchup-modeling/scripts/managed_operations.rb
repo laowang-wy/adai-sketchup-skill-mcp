@@ -161,7 +161,8 @@ module ADAIManagedOperations
       when 'material'
         e=existing(entities,id)
         color=op.fetch('rgb');alpha=op.fetch('alpha',1.0)
-        name='SystemMaterial_'+context['work_unit_id']+'_'+Digest::SHA256.hexdigest(JSON.generate([color,alpha]))[0,12]
+        scope=[context['project_id'], context['work_unit_id'] || context['phase']].map(&:to_s).join(':')
+        name='SystemMaterial_'+Digest::SHA256.hexdigest(JSON.generate([scope,color,alpha]))[0,24]
         mat=context['model'].materials[name]
         unless mat
           mat=context['model'].materials.add(name);mat.color=Sketchup::Color.new(*color);mat.alpha=alpha

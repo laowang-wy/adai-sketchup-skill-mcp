@@ -7,6 +7,8 @@ require 'time'
 require 'fileutils'
 require 'securerandom'
 require 'fiddle'
+require_relative 'viewport_capture'
+require_relative 'ui_responsiveness'
 
 module CodexSketchUpBridge
   HOST = (ENV['SKETCHUP_BRIDGE_HOST'] || '127.0.0.1').to_s
@@ -93,10 +95,7 @@ module CodexSketchUpBridge
         log("TCP compatibility endpoint unavailable; continuing with file bridge: #{error.class}: #{error.message}")
       end
       publish_instance
-      @timer_id = UI.start_timer(0.05, true) do
-        drain_jobs
-        poll_file_requests
-      end
+      @timer_id = UI.start_timer(0.05, true) { service_tick }
       endpoint = @server ? " and http://#{HOST}:#{PORT}" : " (TCP compatibility endpoint unavailable)"
       puts "[CodexSketchUpBridge] file bridge ready at #{BRIDGE_DIR}#{endpoint}"
       log("file bridge ready at #{BRIDGE_DIR}#{endpoint}")
@@ -159,14 +158,39 @@ module CodexSketchUpBridge
       end
     end
 
+    # Sketchup.open_file can pump the Windows message loop while still loading.
+    # A reentrant UI timer must not dispatch another Ruby write into that partial
+    # document. TCP and file requests share this same main-thread boundary.
+    def service_tick
+      return false if @servicing_tick
+      @servicing_tick = true
+      begin
+        # Share one dispatch budget across TCP and file transports. Alternating
+        # priority prevents either queue starving the other while returning to
+        # SketchUp's event loop between potentially expensive requests.
+        if @file_first
+          processed = poll_file_requests
+          drain_jobs if processed == 0
+        else
+          processed = drain_jobs
+          poll_file_requests if processed == 0
+        end
+        @file_first = !@file_first
+      ensure
+        @servicing_tick = false
+      end
+      true
+    end
+
     def poll_file_requests
       processed = poll_file_requests_in(REQUESTS_DIR, RESPONSES_DIR, false, MAX_REQUESTS_PER_TICK)
       # Compatibility with the original package's machine-wide file bridge.
       # Atomic claiming prevents two live instances from executing one legacy
       # request twice; callers using the new MCP are unaffected.
       if processed < MAX_REQUESTS_PER_TICK && LEGACY_REQUESTS_DIR != REQUESTS_DIR
-        poll_file_requests_in(LEGACY_REQUESTS_DIR, LEGACY_RESPONSES_DIR, true, MAX_REQUESTS_PER_TICK - processed)
+        processed += poll_file_requests_in(LEGACY_REQUESTS_DIR, LEGACY_RESPONSES_DIR, true, MAX_REQUESTS_PER_TICK - processed)
       end
+      processed
     end
 
     def poll_file_requests_in(requests_dir, responses_dir, legacy = false, limit = MAX_REQUESTS_PER_TICK)
@@ -261,7 +285,11 @@ module CodexSketchUpBridge
       end
 
       if request[:method] == 'GET' && request[:path] == '/health'
-        write_http(socket, 200, status)
+        # The TCP handler runs on a worker. Model identity belongs to the
+        # SketchUp main thread, including this read-only compatibility route.
+        result = run_on_main_thread({'command'=>'ping', 'target_process_id'=>Process.pid,
+          'target_session_id'=>SESSION_ID}, DEFAULT_TIMEOUT_MS)
+        write_http(socket, result[:ok] ? 200 : 503, result)
         return
       end
 
@@ -325,6 +353,7 @@ module CodexSketchUpBridge
         400 => 'Bad Request',
         401 => 'Unauthorized',
         404 => 'Not Found',
+        503 => 'Service Unavailable',
         500 => 'Internal Server Error'
       }[status_code] || 'OK'
 
@@ -356,17 +385,25 @@ module CodexSketchUpBridge
     def drain_jobs
       processed = 0
       while @jobs && !@jobs.empty? && processed < MAX_MAIN_THREAD_JOBS_PER_TICK
-        payload, response_queue = @jobs.pop(true)
-        response_queue << dispatch(payload)
+        begin
+          payload, response_queue = @jobs.pop(true)
+        rescue ThreadError
+          break
+        end
         processed += 1
+        response_queue << dispatch(payload)
       end
-    rescue ThreadError
-      nil
+      processed
     rescue => e
       response_queue << { ok: false, error: "#{e.class}: #{e.message}", backtrace: e.backtrace } if response_queue
+      processed
     end
 
     def dispatch(payload)
+      ADAIUIResponsiveness.run { dispatch_command(payload) }
+    end
+
+    def dispatch_command(payload)
       if payload['target_process_id'].to_i != Process.pid || payload['target_session_id'] != SESSION_ID
         return {ok: false, error: 'INSTANCE_MISMATCH: select this process and session before executing'}
       end
@@ -887,14 +924,18 @@ module CodexSketchUpBridge
         'underside' => Sketchup::Camera.new(center.offset(Geom::Vector3d.new(0.6, -0.8, -0.5), size.mm * 1.8), center, Z_AXIS, true)
       }
       outputs = []
-      cameras.each do |name, camera|
-        view.camera = camera
-        view.refresh
-        path = File.join(directory, "#{prefix}-#{name}.png")
-        view.write_image(path, width, height, true, 0)
-        outputs << path
+      ADAIViewportCapture.with_saved_camera(view) do
+        cameras.each do |name, camera|
+          view.camera = camera
+          view.refresh
+          path = File.join(directory, "#{prefix}-#{name}.png")
+          ok = ADAIViewportCapture.write(view, path, width, height)
+          raise 'DIAGNOSTIC_CAPTURE_FAILED' unless ok && File.file?(path) && File.size(path) > 0
+          outputs << path
+        end
       end
-      { ok: true, outputs: outputs }
+      { ok: true, outputs: outputs, image_pixels: ADAIViewportCapture.image_size(view, width, height),
+        render_backend: ADAIViewportCapture.framebuffer? ? 'framebuffer' : 'image', camera_restored: true }
     rescue => e
       { ok: false, error: "#{e.class}: #{e.message}", backtrace: e.backtrace }
     end

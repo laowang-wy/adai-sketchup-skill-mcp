@@ -2,107 +2,152 @@
   "id": "roof-routing",
   "title": "屋顶类型与路线选择",
   "trigger": "需要新建或修改古建屋顶时",
-  "action": "先判断需要源样板保真复用，还是改变比例的通用屋壳。源样板使用 source_template_tool.py；通用屋面使用 roof_tool.py。",
+  "action": "先从真实来源判断屋面形态；sketchup_toolkit invoke preset 获取完整参数，按来源调整后 invoke compile。当前为完整主形时组装屋壳与主体、主要开口；关键轮廓不适配可直接用受管 Ruby。",
   "rules": [
-    "源歇山只接受等比缩放，不能用 width 之外的字段强行改造。",
-    "六类名称代表算法入口；不代表岳阳楼或历史形制验收。",
-    "只有双坡剖面证据时，不外推为歇山、庑殿或盔顶。"
+    "候选名称是算法入口，不是程序已看图识别，也不证明历史形制。",
+    "width/depth 是檐外包，rise 是局部举高；绝对标高和层间退台由装配变换表达。",
+    "仅采用选中 preset 实际返回的字段；不使用未实现的 eave_height/setback。",
+    "源资产复用只在相应入口声明支持、源文件可达且授权时使用；不因近似名称强制匹配。"
   ],
   "checks": [
-    "确定正脊、山面、翼角与檐线是否符合当前来源。",
-    "先检查屋壳，再启用ridge、tile_sample、tiled；歇山/盔顶可调用detailed配方。"
-  ],
-  "reject_when": [
-    "源样板和通用算法混用却未记录来源",
-    "用铺瓦遮掩主形缺陷"
+    "比较正侧轮廓、山面、脊线、翼角、主要开口与开敞关系。",
+    "先修定义性屋形，再增加脊、瓦等细部；几何合法不代表建筑符合。"
   ],
   "evidence": [
     "study/findings.md",
     "source_templates/catalog.json"
   ],
-  "entrypoint": "roof_tool.py",
+  "entrypoint": "mcp_entry.py (sketchup_toolkit invoke; project_id + expected_fingerprint)",
   "historical_evidence_not_shipped": [
     "validation/xieshan-defect.json"
   ],
   "evidence_scope": "Historical verification omitted from runtime distribution; rerun live checks.",
   "methods": {
     "si_shan": {
-      "label": "歇山屋壳",
-      "selection_basis": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。",
-      "recognize": "有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "recognize": "长正脊、两端上部独立山面与下部四坡裙；可分别调山面跨度与下裙举高。",
+      "construct": "先以 width/depth/ridge_length/rise 定轮廓，再调 gable_span_ratio、apron_rise_ratio 与 corner_lift。",
       "key_parameters": [
         "width",
         "depth",
         "rise",
         "thickness",
-        "corner_lift"
-      ]
+        "ridge_length",
+        "corner_lift",
+        "gable_span_ratio",
+        "apron_rise_ratio"
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
+      "label": "歇山屋壳",
+      "selection_basis": "长正脊、两端上部独立山面与下部四坡裙；可分别调山面跨度与下裙举高。"
     },
     "wu_dian": {
+      "recognize": "长正脊与四个坡面连续相接，端部没有独立山面；适合连续主坡和统一檐口。",
+      "construct": "用檐外包宽深、正脊长度、举高及翼角控制四坡壳。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness",
+        "ridge_length",
+        "corner_lift"
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
       "label": "庑殿屋壳",
-      "selection_basis": "四面坡连续汇向正脊，端部没有独立山面；适合连续主坡和统一檐口。",
-      "recognize": "四面坡连续汇向正脊，端部没有独立山面；适合连续主坡和统一檐口。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
-      "key_parameters": [
-        "width",
-        "depth",
-        "rise",
-        "thickness",
-        "corner_lift"
-      ]
-    },
-    "juan_peng": {
-      "label": "卷棚屋壳",
-      "selection_basis": "屋面以连续圆缓曲坡或卷棚断面为主，通常不靠单一正脊分隔前后坡。",
-      "recognize": "屋面以连续圆缓曲坡或卷棚断面为主，通常不靠单一正脊分隔前后坡。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
-      "key_parameters": [
-        "width",
-        "depth",
-        "rise",
-        "thickness",
-        "corner_lift"
-      ]
+      "selection_basis": "长正脊与四个坡面连续相接，端部没有独立山面；适合连续主坡和统一檐口。"
     },
     "zan_jian": {
-      "label": "攒尖屋壳",
-      "selection_basis": "多坡从中心脊顶或中心节点向周边放射；适合中心收束、平面多边形的屋盖。",
-      "recognize": "多坡从中心脊顶或中心节点向周边放射；适合中心收束、平面多边形的屋盖。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "recognize": "周边各坡汇向同一顶点，来源确无长正脊。",
+      "construct": "先定周边尺寸和 sides，再以 rise 控制顶部收分；与真实角数对应。",
       "key_parameters": [
         "width",
         "depth",
         "rise",
         "thickness",
+        "sides",
         "corner_lift"
-      ]
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
+      "label": "攒尖屋壳",
+      "selection_basis": "周边各坡汇向同一顶点，来源确无长正脊。"
+    },
+    "juan_peng": {
+      "recognize": "连续圆转顶部，不以尖折长正脊表达来源。",
+      "construct": "用 width/depth 与 rise 定连续圆滑双坡包络；当前圆滑截面固定，不支持独立曲率参数。来源截面不适配时改用受管截面方法。",
+      "key_parameters": [
+        "width",
+        "depth",
+        "rise",
+        "thickness"
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
+      "label": "卷棚屋壳",
+      "selection_basis": "连续圆转顶部，不以尖折长正脊表达来源。"
     },
     "helmet": {
-      "label": "盔顶屋壳",
-      "selection_basis": "屋面向中心冠部连续收拢并形成穹曲外轮廓；适合无明确长正脊的冠顶关系。",
-      "recognize": "屋面向中心冠部连续收拢并形成穹曲外轮廓；适合无明确长正脊的冠顶关系。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "recognize": "来源有盔形经线与收尖关系；本预设经线是推断候选，不是测绘。",
+      "construct": "以 width/depth/rise 和 corner_lift 调整当前固定推断剖面的四边放射壳；不是任意盔顶剖面编辑器。来源站点不同则改用自定义剖面方法。",
       "key_parameters": [
         "width",
         "depth",
         "rise",
         "thickness",
         "corner_lift"
-      ]
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
+      "label": "盔顶屋壳",
+      "selection_basis": "来源有盔形经线与收尖关系；本预设经线是推断候选，不是测绘。"
     },
     "xie_ding": {
-      "label": "简化四坡/悬山屋壳",
-      "selection_basis": "用简化的四坡或悬山外轮廓快速表达主屋壳；适合来源无法支持更复杂分区时的可编辑基础。",
-      "recognize": "用简化的四坡或悬山外轮廓快速表达主屋壳；适合来源无法支持更复杂分区时的可编辑基础。",
-      "construct": "先按来源比例取得该预设的真实参数，再执行 preset → compile → ruby_file → sketchup_project_step。屋壳通过后再组织支承、瓦面或细部。",
+      "recognize": "简化四坡候选；不是悬山算法，不用名称近似进行替代。",
+      "construct": "先定四坡外包与举高，确认来源确可由该简化形态表达。",
       "key_parameters": [
         "width",
         "depth",
         "rise",
         "thickness",
+        "ridge_length",
         "corner_lift"
-      ]
+      ],
+      "common_errors": [
+        "把檐外包当墙基尺寸",
+        "把局部 rise 当绝对标高",
+        "屋壳生成被说成整栋建筑完成"
+      ],
+      "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
+      "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
+      "label": "简化四坡/悬山屋壳",
+      "selection_basis": "简化四坡候选；不是悬山算法，不用名称近似进行替代。"
     }
-  }
+  },
+  "if_not_applicable": "改选合适方法或使用 PipClawManagedBuild.build；由底座负责作用域、事务和恢复。"
 }

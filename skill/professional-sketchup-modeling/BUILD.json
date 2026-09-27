@@ -1,6 +1,6 @@
 {
-  "build_id": "0.5.35-real-su-recovery-20260926",
-  "source_baseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8",
-  "source_digest": "d4593c5634570c2b112c39268956a02f71256497e48e439f5e5e27f8f2858c6f",
-  "real_sketchup_acceptance": "not_run"
+  "build_id": "0.5.36-audit-live-su2019-20260927-r16",
+  "source_baseline": "a57ff2dc853404d09b2eb9a771ce89891b14378c",
+  "source_digest": "53fc230b032eb8cb0240d9959efdce25af7750cbe229cd32859ce10a75536a46",
+  "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

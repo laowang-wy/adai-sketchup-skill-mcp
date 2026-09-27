@@ -18,7 +18,7 @@ const managedProjects = new ManagedProjects({ appDataDir: APP_DATA_DIR, skillRoo
 
 const serverInfo = {
   name: 'sketchup-mcp',
-  version: '0.5.35',
+  version: '0.5.36',
   build_id: require('../../manifest.json').build_id,
 };
 
@@ -87,8 +87,8 @@ const tools = [
         projection_brief: { type: 'object', description: 'Optional source projection hints. If supplied, the MCP reports projection mismatches as diagnostics; boxes and registration never replace actual visual comparison.' },
         output_directory: { type: 'string' },
         project_id: { type: 'string' },
-        assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'Saved per-project assistance preference. auto is compatibility-only and resolves to guided.' },
-        task_text: { type: 'string', description: 'Optional original task text. A documented first-line command is a shortcut; hosts may select the saved assistance_mode explicitly. The remainder is retained.' },
+        assistance_mode: { type: 'string', enum: ['guided', 'autonomous', 'auto'], description: 'New tasks default to guided. autonomous requires an exact branded command in the first nonempty task_text line; existing projects retain their saved mode.' },
+        task_text: { type: 'string', description: 'Original user task text. Only the documented full first-line branded commands enable expert mode for a new task; a mode field alone cannot override this. The remainder is retained.' },
         source_analysis: { type: 'object', description: 'Optional provider-neutral image analysis produced by the host, a configured API, a local vision model, or the agent fallback. It is source context, never a quality or shape gate.', properties: { analyzer: { type: 'object', properties: { provider: { type: 'string', enum: ['host_vision','configured_api','local_vision','agent_fallback','unavailable'] }, status: { type: 'string', enum: ['complete','partial','unavailable'] }, model: { type: 'string', maxLength: 128 }, image_sha256: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' } }, additionalProperties: false }, images: { type: 'array', maxItems: 32, items: { type: 'object', properties: { image_id: { type: 'string', minLength: 1, maxLength: 128 }, visible_facts: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, geometry_cues: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, spatial_relations: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, style_hypotheses: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, possible_roof_types: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 160 } }, scale_clues: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, occlusions: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 500 } }, unknowns: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } }, conflict: { type: 'boolean' } }, required: ['image_id','visible_facts','geometry_cues','spatial_relations','style_hypotheses','possible_roof_types','scale_clues','occlusions','unknowns'], additionalProperties: false } }, conflicts: { type: 'array', maxItems: 64, items: { type: 'string', maxLength: 500 } } }, additionalProperties: false },
         work_unit_id: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9_-]{2,63}$', description: 'Optional autonomous work-unit label. It groups related managed operations without bypassing phase, evidence, or transaction guards.' },
         detail: { type: 'boolean', description: 'Return the original task text in the response; default false returns only a hash and readable reference.' },
@@ -618,8 +618,14 @@ async function handleToolCall(name, input = {}, context = {}) {
       const expectedPath = input.expected_path || '';
       const featureProfile = input.feature_profile || '';
       const script = path.join(SKILL_ROOT, 'scripts', 'audit_active_model.rb').replaceAll('\\', '/');
-      const ruby = 'load ' + JSON.stringify(script) + '; PipClawModelAudit.export(' + JSON.stringify(auditPath) + ', ' + JSON.stringify(previewPath) + ', ' + JSON.stringify(expectedPath) + ', ' + JSON.stringify(featureProfile) + ')';
-      return asToolContent(await bridge('run_ruby', { code: ruby, file: script }, input.timeout_ms || 120000));
+      const ruby = 'load ' + JSON.stringify(script) + '; result = PipClawModelAudit.export(' + JSON.stringify(auditPath) + ', ' + JSON.stringify(previewPath) + ', ' + JSON.stringify(expectedPath) + ', ' + JSON.stringify(featureProfile) + '); puts "PIPCLAW_AUDIT_RESULT=" + JSON.generate(result)';
+      const response = await bridge('run_ruby', { code: ruby, file: script }, input.timeout_ms || 120000);
+      if (response.ok === false) return {...asToolContent(response), isError: true};
+      const line = String(response.stdout || '').split(/\r?\n/).find(row => row.startsWith('PIPCLAW_AUDIT_RESULT='));
+      if (!line) throw Object.assign(new Error('Audit returned no structured result; do not infer success from Ruby execution.'), {code:'AUDIT_RESULT_MISSING'});
+      const result = JSON.parse(line.slice('PIPCLAW_AUDIT_RESULT='.length));
+      if (typeof result?.ok !== 'boolean') throw Object.assign(new Error('Audit result is missing its success state.'), {code:'AUDIT_RESULT_INVALID'});
+      return {...asToolContent(result), ...(result.ok ? {} : {isError:true})};
     }
 
     case 'sketchup_clear_model':

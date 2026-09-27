@@ -7,6 +7,7 @@ require 'digest'
 require 'fileutils'
 require_relative 'managed_unit_scope'
 require_relative 'source_dimensions'
+require_relative 'viewport_capture'
 
 module PipClawManagedProject
   extend self
@@ -73,16 +74,115 @@ module PipClawManagedProject
     nil
   end
 
-  def canonical_json(value)
-    case value
+  def canonical_json(value, memo = nil)
+    # One serialization only: shared immutable readback subtrees have identical
+    # JSON bytes. Never retain this memo across calls or model mutations.
+    memo ||= {}
+    container = value.is_a?(Hash) || value.is_a?(Array)
+    key = value.object_id if container
+    return memo[key][1] if container && memo.key?(key)
+    result = case value
     when Hash
       keys = value.keys.map(&:to_s).uniq.sort
-      '{' + keys.map { |key| original_key = value.key?(key) ? key : key.to_sym; JSON.generate(key) + ':' + canonical_json(value[original_key]) }.join(',') + '}'
+      '{' + keys.map { |name| original = value.key?(name) ? name : name.to_sym; JSON.generate(name) + ':' + canonical_json(value[original], memo) }.join(',') + '}'
     when Array
-      '[' + value.map { |item| canonical_json(item) }.join(',') + ']'
+      '[' + value.map { |item| canonical_json(item, memo) }.join(',') + ']'
     else
       JSON.generate(value)
     end
+    memo[key] = [value, result] if container
+    result
+  end
+
+  # Same canonical byte sequence, streamed into SHA-256. Keep only small
+  # immutable fragments during this one readback, not several copies of the
+  # complete million-entity scene at every ancestor of its object tree.
+  def canonical_sha256(value, memo = nil)
+    digest = Digest::SHA256.new
+    canonical_emit(value, lambda { |part| digest.update(part) }, memo || {})
+    digest.hexdigest
+  end
+
+  # Encode small ordered subtrees in JSON's native generator. The old emitter
+  # invoked a chain of Ruby lambdas for every scalar at every ancestor, blocking
+  # SU's main thread for large models. Raw fragments contain only bytes produced
+  # here; arbitrary build strings are never accepted as pre-encoded JSON.
+  class CanonicalFragment
+    def initialize(bytes); @bytes = bytes; end
+    def to_json(*_arguments); @bytes; end
+  end
+
+  # One readback only, same sorted keys/string-key precedence and <=64 KiB
+  # fragment retention as canonical_emit. Large parents stream through the same
+  # sink without allocating another complete ancestor string. Budget estimates
+  # include escaping; final bytesize is checked before retaining a fragment.
+  def canonical_fragment(value, memo)
+    container = value.is_a?(Hash) || value.is_a?(Array)
+    return JSON.generate(value) unless container
+    key = value.object_id
+    entry = memo[key]
+    return entry[1] if entry && entry[0].equal?(value)
+    budget = 2
+    if value.is_a?(Hash)
+      normalized = {}
+      value.keys.map(&:to_s).uniq.sort.each do |name|
+        original = value.key?(name) ? name : name.to_sym
+        child = value[original]
+        if child.is_a?(Hash) || child.is_a?(Array)
+          bytes = canonical_fragment(child, memo)
+          return nil unless bytes
+          budget += bytes.bytesize
+          child = CanonicalFragment.new(bytes)
+        else
+          budget += child.is_a?(String) ? child.bytesize * 6 + 2 : child.to_s.bytesize + 8
+        end
+        budget += name.bytesize * 6 + 4
+        return nil if budget > 65536
+        normalized[name] = child
+      end
+    else
+      normalized = []
+      value.each do |child|
+        if child.is_a?(Hash) || child.is_a?(Array)
+          bytes = canonical_fragment(child, memo)
+          return nil unless bytes
+          budget += bytes.bytesize + 1
+          child = CanonicalFragment.new(bytes)
+        else
+          budget += child.is_a?(String) ? child.bytesize * 6 + 3 : child.to_s.bytesize + 9
+        end
+        return nil if budget > 65536
+        normalized << child
+      end
+    end
+    out = JSON.generate(normalized)
+    return nil if out.bytesize > 65536
+    memo[key] = [value, out]
+    out
+  end
+
+  def canonical_emit(value, sink, memo)
+    fragment = canonical_fragment(value, memo)
+    return sink.call(fragment) if fragment
+    if value.is_a?(Hash)
+      sink.call('{')
+      value.keys.map(&:to_s).uniq.sort.each_with_index do |name, index|
+        sink.call(',') if index > 0
+        sink.call(JSON.generate(name))
+        sink.call(':')
+        original = value.key?(name) ? name : name.to_sym
+        canonical_emit(value[original], sink, memo)
+      end
+      sink.call('}')
+    else
+      sink.call('[')
+      value.each_with_index do |item, index|
+        sink.call(',') if index > 0
+        canonical_emit(item, sink, memo)
+      end
+      sink.call(']')
+    end
+    nil
   end
 
   def point_signature(point)
@@ -258,6 +358,9 @@ module PipClawManagedProject
   def geometry_node_signature(entity, depth = 0, max_depth = 8, path = [], ignore_visibility_pids = nil, cache = nil)
     key = entity.object_id
     children = child_entities(entity)
+    node_cache = cache && (cache[:complete_geometry_node] ||= {})
+    node_key = [key, Array(ignore_visibility_pids).map(&:to_s).sort.join("\0")]
+    return node_cache[node_key] if node_cache && !path.include?(key) && node_cache.key?(node_key)
     leaf_cache = cache && (cache[:geometry_leaf] ||= {})
     node = if leaf_cache && leaf_cache.key?(key)
       leaf_cache[key].dup
@@ -271,7 +374,10 @@ module PipClawManagedProject
     if ignore_visibility_pids && ignore_visibility_pids.include?(node['pid'].to_s)
       node['hidden'] = '__managed_visibility__'
     end
-    return node unless children
+    unless children
+      node_cache[node_key] = node if node_cache && node['incomplete'] != true
+      return node
+    end
     if path.include?(key)
       node['incomplete'] = true
       node['cycle'] = true
@@ -283,6 +389,7 @@ module PipClawManagedProject
     node['children'] = valid.map { |child| geometry_node_signature(child, depth + 1, max_depth, path + [key], ignore_visibility_pids, cache) }
     node['incomplete'] = node['incomplete'] == true || node['children'].any? { |child| child['incomplete'] == true }
     node['max_depth'] = max_depth if node['incomplete']
+    node_cache[node_key] = node if node_cache && node['incomplete'] != true
     node
   rescue StandardError
     {'type'=>(entity.typename.to_s rescue ''), 'incomplete'=>true, 'max_depth'=>depth}
@@ -303,7 +410,7 @@ module PipClawManagedProject
       Array(item['children']).each { |child| walk.call(child) }
     end
     walk.call(node)
-    result = counts.merge('digest'=>Digest::SHA256.hexdigest(canonical_json(node)), 'complete'=>node['incomplete'] != true)
+    result = counts.merge('digest'=>canonical_sha256(node, cache && (cache[:canonical_chunks] ||= {})), 'complete'=>node['incomplete'] != true)
     summary_cache[summary_key] = result if summary_cache
     result
   rescue StandardError
@@ -322,7 +429,7 @@ module PipClawManagedProject
     }
   end
 
-  def entity_record(entity, depth = 0, ignore_visibility_pids = nil, excluded_phase = nil, path = [], cache = nil)
+  def entity_record(entity, depth = 0, ignore_visibility_pids = nil, excluded_phase = nil, path = [], cache = nil, root_boundary = false)
     key = entity.object_id
     # A component definition can appear many times in one protected scene.
     # Its children have the same identity and geometry at every occurrence;
@@ -330,7 +437,7 @@ module PipClawManagedProject
     # rebuilding the same nested tree for every instance. Never reuse an
     # incomplete/cyclic record, and use a fresh cache for the post-write check.
     record_cache = cache && (cache[:entity_record] ||= {})
-    record_key = [key, Array(ignore_visibility_pids).map(&:to_s).sort.join("\0"), excluded_phase.to_s]
+    record_key = [key, Array(ignore_visibility_pids).map(&:to_s).sort.join("\0"), excluded_phase.to_s, root_boundary]
     return record_cache[record_key] if record_cache && !path.include?(key) && record_cache.key?(record_key)
     children = child_entities(entity)
     valid_children = children ? children.to_a.select { |child| child.valid? rescue false }.sort_by { |child| entity_order_key(child) } : []
@@ -340,9 +447,9 @@ module PipClawManagedProject
       'name'=>(entity.respond_to?(:name) ? entity.name.to_s : ''),
       'layer'=>(entity.respond_to?(:layer) && entity.layer ? entity.layer.name.to_s : ''),
       'material'=>(entity.respond_to?(:material) && entity.material ? entity.material.display_name.to_s : ''),
-      'bounds'=>bounds_signature(entity),
+      'bounds'=>root_boundary ? [] : bounds_signature(entity),
       'appearance_summary'=>appearance_summary(entity),
-      'geometry_summary'=>geometry_summary(entity, ignore_visibility_pids, cache),
+      'geometry_summary'=>root_boundary ? {'complete'=>true, 'excluded_phase'=>excluded_phase.to_s} : geometry_summary(entity, ignore_visibility_pids, cache),
       'incomplete'=>false
     }
     if ignore_visibility_pids && ignore_visibility_pids.include?(record['pid'].to_s)
@@ -406,7 +513,7 @@ module PipClawManagedProject
     Digest::SHA256.hexdigest(canonical_json({'entities'=>records.sort_by { |record| [record['type'].to_s, record['pid'].to_i, record['digest'].to_s] }, 'mutable_phase'=>mutable_phase.to_s}))
   end
 
-  def external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, cache = nil, boundary_mode = false)
+  def external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, cache = {}, boundary_mode = false)
     return bounded_external_fingerprint(project_id, mutable_phase, ignore_visibility_pids, include_protected_root) if boundary_mode
     top_level = model.entities.to_a.select { |entity| entity.valid? rescue false }
     root = root_for(project_id, false)
@@ -420,7 +527,7 @@ module PipClawManagedProject
     end
     ignored_visibility = Array(ignore_visibility_pids).map(&:to_s)
     protected_root = if root
-      root_record = entity_record(root, 0, ignored_visibility, mutable_phase, [], cache)
+      root_record = entity_record(root, 0, ignored_visibility, mutable_phase, [], cache, true)
       # The root transform and protected children are part of the boundary. The
       # mutable phase is excluded above, so its aggregate bounds/geometry cannot
       # create a false positive for a legal rebuild.
@@ -439,13 +546,16 @@ module PipClawManagedProject
       {'guid'=>guid, 'name'=>(definition.name.to_s rescue ''), 'geometry_summary'=>geometry_summary(definition, nil, cache)}
     end
     payload = {
-      'entities'=>records.sort_by { |record| [record['type'].to_s, record['pid'].to_i, canonical_json(record)] },
+      'entities'=>records.sort do |left,right|
+        order = [left['type'].to_s,left['pid'].to_i] <=> [right['type'].to_s,right['pid'].to_i]
+        order == 0 ? canonical_json(left) <=> canonical_json(right) : order
+      end,
       'shared_definitions'=>definitions
     }
     if records.any? { |record| record['incomplete'] == true || record.dig('geometry_summary', 'complete') == false } || definitions.any? { |record| record.dig('geometry_summary', 'complete') == false }
       raise 'PROTECTION_READBACK_INCOMPLETE: unreadable protected geometry cannot be treated as unchanged'
     end
-    Digest::SHA256.hexdigest(canonical_json(payload))
+    canonical_sha256(payload, cache && (cache[:canonical_chunks] ||= {}))
   end
 
   def phase_group(root, phase_name, work_unit_id = nil)
@@ -762,21 +872,24 @@ module PipClawManagedProject
     nil
   end
 
-  def instance_paths_for(root, target)
-    found = []
-    target_pid = (target.persistent_id rescue target.entityID rescue nil)
+  def instance_path_index(root, requested_pids)
+    wanted = Array(requested_pids).each_with_object({}) { |pid, out| out[pid.to_i] = true }
+    found = Hash.new { |out, pid| out[pid] = [] }
+    return found if wanted.empty?
     walk = lambda do |entities, parent, ids, definitions|
       entities.to_a.each do |entity|
         next unless entity.valid?
         pid = (entity.persistent_id rescue entity.entityID rescue nil)
+        group = entity.is_a?(Sketchup::Group)
+        instance = entity.is_a?(Sketchup::ComponentInstance)
+        # A face that is not requested needs no matrix or occurrence path.
+        next unless group || instance || wanted[pid.to_i]
         transform = parent * (entity.respond_to?(:transformation) ? entity.transformation : Geom::Transformation.new)
         path_ids = ids + [pid]
-        if pid == target_pid
-          found << {'path_pids'=>path_ids, 'world_transform'=>transform.to_a.map { |value| value.to_f.round(7) }}
-        end
-        if entity.is_a?(Sketchup::Group)
+        found[pid.to_i] << {'path_pids'=>path_ids, 'world_transform'=>transform.to_a.map { |v| v.to_f.round(7) }} if wanted[pid.to_i]
+        if group
           walk.call(entity.entities, transform, path_ids, definitions)
-        elsif entity.is_a?(Sketchup::ComponentInstance)
+        elsif instance
           key = entity.definition.object_id
           raise 'INSTANCE_PATH_CYCLE' if definitions.include?(key)
           walk.call(entity.definition.entities, transform, path_ids, definitions + [key])
@@ -787,6 +900,11 @@ module PipClawManagedProject
     found
   end
 
+  def instance_paths_for(root, target)
+    pid = (target.persistent_id rescue target.entityID rescue nil).to_i
+    instance_path_index(root, [pid])[pid]
+  end
+
   def structure_audit(root)
     groups = registered_groups(root)
     archetypes = groups.flat_map { |g| phase_registry(g, 'archetypes_json') }
@@ -795,8 +913,10 @@ module PipClawManagedProject
       item.merge('valid'=>!!(entity && entity.valid?), 'counts'=>(entity && entity.valid? ? count_recursive(child_entities(entity)) : {}), 'bounds_inches'=>(entity && entity.valid? ? bounds_signature(entity) : []))
     end
     replications = groups.flat_map { |g| phase_registry(g, 'replication_systems_json').map { |r| r.merge('_owner_pid'=>g.persistent_id) } }
+    occurrence_paths = instance_path_index(root, replications.flat_map { |item| Array(item['instance_pids']) })
     replications = replications.map do |item|
-      replication_phase = groups.find { |g| g.persistent_id == item.delete('_owner_pid') }
+      owner_pid = item.delete('_owner_pid')
+      replication_phase = groups.find { |g| g.persistent_id == owner_pid }
       registered = (item['instance_pids'] || []).compact.map(&:to_i)
       unique_pids = registered.uniq
       duplicates = registered.group_by { |pid| pid }.select { |_pid, values| values.length > 1 }.keys
@@ -823,7 +943,7 @@ module PipClawManagedProject
       path_mismatches = found.each_with_index.map do |entity, index|
         next unless entity && entity.is_a?(Sketchup::ComponentInstance)
         expected = expected_records.find { |entry| entry['persistent_id'].to_i == unique_pids[index] }
-        paths = instance_paths_for(root, entity)
+        paths = occurrence_paths[unique_pids[index]]
         valid_path = expected && paths.length == 1 && expected['path_pids'] == paths.first['path_pids'] && expected['world_transform'] == paths.first['world_transform']
         valid_path ? nil : unique_pids[index]
       end.compact
@@ -1208,6 +1328,13 @@ module PipClawManagedProject
     result
   end
 
+  # Diagnostic files identify affected roots with complete geometry digests.
+  # Full recursive records still drive protection, but retaining/serializing a
+  # second copy of every child can stall rollback and exhaust memory.
+  def isolation_diagnostic_record(entity)
+    entity_record(entity, 0, nil, nil, [], {}).reject { |key, _| key == 'children' }
+  end
+
   def execute_step(project_id, phase_name, step_index, script_path, projection_brief_json = nil, operation_request = nil, operation_context = {}, verified_source = nil)
     raise ArgumentError, 'project_id is required' if project_id.to_s.strip.empty?
     raise ArgumentError, 'phase_name is required' if phase_name.to_s.strip.empty?
@@ -1240,7 +1367,7 @@ module PipClawManagedProject
     apply_runtime_render_profile
     include_protected_root = !existing_root.nil?
     managed_visibility_pids = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }.map { |entity| (entity.persistent_id rescue entity.entityID).to_s }
-    before_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
+    before_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| isolation_diagnostic_record(e) }
     before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
     rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert)
     locked_before = new_expert ? locked_scope_fingerprint(existing_root) : nil
@@ -1309,7 +1436,8 @@ module PipClawManagedProject
         'work_unit_id'=>operation_context['work_unit_id'],
         'execution_policy_version'=>operation_context['policy_version'],
         'dimension_targets'=>operation_context['dimension_targets'] || [],
-        'execution_strategy'=>operation_context['strategy']
+        'execution_strategy'=>operation_context['strategy'],
+        'typed_operations_allowed'=>operation_context['typed_operations_allowed'] == true
       }
       result = PipClawManagedBuild.build(phase.entities, context)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }
@@ -1320,9 +1448,9 @@ module PipClawManagedProject
       raise 'Managed isolation violation: tool-owned project roots must remain hidden during an isolated step' if visibility_violation
       after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
       unless before == after
-        after_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| entity_record(e) }
+        after_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| isolation_diagnostic_record(e) }
         debug_path = File.join(ENV['APPDATA'].to_s, 'SketchUpLiveMCP', 'last-isolation-diff.json')
-        File.write(debug_path, JSON.generate({'project_id'=>project_id, 'before'=>before_records, 'after'=>after_records}))
+        File.write(debug_path, JSON.generate({'project_id'=>project_id, 'detail'=>'root_summary', 'before_fingerprint'=>before, 'after_fingerprint'=>after, 'before'=>before_records, 'after'=>after_records}))
         raise 'Managed isolation violation: geometry outside the project root changed; see last-isolation-diff.json'
       end
       raise 'LOCKED_ENTITY_CHANGED' if new_expert && locked_before != locked_scope_fingerprint(root)
@@ -1374,7 +1502,7 @@ module PipClawManagedProject
         'transaction_started'=>started,
         'commit_unconfirmed'=>commit_unconfirmed,
         'rollback_unconfirmed'=>rollback_unconfirmed,
-        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, nil, new_expert),
+        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert),
         'rollback_fingerprint'=>rollback_baseline,
         'rollback_error'=>rollback_error
       })
@@ -1492,34 +1620,20 @@ module PipClawManagedProject
   end
 
   def camera_state
-    c = model.active_view.camera
-    JSON.generate({
-      'ok'=>true,
-      'eye'=>c.eye.to_a,
-      'target'=>c.target.to_a,
-      'up'=>c.up.to_a,
-      'perspective'=>c.perspective?,
-      'fov'=>(c.fov rescue nil),
-      'height'=>(c.height rescue nil),
-      'aspect_ratio'=>(c.aspect_ratio rescue 0.0),
-      'fov_is_height'=>(c.fov_is_height? rescue nil),
-      'two_point'=>(c.respond_to?(:is_2d?) ? c.is_2d? : false),
-      'viewport_pixels'=>[model.active_view.vpwidth,model.active_view.vpheight]
-    })
+    JSON.generate(ADAIViewportCapture.snapshot(model.active_view).merge('ok'=>true))
+  end
+
+  def capture_camera_state
+    state = camera_state
+    raise 'TWO_POINT_CAMERA_RESTORE_UNSUPPORTED' if JSON.parse(state)['two_point'] == true
+    state
   end
 
   def restore_camera(state_json)
     state = state_json.is_a?(String) ? JSON.parse(state_json) : state_json
-    raise 'TWO_POINT_CAMERA_RESTORE_UNSUPPORTED: retain the original Camera object instead of reconstructing it' if state['two_point'] == true
-    eye = Geom::Point3d.new(*state['eye'])
-    target = Geom::Point3d.new(*state['target'])
-    up = Geom::Vector3d.new(*state['up'])
-    camera = Sketchup::Camera.new(eye, target, up, !!state['perspective'])
-    camera.aspect_ratio = state['aspect_ratio'].to_f if state.key?('aspect_ratio') && camera.respond_to?(:aspect_ratio=)
-    camera.fov = state['fov'].to_f if state['perspective'] && state['fov']
-    camera.height = state['height'].to_f if !state['perspective'] && state['height'] && camera.respond_to?(:height=)
-    model.active_view.camera = camera
-    model.active_view.refresh
+    # Refuse before looking up the view, as well as before changing it.
+    raise 'TWO_POINT_CAMERA_RESTORE_UNSUPPORTED' if state['two_point'] == true
+    ADAIViewportCapture.restore(model.active_view, state)
     JSON.generate({'ok'=>true})
   end
 
@@ -1806,7 +1920,7 @@ module PipClawManagedProject
     raise "Managed project not found: #{project_id}" unless root
     FileUtils.mkdir_p(output_directory.to_s)
     view = model.active_view
-    original_state = camera_state
+    original_state = capture_camera_state
     original = view.camera
     direction = original.target - original.eye
     # Facade close-ups need a horizontal viewing direction. A top/plan source
@@ -1831,7 +1945,7 @@ module PipClawManagedProject
       camera.fov = 34.0 if camera.respond_to?(:fov=)
       view.camera = camera
       path = File.join(output_directory.to_s, "detail-#{label}.png")
-      raise "Could not write detail view #{label}" unless view.write_image(path, 1600, 1200, true, 0.9)
+      raise "Could not write detail view #{label}" unless write_evidence_image(view, path, 1600, 1200)
       path
     end
     JSON.generate({'ok'=>true, 'paths'=>paths, 'labels'=>levels.map { |item| item[0] }})
@@ -1862,7 +1976,7 @@ module PipClawManagedProject
     raise 'Missing archetype phase' unless phase
     FileUtils.mkdir_p(output_directory.to_s)
     view = model.active_view
-    original_state = camera_state
+    original_state = capture_camera_state
     original = view.camera
     paths = []; labels = []
     phase_registry(phase, 'archetypes_json').each_with_index do |item, index|
@@ -1871,7 +1985,7 @@ module PipClawManagedProject
       [['above', 0.48], ['underside', -0.20]].each do |label, rise|
         restore_camera(JSON.generate(prototype_camera_state(entity, rise)))
         path = File.join(output_directory.to_s, "prototype-#{index+1}-#{label}.png")
-        raise 'Prototype image export failed' unless view.write_image(path, 1600, 1200, true, 0.9)
+        raise 'Prototype image export failed' unless write_evidence_image(view, path, 1600, 1200)
         paths << path; labels << "prototype_#{index+1}_#{label}"
       end
     end
@@ -1884,6 +1998,16 @@ module PipClawManagedProject
     end
   end
 
+  def evidence_framebuffer?
+    ADAIViewportCapture.framebuffer?
+  end
+  def evidence_image_size(view, width, height)
+    ADAIViewportCapture.image_size(view, width, height)
+  end
+  def write_evidence_image(view, path, width, height)
+    ADAIViewportCapture.write(view, path, width, height)
+  end
+
   def capture_reference(project_id, output_path)
     root = root_for(project_id, false)
     raise "Managed project not found: #{project_id}" unless root
@@ -1893,11 +2017,13 @@ module PipClawManagedProject
     ratio=view.camera.aspect_ratio.to_f rescue 0.0
     ratio=view.vpwidth.to_f / [view.vpheight,1].max if ratio<=0
     width=1600; height=[[ (width/ratio).round, 128].max, 4096].min
-    ok = view.write_image(output_path.to_s, width, height, true, 0.9)
+    ok = write_evidence_image(view, output_path.to_s, width, height)
+    width,height=evidence_image_size(view,width,height)
     JSON.generate({'ok'=>!!ok, 'path'=>output_path.to_s, 'width'=>width, 'height'=>height, 'viewport_width'=>view.vpwidth, 'viewport_height'=>view.vpheight, 'camera'=>JSON.parse(camera_state)})
   end
   # Camera preparation only. OS viewport capture occurs AFTER this request returns.
   def viewport_plan(project_id, phase_name)
+    reference_camera = JSON.parse(capture_camera_state)
     @viewport_selection = model.selection.to_a
     model.selection.clear
     root = root_for(project_id, false)
@@ -1905,7 +2031,7 @@ module PipClawManagedProject
     b = root.bounds
     c = b.center.to_a
     span = [b.width, b.height, b.depth, 120.0].max.to_f
-    shots = [{'label'=>'reference', 'camera'=>JSON.parse(camera_state)}]
+    shots = [{'label'=>'reference', 'camera'=>reference_camera}]
     [['perspective',[-1.4,-2.0,1.0],[0,0,1]],['plan',[0,0,2],[0,1,0]],['front',[0,-2,0],[0,0,1]],['side',[2,0,0],[0,0,1]],['underside',[-1,-1,-2],[0,0,1]]].each do |label,offset,up|
       shots << {'label'=>label,'camera'=>{'eye'=>3.times.map{|i| c[i]+offset[i]*span},'target'=>c,'up'=>up,'perspective'=>false,'height'=>span*1.35}}
     end

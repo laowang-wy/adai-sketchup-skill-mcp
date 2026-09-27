@@ -1,40 +1,9 @@
-# 屋顶类型与路线选择
+# 屋面方法选择
 
-使用时机：需要新建或修改古建屋顶时
+先实际看来源：脊、山面、坡面与檐环决定构造，建筑名称不决定预设。当前卡的 `methods` 来自同包真实算法；自动推送还会核对 capabilities 和 preset 参数。
 
-先判断需要源样板保真复用，还是改变比例的通用屋壳。源样板使用 source_template_tool.py；通用屋面使用 roof_tool.py。
+通过 `sketchup_toolkit(action=invoke, operation=preset, arguments={family:roof,preset_id:所选类型})` 取得参数，按来源修改，再 `operation=compile`。两次调用带当前 project_id、toolkit_id 与 expected_fingerprint。编译已含预检；返回 `result.manifest.ruby_file` 和同目录 `mesh-data.json`。
 
-## 按形体选择（名称不是前置条件）
+width/depth 是檐外包，rise 是局部举高，单位 mm；绝对标高与退台是装配变换，不是 eave_height/setback 参数。当前只做屋壳可直接 step 返回 Ruby；当前做整栋主形则将各屋壳网格与主体、洞口及开敞空间共同组织。不能把一个屋壳当成整栋主形。
 
-- **歇山屋壳 `si_shan`**：有长正脊、端部独立山面并向下接四坡裙；可分别调整山面跨度与下裙举高。
-- **庑殿屋壳 `wu_dian`**：四面坡连续汇向正脊，端部没有独立山面；适合连续主坡和统一檐口。
-- **卷棚屋壳 `juan_peng`**：屋面以连续圆缓曲坡或卷棚断面为主，通常不靠单一正脊分隔前后坡。
-- **攒尖屋壳 `zan_jian`**：多坡从中心脊顶或中心节点向周边放射；适合中心收束、平面多边形的屋盖。
-- **盔顶屋壳 `helmet`**：屋面向中心冠部连续收拢并形成穹曲外轮廓；适合无明确长正脊的冠顶关系。
-- **简化四坡/悬山屋壳 `xie_ding`**：来源只支持一般四坡或悬山外轮廓时使用；不冒充更复杂形制。
-
-来源特征不足时保留候选，不按建筑名称猜。确定后按真实预设执行 `preset → compile → ruby_file → sketchup_project_step`；屋壳通过后再组织支承、瓦面和细部。候选可以互补，未展示的方法仍可通过工具查询。
-
-## 规则
-
-- 源歇山只接受等比缩放，不能用 width 之外的字段强行改造。
-- 六类名称代表算法入口；不代表岳阳楼或历史形制验收。
-- 只有双坡剖面证据时，不外推为歇山、庑殿或盔顶。
-
-## 检查
-
-- 确定正脊、山面、翼角与檐线是否符合当前来源。
-- 先检查屋壳，再启用ridge、tile_sample、tiled；歇山/盔顶可调用detailed配方。
-
-## 拒绝条件
-
-- 源样板和通用算法混用却未记录来源
-- 用铺瓦遮掩主形缺陷
-
-## 证据
-
-- study/findings.md
-- validation/xieshan-defect.json
-- source_templates/catalog.json
-
-入口：`roof_tool.py`
+屋面超出预设表达范围时，直接使用受管 Ruby 或符合条件的多边形檐环曲坡 helper，不必先让预设失败。源资产复用仅限对应入口声明支持且源文件真实可达的情况。当前返回的算法名、闭合检查与历史记录都不等于建筑符合；看实际结果后先修屋形，再加表皮。

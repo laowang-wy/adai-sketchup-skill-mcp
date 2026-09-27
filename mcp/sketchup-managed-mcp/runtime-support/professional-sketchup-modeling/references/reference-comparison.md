@@ -1,6 +1,6 @@
 # 参考图与当前成果：保留原图，按问题比较
 
-`sketchup_project_retry_evidence`负责当前成果采集。新expert默认参考相机一张，模型可选择`views`中的reference、perspective、front、side、plan、underside；图数不代表覆盖，必要的空间/背面应实际查看。
+`sketchup_project_retry_evidence`负责当前成果采集。新expert默认返回参考相机与整体五视图，模型可选择`views`中的reference、perspective、front、side、plan、underside；图数不代表覆盖，必要的空间/背面应实际查看。
 
 图像辅助已接在封存之前：全图并排、EXIF方向、原始尺寸、共同显示比例与面板映射写入审查附件。默认不配准、不自动warp、不裁掉画外误差，没有建筑相似度通过分数。
 

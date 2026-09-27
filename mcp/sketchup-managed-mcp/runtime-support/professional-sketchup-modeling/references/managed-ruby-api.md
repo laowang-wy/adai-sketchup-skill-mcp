@@ -20,7 +20,7 @@ Never save/open/export, clear model entities, write outside `entities`, or manua
 
 ## Massing — Bind Real Projection Geometry
 
-For `single_image`, bind every projection target to the actual visible-mass group:
+Optional projection registration identifies actual visible geometry for comparisons; it is not a construction or visual-quality quota:
 
 ```ruby
 main = entities.add_group
@@ -52,7 +52,7 @@ PipClawManagedProject.register_archetype(
 )
 ```
 
-Register at least one reusable source-visible system contained by the archetype; add further systems when the source/task contract calls for them:
+When useful for locating a real system, register the source-visible geometry already contained by the archetype; no minimum registration count is required:
 
 ```ruby
 PipClawManagedProject.register_visible_detail(context['phase_group'], {
@@ -114,9 +114,9 @@ The managed helper loads the shared `ADAIGeometryGuard` kernel. A custom method 
 call `audit(part.entities, semantic_id, true)` on actual closed geometry, `tag` the
 part with that report, then `mapping(entities, expected_ids)` for fresh meshes,
 persistent IDs and transformed bounds. This does not choose or constrain the
-construction algorithm. Return that mapping in `geometry_readback` with the actual
-parameter/generator hashes, dependencies and write/readback timing; the existing
-materializer builds review attachments. A returned report is not visual approval
+construction algorithm. A generator may return that mapping in `geometry_readback` with its actual
+parameter/generator hashes and dependencies; the program materializes machine
+attachments. Custom Ruby does not have to hand-fill a quality contract. A returned report is not visual approval
 or a whole-surface contact certificate. The `parametric-facade-bay` toolkit provides
 a runnable example using ordinary face extrusion, including a finish readback.
 
@@ -127,17 +127,46 @@ a runnable example using ordinary face extrusion, including a finish readback.
 - Before writing geometry helpers, read [entity lifetime and isolated construction](ruby-snippets.md#entity-lifetime). Create the empty owning group first; do not rely on an old Face or `all_connected` to collect results after topology changes.
 - Keep definition geometry local and apply parent transforms once.
 - Preserve host contact; inspect first/middle/last instances.
-- Return a small Hash describing created geometry and required registries.
+- Return a small Hash describing the actual construction result.
 - Use `ruby-snippets.md` for tested openings, boxes and transform patterns.
-
-## Verified lifecycle boundary
-
-On 2026-09-06 a live SketchUp 2019 diagnostic completed all managed phases, reviews, `save_copy`, final audit and evidence sealing. This validates the managed lifecycle and dimensional audit only. It is not evidence of reference-image similarity. When the source or review sheet cannot be visually inspected, use `test` mode for diagnostics and say that visual reconstruction remains unverified; do not submit `continue` in a production `single_image` project based only on counts or hashes.
-
-## Phase-method task cards (2026-09-07)
-
-MCP task cards now include additive `method` fields with decisions, evidence checks, rejection conditions and a concise review-record schema. They are procedural guidance, not new tool arguments, automatic visual validation or permission to bypass phase restrictions. Project status also returns the current task card for resumed sessions. The runtime source is `modeling-method-cards.json` beside managed-project.js; SKILL's modeling-method-playbook.md supplies fuller explanations. The agent workbook remains outside signed evidence/state. Normal process reload is required for an already-running server to load code changes.
 
 ## Expert system operations
 
 New expert projects may combine the above registrations and geometry methods in one system. Use `step` with existing `work_unit_id` or a descriptive `work_unit_name`; intent append/update/replace is bounded by the actual unit. A reviewed system may be edited again; capture and review the new result. Existing phase-based projects keep their saved strategy. See [expert operation](expert-operation.md) and [typed operations](scoped-operations.md).
+
+## Roof meshes within a complete primary form
+
+The roof compiler returns a self-contained roof script and a sibling `mesh-data.json`.
+When the current step is a complete building form, combine the required roof shells,
+primary bodies and real openings within one managed build instead of treating one
+roof-only step as the complete building. The array entries contain `vertices` in mm,
+`triangles` and `offset`; the latter is a display offset, not a source-derived datum.
+
+```ruby
+# Inside PipClawManagedBuild.build; replace paths and transform from this source.
+roofs = JSON.parse(File.read(mesh_path, encoding: 'UTF-8'))
+roofs.each_with_index do |roof, i|
+  shell = entities.add_group
+  shell.name = "PrimaryRoof_#{i}"
+  ADAIGeometryGuard.add_mesh(shell.entities, roof.fetch('vertices'),
+                            roof.fetch('triangles'), shell.name, true)
+  shell.transform!(source_placement_for_this_roof)
+end
+# Build the source-defined bodies/openings in the same scope, then return a Hash.
+# This snippet assembles shells only; tile/ridge detail is not automatically copied.
+```
+
+For nested polygon eaves, require the installed
+`references/examples/ruby/polygon-eave-shell.rb` and call
+`ADAIPolygonEaveShell.build(entities,name,parameters,material=nil)`.
+Use `outer_xy_mm` and corresponding `inner_xy_mm` (strictly convex CCW rings),
+`base_z_mm`, `rise_mm`, `thickness_mm`, `corner_lift_mm`,
+`span_segments`, `slope_segments`. The shell retains an open centre and vertical
+thickness; it does not generate gables, a ridge cap, a whole tower or tile detail.
+The managed geometry guard checks actual faces; this is not visual acceptance.
+
+Other installed geometry helpers use mm: `profile_prism`, `section_sweep` and
+`curved_corner` in `examples/ruby/ancient-construction-patterns.rb`. The last
+two connect parallel sections; rotating sections need a different construction.
+None of these methods is restricted to a teaching phase. Load files via their
+actual installed path, not a historical workstation path.
