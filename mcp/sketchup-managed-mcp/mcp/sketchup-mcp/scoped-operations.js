@@ -5,12 +5,15 @@ const keys = {
   box: ['op','id','size_mm','origin_mm','component'],
   wall: ['op','id','width_mm','height_mm','thickness_mm','origin_mm','openings'],
   set_wall_openings: ['op','target','openings'],
+  update_wall_opening: ['op','target','opening','changes'],
+  rotate: ['op','target','axis','angle_degrees','pivot_mm','space'],
   window_frame: ['op','id','wall','opening','frame_mm','depth_mm','recess_mm'],
   instance: ['op','id','prototype','origin_mm'],
-  translate: ['op','target','delta_mm'],
+  translate: ['op','target','delta_mm','space'],
   material: ['op','target','rgb','alpha'],
   mesh: ['op','id','vertices_mm','triangles']
 };
+const {selector}=require('./local-update');
 const text = v => typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_/-]{0,159}$/.test(v) && !v.includes('..');
 function reject(index, field, reason) { throw Object.assign(new Error(`operations[${index}].${field}: ${reason}`), { code: 'OPERATION_INPUT_INVALID' }); }
 function vector(v, n = 3) { return Array.isArray(v) && v.length === n && v.every(x => typeof x === 'number' && Number.isFinite(x)); }
@@ -21,9 +24,9 @@ function validateOperations(input) {
   return input.map((op, i) => {
     if (!op || typeof op !== 'object' || Array.isArray(op) || !Object.hasOwn(keys, op.op)) reject(i, 'op', 'unsupported operation');
     for (const key of Object.keys(op)) if (!keys[op.op].includes(key)) reject(i, key, 'unknown field');
-    for (const key of ['id','target','prototype','wall','opening']) if (op[key] !== undefined && !text(op[key])) reject(i,key,'expected a stable object label');
-    const updating = ['set_wall_openings','translate','material'].includes(op.op);
-    if (!text(updating ? op.target : op.id)) reject(i, updating ? 'target' : 'id', 'required');
+    for (const key of ['id','target','prototype','wall','opening']) if (op[key] !== undefined && !(key==='target'||key==='wall' ? selector(op[key]) : text(op[key]))) reject(i,key,'expected a stable object label');
+    const updating = ['set_wall_openings','update_wall_opening','translate','rotate','material'].includes(op.op);
+    if (!(updating ? selector(op.target) : text(op.id))) reject(i, updating ? 'target' : 'id', 'required');
     if (!updating) { if (ids.has(op.id)) reject(i,'id','duplicate creation in batch'); ids.add(op.id); }
     for (const key of ['origin_mm','delta_mm','size_mm']) if (op[key] !== undefined && !vector(op[key])) reject(i,key,'expected three finite numbers in mm');
     for (const key of ['width_mm','height_mm','thickness_mm','frame_mm','depth_mm']) if (op[key] !== undefined && (typeof op[key] !== 'number' || !Number.isFinite(op[key]) || op[key] <= 0)) reject(i,key,'expected a positive finite length in mm');
@@ -43,8 +46,13 @@ function validateOperations(input) {
         }
       }
     }
-    if (op.op === 'window_frame' && (!text(op.wall) || !text(op.opening))) reject(i,'wall/opening','required existing wall and opening');
+    if (op.op === 'window_frame' && (!selector(op.wall) || !text(op.opening))) reject(i,'wall/opening','required existing wall and opening');
     if (op.op === 'instance' && !text(op.prototype)) reject(i,'prototype','required');
+    if (op.space!==undefined && !['world','parent'].includes(op.space)) reject(i,'space','world or parent');
+    if (op.op==='rotate' && (!vector(op.axis) || op.axis.every(x=>x===0) || !Number.isFinite(op.angle_degrees) || (op.pivot_mm!==undefined && !vector(op.pivot_mm)))) reject(i,'rotation','nonzero axis, finite angle and optional pivot_mm required');
+    if (op.op==='update_wall_opening') {
+      if (!text(op.opening) || !op.changes || typeof op.changes!=='object' || Array.isArray(op.changes) || !Object.keys(op.changes).length || Object.entries(op.changes).some(([k,v])=>!['x_mm','z_mm','width_mm','height_mm'].includes(k)||!Number.isFinite(v)||v<0||(['width_mm','height_mm'].includes(k)&&v===0))) reject(i,'changes','existing opening and positive width/height or nonnegative x/z required');
+    }
     if (op.op === 'translate' && !vector(op.delta_mm)) reject(i,'delta_mm','required');
     if (op.op === 'material' && (!vector(op.rgb) || op.rgb.some(x=>!Number.isInteger(x)||x<0||x>255) || (op.alpha !== undefined && (typeof op.alpha!=='number'||!Number.isFinite(op.alpha)||op.alpha<0||op.alpha>1)))) reject(i,'rgb/alpha','RGB integers 0–255 and alpha 0–1 required');
     if (op.op === 'mesh') {
@@ -66,7 +74,7 @@ function validateGuidedOperations(input) {
     const requireCreated = (field, id) => {
       if (!created.has(id)) reject(i, field, 'guided batches may target only objects created earlier in this batch');
     };
-    if (op.op === 'set_wall_openings' || op.op === 'translate' || op.op === 'material') requireCreated('target', op.target);
+    if (['set_wall_openings','update_wall_opening','translate','rotate','material'].includes(op.op)) requireCreated('target', op.target);
     if (op.op === 'window_frame') requireCreated('wall', op.wall);
     if (op.op === 'instance') {
       requireCreated('prototype', op.prototype);

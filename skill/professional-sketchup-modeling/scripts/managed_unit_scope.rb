@@ -69,7 +69,7 @@ module PipClawManagedProject
     if strategy == 'expert_work_unit'
       raise ArgumentError, 'WORK_UNIT_ID_INVALID' unless unit.is_a?(String) && unit.match?(/\A[A-Za-z][A-Za-z0-9_-]{2,63}\z/)
     else
-      raise ArgumentError, 'GUIDED_CONTEXT_INVALID' unless version == 1 && unit.nil? && context['intent'] == 'replace'
+      raise ArgumentError, 'GUIDED_CONTEXT_INVALID' unless version == 1 && unit.nil? && (context['intent'] == 'replace' || (context['intent'] == 'update' && context['local_update'].is_a?(Hash)))
     end
     if version == 2
       raise ArgumentError, 'EXPERT_CONTEXT_REQUIRED' unless strategy == 'expert_work_unit'

@@ -22,7 +22,17 @@ async function processImages(processId = null) {
       if (match) images.set(Number(match[2]), String(match[1]).toLowerCase());
     }
     return images;
-  } catch { return null; }
+  } catch {
+    // Windows restricted tokens can deny tasklist while Get-Process can still
+    // read the actual executable image. Keep OS identity verification: never
+    // infer a live SketchUp process from a stale registration or PID alone.
+    try {
+      const query=processId==null ? 'Get-Process -Name SketchUp -ErrorAction SilentlyContinue' : `Get-Process -Id ${Number(processId)} -ErrorAction SilentlyContinue`;
+      const {stdout}=await execFileAsync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`${query} | Select-Object Id,Path | ConvertTo-Json -Compress`],{windowsHide:true,maxBuffer:1024*1024});
+      const value=JSON.parse(String(stdout).replace(/^\uFEFF/,''));
+      return new Map((Array.isArray(value)?value:[value]).filter(r=>r&&Number.isSafeInteger(r.Id)&&typeof r.Path==='string'&&path.isAbsolute(r.Path)).map(r=>[r.Id,path.basename(r.Path).toLowerCase()]));
+    } catch { return null; }
+  }
 }
 async function processResponsive(processId) {
   if (process.platform !== 'win32' || !Number.isFinite(Number(processId))) return null;

@@ -30,6 +30,31 @@ module ADAIManagedOperations
     raise "OBJECT_LOCKED: #{id}" if e.respond_to?(:locked?) && e.locked?
     e
   end
+  def target(entities, context, id)
+    return existing(entities,id) unless context['local_update']
+    row=PipClawManagedProject.resolve_target(PipClawManagedProject.target_rows(context['project_id']),id)
+    entity=row['entity']
+    allowed=context['edit_target_rows'].any? { |r| row['chain'].include?(r['entity']) }
+    raise 'TARGET_OUTSIDE_LOCAL_SCOPE' unless allowed
+    raise 'TARGET_LOCKED' if row['chain'].any? { |e| e.respond_to?(:locked?) && e.locked? }
+    entity
+  end
+
+  def apply_placement(entity, context, op)
+    row=PipClawManagedProject.target_rows(context['project_id']).select { |r| r['entity']==entity }
+    raise 'SHARED_PARENT_EDIT_AMBIGUOUS' unless row.length==1
+    frame=row.first['parent_transform']
+    space=op.fetch('space',context['local_update'] ? 'world' : 'parent')
+    if op['op']=='translate'
+      transform=Geom::Transformation.translation(point(op.fetch('delta_mm')))
+    else
+      pivot=op['pivot_mm'] ? point(op['pivot_mm']) : (space=='world' ? row.first['transform'].origin : entity.transformation.origin)
+      transform=Geom::Transformation.rotation(pivot,Geom::Vector3d.new(*op.fetch('axis')),op.fetch('angle_degrees')*Math::PI/180.0)
+    end
+    transform=frame.inverse*transform*frame if space=='world'
+    entity.transform!(transform)
+  end
+
   def new_group(entities, id)
     raise "OBJECT_EXISTS: #{id}" if object(entities,id)
     g = entities.add_group
@@ -135,12 +160,21 @@ module ADAIManagedOperations
         e=new_group(entities,id);wall_body(e,op)
         e.transformation=Geom::Transformation.translation(point(op.fetch('origin_mm',[0,0,0])))
       when 'set_wall_openings'
-        e=existing(entities,id)
+        e=target(entities,context,id)
         old=e.get_attribute(DICT,'wall')
         raise 'TARGET_NOT_PARAMETRIC_WALL' unless old
         wall_body(e,JSON.parse(old).merge('openings'=>op.fetch('openings')))
+      when 'update_wall_opening'
+        e=target(entities,context,id)
+        data=e.get_attribute(DICT,'wall')
+        raise 'TARGET_NOT_PARAMETRIC_WALL' unless data
+        data=JSON.parse(data)
+        hole=data.fetch('openings',[]).find { |o| o['id']==op.fetch('opening') }
+        raise 'OPENING_NOT_FOUND' unless hole
+        hole.merge!(op.fetch('changes'))
+        wall_body(e,data)
       when 'window_frame'
-        wall=existing(entities,op.fetch('wall'))
+        wall=target(entities,context,op.fetch('wall'))
         raise 'OBJECT_EXISTS' if object(entities,id)
         data=JSON.parse(wall.get_attribute(DICT,'wall','{}'))
         opening=(data['openings'] || []).find { |o| o['id']==op['opening'] }
@@ -153,13 +187,11 @@ module ADAIManagedOperations
         raise 'OBJECT_EXISTS' if object(entities,id)
         e=entities.add_instance(proto.definition,Geom::Transformation.translation(point(op.fetch('origin_mm',[0,0,0]))))
         e.name=id;e.set_attribute(DICT,'id',id)
-      when 'translate'
-        e=existing(entities,id)
-        paths=PipClawManagedProject.instance_paths_for(context['phase_group'],e)
-        raise 'SHARED_PARENT_EDIT_AMBIGUOUS' unless paths.length==1
-        e.transform!(Geom::Transformation.translation(point(op.fetch('delta_mm'))))
+      when 'translate','rotate'
+        e=target(entities,context,id)
+        apply_placement(e,context,op)
       when 'material'
-        e=existing(entities,id)
+        e=target(entities,context,id)
         color=op.fetch('rgb');alpha=op.fetch('alpha',1.0)
         scope=[context['project_id'], context['work_unit_id'] || context['phase']].map(&:to_s).join(':')
         name='SystemMaterial_'+Digest::SHA256.hexdigest(JSON.generate([scope,color,alpha]))[0,24]

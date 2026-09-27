@@ -18,3 +18,5 @@ a6dc85c418b6f905a281134636535d6bed53892d735fde359704b4a0b73b083f  dist\sketchup-
 e37873aac3992c70130a653f785fde4a0ed5189873097ad5614128156f7b5835  dist\sketchup-managed-mcp-0.5.35-real-su-recovery-20260926.zip
 bd3bf615f5338962c16a8ea354a199a64ebe3d4296644b91a2a18376953fe30b  dist/professional-sketchup-modeling-0.5.36-audit-live-su2019-20260927-r17.zip
 f2070a1b354b2e82c8f41dea4a2bdce70f7b269a3ea1416d4c5813d371fd1e1a  dist/sketchup-managed-mcp-0.5.36-audit-live-su2019-20260927-r17.zip
+cc5ff3a35155c0960d295a4bbba08378225664c7a7f271e48f7caa38a602e013  dist/professional-sketchup-modeling-0.5.36-local-update-responsive-20260927-r20.zip
+477b5bbb3ce8abb35dc42363a1dffe8b0ca9aa64bd1f3eb360ee96605585eb7a  dist/sketchup-managed-mcp-0.5.36-local-update-responsive-20260927-r20.zip

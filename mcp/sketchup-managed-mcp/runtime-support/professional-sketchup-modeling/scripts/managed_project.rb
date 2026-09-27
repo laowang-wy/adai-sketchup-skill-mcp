@@ -6,6 +6,7 @@ require_relative 'geometry_guard'
 require 'digest'
 require 'fileutils'
 require_relative 'managed_unit_scope'
+require_relative 'managed_targets'
 require_relative 'source_dimensions'
 require_relative 'viewport_capture'
 
@@ -255,21 +256,33 @@ module PipClawManagedProject
       # or other geometry; keep that changing extent out of the external
       # boundary digest while retaining child identity and bounds for all
       # non-mutable content.
-      node_bounds = (node.object_id == root_object_id && excluded_phase) ? [] : bounds_signature(node)
-      fields = {'pid'=>pid, 'type'=>type, 'name'=>(node.name.to_s rescue ''), 'bounds'=>node_bounds}
-      if node.respond_to?(:transformation)
-        fields['transform'] = node.transformation.to_a.map { |v| v.to_f.round(7) } rescue []
+      # A single pre-write snapshot serves the external boundary and rollback
+      # baseline. Retain only encoded node records, not expanded scene trees.
+      # The owner discards this cache before Ruby runs; post-write/abort read fresh.
+      frames = (cache[:boundary_frames] ||= {})
+      frame_key = [node.object_id, !!(node.object_id == root_object_id && excluded_phase), ignored.include?(pid.to_s), !!cache[:exact_geometry]]
+      encoded = frames[frame_key]
+      unless encoded
+        node_bounds = (node.object_id == root_object_id && excluded_phase) ? [] : bounds_signature(node)
+        fields = {'pid'=>pid, 'type'=>type, 'name'=>(node.name.to_s rescue ''), 'bounds'=>node_bounds}
+        if node.respond_to?(:transformation)
+          fields['transform'] = node.transformation.to_a.map { |v| v.to_f.round(7) } rescue []
+        end
+        fields['appearance'] = appearance_summary(node, cache)
+        fields['locked'] = node.respond_to?(:locked?) ? node.locked? : false
+        if node.respond_to?(:definition) && node.definition
+          fields['definition_guid'] = node.definition.guid.to_s rescue ''
+        end
+        if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
+          fields['definition_state'] = fast_definition_record(node.definition, cache)
+        end
+        fields['appearance']['hidden'] = '__managed_visibility__' if ignored.include?(pid.to_s)
+        fields['geometry'] = geometry_leaf_signature(node, cache) if cache[:exact_geometry] && !child_entities(node)
+        # Native JSON on bounded records preserves the previous canonical bytes.
+        encoded = canonical_fragment(fields, {}) || canonical_json(fields)
+        frames[frame_key] = encoded
       end
-      fields['appearance'] = appearance_summary(node, cache)
-      fields['locked'] = node.respond_to?(:locked?) ? node.locked? : false
-      if node.respond_to?(:definition) && node.definition
-        fields['definition_guid'] = node.definition.guid.to_s rescue ''
-      end
-      if defined?(Sketchup::ComponentInstance) && node.is_a?(Sketchup::ComponentInstance)
-        fields['definition_state'] = fast_definition_record(node.definition, cache)
-      end
-      fields['appearance']['hidden'] = '__managed_visibility__' if ignored.include?(pid.to_s)
-      digest.update(canonical_json(fields))
+      digest.update(encoded)
       digest.update("\0")
       children = child_entities(node)
       # Include definition appearance once per unique definition, not once
@@ -289,7 +302,7 @@ module PipClawManagedProject
 
   def fast_definition_record(definition, cache)
     records = (cache[:boundary_definitions] ||= {})
-    key = definition.object_id
+    key = [definition.object_id, !!cache[:exact_geometry]]
     return records[key] if records.key?(key)
     visiting = (cache[:boundary_visiting] ||= {})
     raise 'CYCLIC_PROTECTED_DEFINITION' if visiting[key]
@@ -315,7 +328,7 @@ module PipClawManagedProject
     false
   end
 
-  def geometry_leaf_signature(entity)
+  def geometry_leaf_signature(entity, cache = nil)
     if entity.is_a?(Sketchup::Face)
       uv = []
       if entity.respond_to?(:get_UVHelper)
@@ -333,8 +346,8 @@ module PipClawManagedProject
         'layer_visible'=>entity.layer.visible?,
         'loops'=>entity.loops.to_a.map { |loop| loop.vertices.to_a.map { |vertex| point_signature(vertex.position) } },
         'normal'=>(entity.normal.to_a.map { |value| value.to_f.round(7) } rescue []),
-        'material'=>material_signature(entity.material),
-        'back_material'=>material_signature(entity.back_material),
+        'material'=>material_signature(entity.material, cache),
+        'back_material'=>material_signature(entity.back_material, cache),
         'uvq'=>uv
       }
     elsif entity.is_a?(Sketchup::Edge)
@@ -365,8 +378,8 @@ module PipClawManagedProject
         end),
         'hidden'=>(entity.hidden? rescue nil),
         'locked'=>(entity.respond_to?(:locked?) ? entity.locked? : false),
-        'material'=>material_signature(entity.respond_to?(:material) ? entity.material : nil),
-        'back_material'=>material_signature(entity.respond_to?(:back_material) ? entity.back_material : nil),
+        'material'=>material_signature(entity.respond_to?(:material) ? entity.material : nil, cache),
+        'back_material'=>material_signature(entity.respond_to?(:back_material) ? entity.back_material : nil, cache),
         'layer'=>(entity.layer.name.to_s rescue nil),
         'layer_visible'=>(entity.layer.visible? rescue nil),
         'definition_guid'=>(entity.definition.guid.to_s rescue nil)
@@ -522,12 +535,13 @@ module PipClawManagedProject
     result
   end
 
-  def bounded_external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true)
+  def bounded_external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, exact_geometry = false, cache = {})
     top_level = model.entities.to_a.select { |entity| entity.valid? rescue false }
     root = root_for(project_id, false)
     external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
     ignored = Array(ignore_visibility_pids).map(&:to_s)
-    cache = {} # One read only; never carried across a write or rollback.
+    cache ||= {}
+    cache[:exact_geometry] = exact_geometry # One immutable snapshot only.
     records = external_entities.map { |entity| fast_boundary_record(entity, nil, ignored, cache).merge('pid'=>(entity.persistent_id rescue entity.entityID rescue nil), 'type'=>(entity.typename.to_s rescue '')) }
     if root && include_protected_root
       records << fast_boundary_record(root, mutable_phase, ignored, cache).merge('pid'=>(root.persistent_id rescue root.entityID rescue nil), 'type'=>'managed_root')
@@ -536,7 +550,7 @@ module PipClawManagedProject
   end
 
   def external_fingerprint(project_id, mutable_phase = nil, ignore_visibility_pids = nil, include_protected_root = true, cache = {}, boundary_mode = false)
-    return bounded_external_fingerprint(project_id, mutable_phase, ignore_visibility_pids, include_protected_root) if boundary_mode
+    return bounded_external_fingerprint(project_id, mutable_phase, ignore_visibility_pids, include_protected_root, boundary_mode == 'local_geometry_v1', cache) if boundary_mode
     top_level = model.entities.to_a.select { |entity| entity.valid? rescue false }
     root = root_for(project_id, false)
     external_entities = top_level.reject { |entity| root && entity.object_id == root.object_id }
@@ -1265,7 +1279,8 @@ module PipClawManagedProject
     root = root_for(project_id, false)
     marker = root && root.get_attribute(DICT, 'operation_commit_' + operation_id.to_s)
     marker ||= model.get_attribute(DICT, 'operation_commit_' + operation_id.to_s)
-    boundary = receipt.dig('result','rollback_fingerprint_mode') == 'boundary_attributes_v2'
+    mode = receipt.dig('result','rollback_fingerprint_mode')
+    boundary = mode == 'local_geometry_v1' ? mode : mode == 'boundary_attributes_v2'
     current_rollback = receipt.dig('result','rollback_confirmed') ? external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, boundary) : nil
     JSON.generate({'ok'=>true, 'found'=>true, 'receipt'=>receipt, 'current_model_binding'=>JSON.parse(model_identity), 'commit_marker'=>marker, 'current_rollback_fingerprint'=>current_rollback})
   end
@@ -1372,8 +1387,15 @@ module PipClawManagedProject
     end
     existing_root = root_for(project_id, false)
     new_expert = operation_context['policy_version'] == 2
+    local = operation_context['local_update']
+    selected_targets = nil
     scope = new_expert ? {'project_id'=>project_id.to_s, 'work_unit_id'=>operation_context.fetch('work_unit_id')} : phase_name
     begin
+      if local
+        live = prepare_local_update(project_id, JSON.generate(local))
+        raise 'LOCAL_TARGET_CHANGED' unless live['container_pid'] == local['container_pid'] && live['fingerprint'] == local['fingerprint'] && live['targets'] == local['targets']
+        selected_targets = local['targets'].map { |s| resolve_target(target_rows(project_id),s) }
+      end
       if new_expert
         selected = work_unit_group(existing_root, operation_context['work_unit_id'])
         expected = operation_context['expected_fingerprint']
@@ -1387,13 +1409,22 @@ module PipClawManagedProject
     rescue StandardError => error
       return JSON.generate({'ok'=>false, 'error'=>error.message, 'transaction_started'=>false, 'rollback_unconfirmed'=>false})
     end
+    # Normalize existing SU bounds caches before taking the rollback baseline.
+    # Cache invalidation is not itself rolled back by SketchUp.
+    refresh_local_bounds(selected_targets) if local
     apply_runtime_render_profile
     include_protected_root = !existing_root.nil?
     managed_visibility_pids = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }.map { |entity| (entity.persistent_id rescue entity.entityID).to_s }
     before_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| isolation_diagnostic_record(e) }
-    before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
-    rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert)
-    locked_before = new_expert ? locked_scope_fingerprint(existing_root) : nil
+    # Local updates keep face/edge/UV signatures, but hash each shared definition
+    # once per read instead of serializing its expanded instances repeatedly.
+    fingerprint_mode = local ? 'local_geometry_v1' : new_expert
+    protection_read = {}
+    before = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, protection_read, fingerprint_mode)
+    rollback_baseline = external_fingerprint(project_id, '__no_mutable_phase__', nil, true, protection_read, fingerprint_mode)
+    locked_before = (new_expert || local) ? locked_scope_fingerprint(existing_root) : nil
+    local_before = local ? local_boundary_fingerprint(selected_targets.first['container'],selected_targets,protection_read) : nil
+    protection_read = nil # No cached model data survives into the write.
     started = false
     committed = false
     commit_attempted = false
@@ -1413,7 +1444,8 @@ module PipClawManagedProject
       intent = operation_context.is_a?(Hash) ? operation_context['intent'].to_s : 'replace'
       work_unit_id = operation_context['work_unit_id'].to_s
       old = new_expert ? work_unit_group(root, work_unit_id) : phase_group(root, phase_name, expert ? work_unit_id : nil)
-      reusable = expert && intent != 'replace' && old && old.valid?
+      reusable = (expert || local) && intent != 'replace' && old && old.valid?
+      raise 'LOCAL_CONTAINER_MISSING' if local && (!reusable || old.persistent_id != local['container_pid'])
       old.erase! if old && old.valid? && !reusable
       phase = reusable ? old : root.entities.add_group
       phase.name = new_expert ? operation_context.fetch('unit_name', 'Architectural system') : format('%02d_%s', step_index.to_i + 1, phase_name) unless reusable
@@ -1462,21 +1494,40 @@ module PipClawManagedProject
         'execution_strategy'=>operation_context['strategy'],
         'typed_operations_allowed'=>operation_context['typed_operations_allowed'] == true
       }
+      if local
+        context['edit_targets'] = selected_targets.map { |r| r['entity'] }
+        context['edit_target_rows'] = selected_targets
+        context['edit_scope'] = local['edit_scope']
+        context['local_update'] = true
+        # Placement/material operations keep shared definitions. Internal edits
+        # copy only selected component definitions unless all peers were requested.
+        if local['edit_scope'] == 'instance' && operation_context['local_shape_edit']
+          selected_targets.each do |r|
+            e=r['entity']
+            e.make_unique if e.is_a?(Sketchup::ComponentInstance) && e.definition.instances.count(&:valid?) > 1
+          end
+        end
+      end
       result = PipClawManagedBuild.build(phase.entities, context)
+      raise 'LOCAL_TARGET_REMOVED' if local && selected_targets.any? { |r| !r['entity'].valid? }
+      refresh_local_bounds(selected_targets) if local
+      protection_after = {}
+      raise 'LOCAL_SCOPE_CHANGED' if local && local_before != local_boundary_fingerprint(phase,selected_targets,protection_after)
       managed_roots = model.entities.grep(Sketchup::Group).select { |entity| entity.get_attribute(DICT, 'managed_root', false) }
       visibility_violation = managed_roots.any? do |entity|
         next false if entity.object_id == root.object_id
         (entity.hidden? rescue false) != true
       end
       raise 'Managed isolation violation: tool-owned project roots must remain hidden during an isolated step' if visibility_violation
-      after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, {}, new_expert)
+      after = external_fingerprint(project_id, scope, managed_visibility_pids, include_protected_root, protection_after, fingerprint_mode)
+      protection_after = nil
       unless before == after
         after_records = model.entities.to_a.select { |e| e.valid? }.reject { |e| e.is_a?(Sketchup::Group) && e.get_attribute(DICT, 'project_id') == project_id.to_s }.map { |e| isolation_diagnostic_record(e) }
         debug_path = File.join(ENV['APPDATA'].to_s, 'SketchUpLiveMCP', 'last-isolation-diff.json')
         File.write(debug_path, JSON.generate({'project_id'=>project_id, 'detail'=>'root_summary', 'before_fingerprint'=>before, 'after_fingerprint'=>after, 'before'=>before_records, 'after'=>after_records}))
         raise 'Managed isolation violation: geometry outside the project root changed; see last-isolation-diff.json'
       end
-      raise 'LOCKED_ENTITY_CHANGED' if new_expert && locked_before != locked_scope_fingerprint(root)
+      raise 'LOCKED_ENTITY_CHANGED' if (new_expert || local) && locked_before != locked_scope_fingerprint(root)
       # SketchUp may finalize group/definition bookkeeping when the operation
       # commits. Compute the expert scope after commit so the fingerprint
       # stored in the operation result is the same representation later used
@@ -1525,9 +1576,9 @@ module PipClawManagedProject
         'transaction_started'=>started,
         'commit_unconfirmed'=>commit_unconfirmed,
         'rollback_unconfirmed'=>rollback_unconfirmed,
-        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, new_expert),
+        'rollback_confirmed'=>started && !commit_attempted && !rollback_unconfirmed && rollback_baseline == external_fingerprint(project_id, '__no_mutable_phase__', nil, true, {}, fingerprint_mode),
         'rollback_fingerprint'=>rollback_baseline,
-        'rollback_fingerprint_mode'=>new_expert ? 'boundary_attributes_v2' : 'full',
+        'rollback_fingerprint_mode'=>local ? 'local_geometry_v1' : (new_expert ? 'boundary_attributes_v2' : 'full'),
         'rollback_error'=>rollback_error
       })
     end

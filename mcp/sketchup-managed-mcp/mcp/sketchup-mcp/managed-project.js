@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const {localRequest,localProgress,acceptLocalReview}=require('./local-update');
 
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
@@ -1244,6 +1245,7 @@ class ManagedProjects {
   }
 
   async currentTaskCard(state, phase, detail=false) {
+    if (state.local_update) return {goal:'Inspect the corrected objects and their necessary connections in the current whole-model evidence.', phase:phase.name, resume_phase:state.local_update.resume.phase, action:'Continue with operation_intent=update if a defect remains; review the current result when corrected. Existing unrelated geometry and later stages are retained.', method_reference:'references/scoped-operations.md'};
     let catalog=null,notice=null;
     const current=state.status==='ready_to_finish' ? 'delivery' : (initialStage(state)||phase.name);
     const methodText=guidanceTaskText(state);
@@ -1617,7 +1619,7 @@ class ManagedProjects {
       return target;
     }
     const { compileOperations, validateGuidedOperations } = require('./scoped-operations');
-    if (!expert) validateGuidedOperations(input.operations);
+    if (!expert && !localRequest(input,expert)) validateGuidedOperations(input.operations);
     const source = compileOperations(input.operations, path.join(this.skillRoot, 'scripts', 'managed_operations.rb'));
     const dir = path.join(this.projectDir(state.project_id), 'prepared-builds');
     await fs.mkdir(dir, { recursive: true });
@@ -1635,8 +1637,9 @@ class ManagedProjects {
     const state = await this.loadState(safeId(input.project_id));
     const policy = policyFor(state);
     const expert = isExpert(state);
+    const local = localRequest(input,expert);
     const continueWorkUnit = !expert && state.status === 'review_required' && isAutonomous(state) && state.work_unit && input.continue_work_unit === true;
-    const writable = expert ? ['ready_for_step','review_required','ready_to_finish'].includes(state.status) : state.status === 'ready_for_step' || continueWorkUnit;
+    const writable = (expert || local) ? ['ready_for_step','review_required','ready_to_finish',...(local?['finished']:[])].includes(state.status) : state.status === 'ready_for_step' || continueWorkUnit;
     if (!writable || pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('WRITE_NOT_READY', 'Resolve the current operation or evidence repair before a new write.');
     if (expert && input.next_phase !== undefined) throw this.stateError('LEGACY_PHASE_PARAMETER', 'New expert projects select architectural systems, not next_phase.');
     let continuationTarget = expert ? 0 : state.step_index;
@@ -1648,10 +1651,21 @@ class ManagedProjects {
     } else if (!expert && input.next_phase !== undefined) throw this.stateError('LEGACY_PHASE_PARAMETER', 'next_phase applies only to legacy expert continuation.');
     if (!expert && input.work_unit_name !== undefined) throw this.stateError('WORK_UNIT_AUTONOMOUS_ONLY', 'Named systems require a new expert project.');
     if (!expert && state.work_unit && input.work_unit_id && input.work_unit_id !== state.work_unit.id) throw this.stateError('WORK_UNIT_MISMATCH', 'Work unit does not match this legacy project.');
-    const unit = expert ? resolveUnit(state, input, () => `unit_${crypto.randomBytes(8).toString('hex')}`) : state.work_unit;
-    await this.assertModelBinding(state, bridge);
+    let unit = expert ? resolveUnit(state, input, () => `unit_${crypto.randomBytes(8).toString('hex')}`) : state.work_unit;
+    if (local && state.status==='finished') await this.assertFollowupBinding(state,bridge);
+    else await this.assertModelBinding(state, bridge);
     const phasePlan = executionPlan(state);
-    const phase = phasePlan[continuationTarget];
+    let phase = phasePlan[continuationTarget];
+    let localPrepared = null;
+    if (local) {
+      localPrepared = parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('prepare_local_update_json',[state.project_id,JSON.stringify(local)]),file:this.helperPath},60000));
+      if (expert) {
+        unit = resolveUnit(state,{work_unit_id:localPrepared.work_unit_id},()=>null);
+      } else {
+        continuationTarget=phasePlan.findIndex(p=>p.name===localPrepared.phase);
+        phase=phasePlan[continuationTarget];
+      }
+    }
     if (!phase) throw new Error('All managed phases are complete; call sketchup_project_finish');
     const unresolved = await this.unresolvedDocumentOperation(state.model_binding || { path: state.model_path, object_id: null }, state.project_id);
     if (unresolved) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `The bound SketchUp document has an unresolved write for project ${unresolved.project_id}; reconcile operation ${unresolved.operation?.operation_id || '<unknown>'} before any new project can write`);
@@ -1673,13 +1687,20 @@ class ManagedProjects {
     const requestedIntent = input.operation_intent == null ? 'append' : String(input.operation_intent).trim();
     if (!['append','update','replace'].includes(requestedIntent)) throw this.stateError('OPERATION_INTENT_INVALID', 'operation_intent must be append, update, or replace');
     const expertStrategy = policy.strategy === 'autonomous_work_unit';
-    const intent = expertStrategy ? requestedIntent : 'replace';
+    const intent = (expertStrategy || local) ? requestedIntent : 'replace';
     const priorStatus = state.status;
     const progress = { phase: phase.name, step_index: continuationTarget,
       ...(continueWorkUnit && state.last_evidence_id ? { previous_evidence_id: state.last_evidence_id } : {}),
       ...(abstractionRecheckRecord ? { abstraction_recheck: abstractionRecheckRecord } : {}) };
     const operation = { operation_id: crypto.randomUUID(), kind: 'geometry_step', project_id: state.project_id, phase: phase.name, step_index: continuationTarget, work_unit_id: unit?.id || null, ...(expert ? {unit} : {}), intent, status: 'prepared', prior_status: priorStatus, progress };
     if (operation.unit === undefined) delete operation.unit;
+    if (local && !expert) operation.local_update=localProgress(state,phase.name,continuationTarget);
+    if (local && state.status==='finished') {
+      const prior=await this.verifyEvidenceIdentity(state,state.final_evidence_id,{verifyFiles:true});
+      await verifyEvidenceFiles({model:prior.record.model});
+      operation.followup={output_path:state.output_path,final_evidence_id:state.final_evidence_id,final_evidence_path:state.final_evidence_path,model:prior.record.model,
+        next_output_path:path.join(state.output_directory,`${state.project_id}-edit-${String((state.delivery_history||[]).length+1).padStart(3,'0')}.skp`)};
+    }
     operation.script_path = scriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
@@ -1689,6 +1710,18 @@ class ManagedProjects {
     // must see one canonical strategy so it preserves phase replacement and
     // the guided same-batch target rules.
     const operationContext = { strategy: expertStrategy ? 'expert_work_unit' : 'guided_phase', policy_version: policy.version, typed_operations_allowed: typedOperations, work_unit_id: unit?.id || null, intent, operation_id: operation.operation_id, progress, expected_script_sha256:scriptHash, ...(expert ? { unit_name: unit.name, expected_fingerprint: unit.fingerprint || null, expected_pid: unit.persistent_id || null } : {}) };
+    if (local) {
+      operationContext.local_update=localPrepared;
+      operationContext.local_shape_edit=input.ruby_file!==undefined || input.operations.some(op=>['set_wall_openings','update_wall_opening','window_frame'].includes(op.op));
+      // A targeted follow-up works on the current, freshly resolved objects.
+      // Saved unit bookkeeping can differ after reopening the delivered SKP.
+      // The lock-side resolve and Ruby preflight still verify this same snapshot;
+      // ordinary whole-unit operations retain their saved scope expectation.
+      if (expert) {
+        operationContext.expected_fingerprint=localPrepared.fingerprint;
+        operationContext.expected_pid=localPrepared.container_pid;
+      }
+    }
     operationContext.dimension_targets = state.task_profile?.dimension_targets || [];
     operation.operation_context = operationContext;
     operation.request = { operation_id: operation.operation_id, project_id: state.project_id, phase: phase.name, step_index: continuationTarget, script_sha256: scriptHash, model_binding: operation.model_binding, operation_context: operationContext };
@@ -1705,6 +1738,10 @@ class ManagedProjects {
         const other = await this.unresolvedDocumentOperation(operation.model_binding, state.project_id);
         if (other) throw this.stateError('DOCUMENT_WRITE_UNCERTAIN', `Document write blocked by project ${other.project_id}`);
         if (await hashFile(scriptPath) !== scriptHash) throw this.stateError('SCRIPT_CHANGED_BEFORE_DISPATCH', 'Ruby build file changed after preparation; no geometry was dispatched');
+        if (local) {
+          const fresh=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('prepare_local_update_json',[state.project_id,JSON.stringify(local)]),file:this.helperPath},60000));
+          if (fresh.fingerprint!==localPrepared.fingerprint || fresh.container_pid!==localPrepared.container_pid || JSON.stringify(fresh.targets)!==JSON.stringify(localPrepared.targets)) throw this.stateError('LOCAL_TARGET_CHANGED','Target changed before dispatch; inspect the current object.');
+        }
         operation.model_binding = currentBinding;
         operation.request.model_binding = currentBinding;
         operationContext.expected_model_binding = currentBinding;
@@ -1757,6 +1794,12 @@ class ManagedProjects {
         operation.error = error.message;
         state.status = priorStatus;
         await this.saveState(state);
+        if (local && managed.rollback_confirmed===true) {
+          error.code='LOCAL_UPDATE_ROLLED_BACK';
+          error.operation_id=operation.operation_id;
+          error.next_call=null;
+          error.next_action='The local write was rolled back; the prior model and task position are retained. Correct the target selection or local construction, then submit the corrected update. Ruby can use context["edit_targets"] and their children.';
+        }
         throw error;
       }
       if (managed?.rollback_unconfirmed || managed?.commit_unconfirmed) {
@@ -1819,7 +1862,7 @@ class ManagedProjects {
       delete state.pending_evidence;
       state.updated_at = new Date().toISOString();
       await this.saveState(state);
-      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, task_card: await this.currentTaskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
+      return { ok: true, project_id: state.project_id, phase: phase.name, status: state.status, operation_id: operation.operation_id, work_unit_id: state.work_unit?.id || null, result:{objects_summary:summarizeObjects(buildResult.build_result?.objects || [])}, task_card: await this.currentTaskCard(state, phase), ...evidence, review_sheet: evidence.files.review_sheet?.path || '', next_action: state.work_unit ? 'For an autonomous unit, another bounded managed step may use continue_work_unit=true; otherwise inspect evidence and review.' : 'Inspect the returned evidence yourself, then call sketchup_project_review with continue or revise.' };
     } catch (error) {
       if (error.capturePending && state.pending_evidence) {
         const category = classifyEvidenceFailure(error, 'evidence');
@@ -1845,9 +1888,26 @@ class ManagedProjects {
     }
   }
 
+  async assertFollowupBinding(state,bridge) {
+    const current=await this.modelIdentity(bridge);
+    if (sameModelBinding(state.model_binding,current)) return current;
+    const prior=await this.verifyEvidenceIdentity(state,state.final_evidence_id,{verifyFiles:true});
+    const file=prior.record.model;
+    await verifyEvidenceFiles({model:file});
+    const clean=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('clean_checkpoint_identity',[]),file:this.helperPath},60000));
+    const opened=current.path ? await fileEvidence(current.path) : null;
+    if (!file || !opened || opened.sha256!==file.sha256 || opened.bytes!==file.bytes || clean.modified!==false || !sameModelBinding(clean.identity,current)) throw this.stateError('FOLLOWUP_DOCUMENT_MISMATCH','Open the unchanged delivered file, or return to the still-bound document before local editing.');
+    state.model_binding=current;state.model_path=current.path;
+    return current;
+  }
+
   async geometryDiagnose(input,bridge){
     const state=await this.loadState(safeId(input.project_id));
-    await this.assertModelBinding(state,bridge);
+    if (state.status==='finished') await this.assertFollowupBinding(state,bridge);
+    else await this.assertModelBinding(state,bridge);
+    if (input.query!==undefined || input.targets!==undefined) {
+      return parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('discover_targets',[state.project_id,JSON.stringify({query:input.query,targets:input.targets,offset:input.offset||0})]),file:this.helperPath},60000));
+    }
     const result=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('geometry_diagnose',[state.project_id]),file:this.helperPath},60000));
     const file=path.join(this.projectDir(state.project_id),'geometry-diagnostic-'+Date.now()+'.json');
     await fs.writeFile(file,JSON.stringify(result,null,2));
@@ -2169,6 +2229,10 @@ class ManagedProjects {
       throw error;
     }
     if (verdict==='continue' && state.revision_required && ((!isExpert(state) && !revisionMatches(state,phase.name)) || state.revision_required.repair_evidence_id!==input.evidence_id)) throw this.stateError('REVISION_REQUIRED','The rejected result needs a scoped correction before a new acceptance.');
+    if (verdict==='continue' && state.local_update?.resume.status==='review_required') {
+      const audit=JSON.parse(await fs.readFile(sealedEvidence.record.files.audit.path,'utf8'));
+      validateCurrentAudit(state,phasePlan[state.local_update.resume.step_index],audit,input.evidence_id);
+    }
     const prepared = input.visual_review!==undefined ? await assembleVisualReview(input,state,phase.name,sealedEvidence.record) : input;
     const qualityReview = await validateQualityReview(prepared, state, phase.name, this.skillRoot, sealedEvidence.record.files);
     if (verdict === 'continue') validateInspectedViews(qualityReview, sealedEvidence.record);
@@ -2187,6 +2251,18 @@ class ManagedProjects {
       complexity_warning: state.complexity_warning || null,
     });
     if (isExpert(state)) return this.acceptExpertReview(state, input, sealedEvidence, qualityReview);
+    if (state.local_update) {
+      const edit=state.local_update, resume=edit.resume;
+      acceptLocalReview(state,input,qualityReview);
+      if (verdict==='continue' && (resume.status==='review_required' || (resume.review_pending && resume.step_index===edit.step_index))) {
+        state.step_index=resume.step_index+1;
+        state.phase=phasePlan[state.step_index]?.name || 'complete';
+        state.status=state.step_index>=phasePlan.length?'ready_to_finish':'ready_for_step';
+      }
+      state.updated_at=new Date().toISOString();
+      await this.saveState(state);
+      return {ok:true,project_id:state.project_id,status:state.status,phase:state.phase,local_update:true,...describeActions(state)};
+    }
     if (patchReview) {
       if (verdict === 'revise') {
         const rollback = await this.rollbackPatch(state.project_id, { patch_id: patchReview.patch_id }, bridge);
@@ -2231,8 +2307,9 @@ class ManagedProjects {
         await this.saveState(state);
         return { ok: true, project_id: state.project_id, status: state.status, phase: phase.name, revision_required: state.revision_required, next_action: 'Submit a scoped autonomous update or replace for this work unit; no committed geometry was deleted.' };
       }
-      const response = await this.dispatchAuxiliaryWrite(state, 'remove_phase', [state.project_id, phase.name], bridge);
-      parseManagedResult(response);
+      // Keep the current result available for correction. An ordinary next
+      // step still replaces this stage atomically; update targets only the defect.
+      state.revision_required={phase:phase.name,evidence_id:input.evidence_id,reason:String(input.note||'Current result needs correction.')};
       if (phase.name === 'archetypes') delete state.visible_detail_systems;
       if (phase.name === 'facade_detail') delete state.unique_details;
       delete state.validation_failed;
@@ -2242,6 +2319,7 @@ class ManagedProjects {
       await this.saveState(state);
       return { ok: true, project_id: state.project_id, status: state.status, task_card: await this.currentTaskCard(state, phase), ...describeActions(state) };
     }
+    if (state.revision_required?.repair_evidence_id===input.evidence_id) delete state.revision_required;
     const mergedEvidenceIds=[...(state.pending_unit_reviews || []), input.evidence_id];
     const mergedCoverage=[];
     const historyGaps=[];
@@ -2528,7 +2606,7 @@ class ManagedProjects {
     const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
     // Preserve the current presentation view in the delivered SKP. The source
     // view remains sealed with its evidence, not a forced delivery camera.
-    const outputPath = path.resolve(input.output_path || state.pending_delivery?.model?.path || path.join(state.output_directory, `${state.project_id}.skp`));
+    const outputPath = path.resolve(input.output_path || state.pending_delivery?.model?.path || state.next_output_path || path.join(state.output_directory, `${state.project_id}.skp`));
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     const pending = state.pending_delivery;
     const pendingMigration = !!(pending && pending.save_result?.strategy === 'temporary_save_as_then_copy' && pending.save_result.path_migrated === true);
@@ -2656,6 +2734,7 @@ class ManagedProjects {
     const saved = await this.writeEvidence(state, record);
     state.status = 'finished';
     delete state.pending_delivery;
+    delete state.next_output_path;
     state.output_path = outputPath;
     state.final_evidence_id = evidenceId;
     state.final_evidence_path = saved.path;
@@ -2669,6 +2748,7 @@ class ManagedProjects {
     if (isExpert(await this.loadState(safeId(input.project_id)))) throw this.stateError('EXPERT_SCOPED_EDIT', 'Committed work units cannot be deleted by phase recovery; use an explicitly scoped update or replace.');
     return this.withProjectLock(safeId(input.project_id), async () => {
       const state = await this.loadState(safeId(input.project_id));
+      if (state.local_update) throw this.stateError('LOCAL_UPDATE_COMMITTED','Local update is committed; retry evidence or repair its scoped geometry. Stage removal would discard unrelated objects.');
       if (state.status !== 'evidence_pending' || !state.pending_evidence) throw this.stateError('ABORT_PENDING_NOT_AVAILABLE', 'Only an unreviewed phase with frozen evidence may be withdrawn');
       if (pendingOperation(state).pending_operation) throw this.stateError('RESULT_UNKNOWN', 'Reconcile the original operation before withdrawal');
       const reason = String(input.reason || '').trim();
@@ -2940,7 +3020,8 @@ class ManagedProjects {
       if (!repeated) {
         const response = await this.operationReceipt({project_id:projectId,operation_id:unresolved.operation_id,detail:true},bridge);
         receipt = response.receipt?.receipt;
-        if (!response.receipt?.found || receipt?.status !== 'completed' || receipt?.result?.ok !== true) throw this.stateError('RECOVERY_WRITE_UNCERTAIN','The original operation must have a confirmed terminal receipt before its result can be superseded.');
+        const abortedLocal = !!unresolved.operation_context?.local_update && receipt?.result?.ok===false && receipt.result.transaction_started===true && receipt.result.commit_unconfirmed===false && receipt.result.rollback_unconfirmed===false;
+        if (!response.receipt?.found || receipt?.status !== 'completed' || (receipt?.result?.ok !== true && !abortedLocal)) throw this.stateError('RECOVERY_WRITE_UNCERTAIN','The original operation must have a confirmed terminal receipt before its result can be superseded.');
         const request = receipt.request;
         if (request?.operation_id !== unresolved.operation_id || request?.project_id !== projectId || (unresolved.script_hash && request.script_sha256 !== unresolved.script_hash)) throw this.stateError('RECOVERY_RECEIPT_MISMATCH','The receipt does not match the original geometry operation.');
       }
@@ -2958,7 +3039,25 @@ class ManagedProjects {
         } finally {await fs.rm(auditPath,{force:true}).catch(()=>{});}
       }
       if (repeated) return {ok:true,project_id:projectId,status:state.status,restored:true,already_restored:true,verification:cleanCheckpoint?'sealed_file_and_clean_document':'full_live_audit',...describeActions(state)};
-      if (isExpert(state)) {
+      const failedLocal = !!unresolved?.operation_context?.local_update && receipt?.result?.ok===false;
+      let samePriorScene=false;
+      if (failedLocal) {
+        const currentId=unresolved.prior_status==='finished'?state.final_evidence_id:state.last_evidence_id;
+        if (currentId) {
+          const currentRecord=await this.verifyEvidenceIdentity(state,currentId,{verifyFiles:true});
+          const currentAudit=currentRecord.record.audit || currentRecord.record.files?.audit;
+          if (currentAudit?.path) {
+            await verifyEvidenceFiles({audit:currentAudit});
+            samePriorScene=checkpointContent(prior)===checkpointContent(JSON.parse(await fs.readFile(currentAudit.path,'utf8')));
+          }
+        }
+      }
+      if (failedLocal && samePriorScene) {
+        // Only a checkpoint equal to the actual pre-write evidence can retain
+        // later accepted progress. An older checkpoint uses normal restoration.
+        state.status=unresolved.prior_status;
+        delete state.local_update;
+      } else if (isExpert(state)) {
         if (!Number.isInteger(sealed.record.scene_revision) || !Array.isArray(prior.work_units) || !sealed.record.script?.path) throw this.stateError('RECOVERY_CHECKPOINT_INCOMPLETE','The checkpoint lacks the original expert scope and input.');
         const units={};
         for(const u of prior.work_units){const old=state.work_units?.[u.work_unit_id];if(!old)throw this.stateError('RECOVERY_SCOPE_MISMATCH','Checkpoint contains an unknown work unit.');units[u.work_unit_id]={...old,...u,id:u.work_unit_id};}
@@ -2984,7 +3083,7 @@ class ManagedProjects {
         delete state.pending_execution;
       }
       unresolved.status='superseded_checkpoint_restore';unresolved.resolved_at=new Date().toISOString();
-      unresolved.resolution='completed_receipt_not_present_in_reopened_checkpoint';
+      unresolved.resolution=failedLocal?'aborted_local_write_restored_sealed_checkpoint':'completed_receipt_not_present_in_reopened_checkpoint';
       state.model_binding=current;state.model_path=current.path;
       delete state.pending_evidence;delete state.recovery_error;
       state.transaction_result={code:'CHECKPOINT_RESTORED',operation_id:unresolved.operation_id,completed_receipt_preserved:true,geometry_present_in_active_document:false};

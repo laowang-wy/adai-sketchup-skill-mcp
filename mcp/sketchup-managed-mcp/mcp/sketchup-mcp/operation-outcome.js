@@ -1,9 +1,11 @@
 'use strict';
+const {recordLocalCommit}=require('./local-update');
 
 // Progress is applied only after a confirmed commit, including receipt recovery.
 function applyCommittedProgress(state, operation) {
   const progress=operation.progress;
   if (!progress) return; // Old receipts retain their existing interpretation.
+  recordLocalCommit(state,operation);
   state.phase=progress.phase;
   state.step_index=progress.step_index;
   if (progress.previous_evidence_id) state.pending_unit_reviews=[...new Set([...(state.pending_unit_reviews||[]),progress.previous_evidence_id])];

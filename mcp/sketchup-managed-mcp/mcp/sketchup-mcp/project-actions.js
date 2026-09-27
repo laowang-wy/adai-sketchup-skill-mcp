@@ -84,12 +84,14 @@ function describeActions(state) {
     return result(call('sketchup_project_step', { continue_work_unit: true, operation_intent: 'update' }, ['ruby_file']),
       'Submit a scoped corrective build; committed geometry is preserved.');
   }
+  const localEdit=call('sketchup_project_step',{operation_intent:'update'},['ruby_file_or_operations']);
+  if (state.status==='ready_for_step' && state.revision_required) return result(localEdit,'Correct the affected existing objects; typed targets infer scope, Ruby uses targets and context.edit_targets. The current stage is retained. Full replacement remains available.',[call('sketchup_project_step',{operation_intent:'replace'},['ruby_file_or_operations'])]);
   if (state.status === 'review_required' && state.last_evidence_id) {
     return result(call('sketchup_project_review', { evidence_id: state.last_evidence_id }, ['verdict', 'visual_review']),
-      'Inspect current evidence and review the current phase.');
+      'Inspect current evidence and review the current phase, or correct identified objects using a local update.',[localEdit]);
   }
   if (state.status === 'ready_to_finish') {
-    return result(call('sketchup_project_finish'), 'Save and verify the reviewed result.');
+    return result(call('sketchup_project_finish'), 'Save and verify the reviewed result.',[localEdit]);
   }
   if (state.status === 'ready_for_step') {
     return result(call('sketchup_project_step', {}, ['ruby_file_or_operations']), 'Construct the current task_card goal using its method and parameters, then submit the managed step.');

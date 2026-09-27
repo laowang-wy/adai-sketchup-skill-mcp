@@ -77,7 +77,7 @@ sketchup_project_review(project_id,evidence_id,verdict,
 
 仅在授权 `entities/context` 内建模；脚本加载不立即改模型，不自行开关文档、保存、清空场景或接管事务。MCP 负责实例/文档与对象保护、revision、回执、恢复和资源校验。新来源/新对象范围不能绕过绑定。
 
-guided 会替换当前阶段几何，typed operations 只能引用同批对象；expert 只在选定受管单元中 append/update/replace。修改任意外部模型不是这些操作默认已支持的能力。作用域不明确先定位，不猜对象、不误删。
+局部修改用 `step(operation_intent=update)`：已有墙窗可直接用原 ID；对象不明确时用 `geometry_diagnose(query=名称线索)` 取得准确地址，Ruby 从 `context['edit_targets']` 修改。guided 保留阶段及无关构件，完成局部核对后接续原任务；新建/整阶段替换仍按保存计划执行。用法见[局部修改与构造操作](references/scoped-operations.md)。交付后收到明确续改要求，可沿同一入口修改并保存新文件。
 
 结果未知先查原 operation 回执并恢复，不能换 ID 重放；`evidence_pending` 保留已提交模型，按返回动作补取证；SU 重启后的检查点重新绑定按恢复入口办理。确认失败且已回滚的脚本先按错误位置修正，再提交；已提交后取证失败不重放几何。故障细节按[恢复入口](references/managed-recovery.md)处理。
 
