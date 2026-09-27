@@ -18,7 +18,7 @@
 
 - `skill/professional-sketchup-modeling/`：可直接安装到 Codex 或 PipClaw 的 Skill。
 - `mcp/sketchup-managed-mcp/`：MCP 运行包，包含桥接、受管项目、公开工具包和随附 REF。
-- `dist/`：当前与历史构建的 ZIP；当前下载见下方“安装”。
+- `dist/`：仅保留当前构建的 Skill 与 MCP 两个 ZIP；当前下载见下方“安装”。
 - `docs/EXPERIENCE-PACKS.md`：经验包格式、加载与验证方式。
 
 开发测试与交接留在本机；两个运行 ZIP 不包含测试替身、临时日志、用户模型、私钥或本机配置。
@@ -42,7 +42,7 @@ ADAI老王，开启专家模式
 - [下载 MCP 0.5.37](dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928-docs-r1.zip)
 - [安装步骤](mcp/sketchup-managed-mcp/INSTALL.md) · [版本与验证范围](docs/RELEASE-0.5.37.md) · [SHA256 校验](SHA256SUMS.txt)
 
-产品版本为 `0.5.37`；古建工具包 `0.4.6`、独立经验集合 `0.4.2`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。`docs/RELEASE-*` 和旧 ZIP 记录历史构建；旧版本测试不自动算作本次验证。
+产品版本为 `0.5.37`；古建工具包 `0.4.6`、独立经验集合 `0.4.2`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。`docs/RELEASE-*` 记录历史验证，旧安装包与校验表保存在 Git 历史中（[Gitee 历史安装包](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist) · [GitHub 历史安装包](https://github.com/laowang-wy/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)）；旧版本测试不自动算作本次验证。
 
 把 `skill/professional-sketchup-modeling` 复制到当前宿主的 Skill 目录：Codex 使用 `$CODEX_HOME/skills/`；PipClaw 使用其 `codex-home/skills/`。把 MCP 目录复制到用户本机的 MCP 目录，并让 PipClaw/Codex 的 MCP 配置指向该目录中的 `launch.cjs`。安装器应在本机生成路径；发行包不写死用户目录、SketchUp 路径、PID 或会话令牌。
 
@@ -54,7 +54,7 @@ ADAI老王，开启专家模式
 
 ## 后续版本更新
 
-后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。每次发行使用新的构建标识和校验值；不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
+后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。每次发行使用新的构建标识和校验值，`dist/` 与校验表只保留当前两包，历史版本通过提交或标签查阅；不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
 
 本构建为工程候选。0.5.37 功能构建已通过离线回归及 SU2019 定向构造、保护、回滚、交付和保存重开验证。本次说明修订保留相同建模代码，另验证安装助手与最终 ZIP；未重跑 SU。整栋来源还原、强弱模型效果、token 收益及第二台机器验收本轮为 `not_run`。
 

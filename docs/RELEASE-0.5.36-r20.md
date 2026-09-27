@@ -27,4 +27,4 @@
 
 本轮未重新验收整栋照片还原，未测试独立GPT6/Luna建模质量或真实token/费用收益，其他SU版本和第二台机器为not_run。使用最终ZIP隔离入口测试，未覆盖日常安装。开发测试、日志、用户SKP和凭据不进入运行包。
 
-安装包与校验值见仓库 `dist/` 和 `SHA256SUMS.txt`。
+本历史构建的安装包与校验值见[历史 dist](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)与[历史校验表](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/blob/4add79e345ffe6983e6cdbd73ba205f90ac61e35/SHA256SUMS.txt)；当前 main 的 dist 只保留最新构建。
