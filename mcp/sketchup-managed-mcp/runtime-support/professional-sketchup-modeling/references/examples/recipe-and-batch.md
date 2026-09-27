@@ -23,6 +23,6 @@ compile 包含 validate。只修改 preset 实际返回的字段：width/depth �
 
 直接调用 entities.add_instance(definition, transform)，或用 PipClawManagedProject.instantiate_archetype 定位已登记的真实母型。母型的局部基点对准宿主，平移/旋转/镜像各应用一次；构造显著不同的角部或端部使用变体。
 
-可运行参考：[代表框架与批量实例](ruby/representative-and-batch.rb)。它按 guided 的 source_alignment → archetypes → replication 展示一个母型和三个额外实例；数字是例子，不是模型必须达到的配额。对照实际首、中、末及存在的转角，发现错误先修母型或变换。
+可运行参考：[代表框架与批量实例](ruby/representative-and-batch.rb)。它用一套参数推导墙洞、框截面和宿主位置：完整主形建立真洞口，代表构件放入首个洞口，确认后再复制。改洞口宽高时框外包随之重算、框截面保持；不是整体拉伸母型。四个开间是例子，不是配额；参数改动仍按实际修改入口更新受影响几何，不宣称跨阶段自动联动。对照实际首、中、末及存在的转角，发现错误先修母型或变换。
 
 `roof-recipe.json` 另展示 family=geometry 的高级参数示例，与上面的 family=roof preset 不互换；它包含自己的几何输入合同，仅在需要该算法时读取。历史项目沿保存计划执行，新项目不为这份示例添加 roof_profile 阶段。

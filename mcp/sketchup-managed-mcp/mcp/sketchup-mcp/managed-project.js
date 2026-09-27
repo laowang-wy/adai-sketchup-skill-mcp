@@ -1320,7 +1320,7 @@ class ManagedProjects {
       source_analysis:sourceAnalysis, projection_brief:projectionBrief, toolkit_bindings:state.toolkit_bindings };
   }
 
-  async captureViewportSet(state, phase, directory, bridge, requestedViews = null) {
+  async captureViewportSet(state, phase, directory, bridge, requestedViews = null, referenceCamera = null) {
     await fs.mkdir(directory, {recursive:true});
     // Large but already accepted scenes can take longer than the generic
     // 30-second bridge default just to read the active camera/viewport state.
@@ -1358,7 +1358,7 @@ class ManagedProjects {
       if (requestedViews) plan.shots = plan.shots.filter(shot => requestedViews.includes(shot.label));
       prepared=true;
       const preparation=await capture(prepareOutput,plan.process_id,'--prepare');
-      await runHelper('restore_camera',[JSON.stringify(state.source_camera || savedCamera)]);
+      await runHelper('restore_camera',[JSON.stringify(referenceCamera || state.source_camera || savedCamera)]);
       sourceCamera=await runHelper('camera_state');
       const referenceShot=plan.shots.find((shot)=>shot.label==='reference');
       if (referenceShot) referenceShot.camera=sourceCamera;
@@ -1548,7 +1548,11 @@ class ManagedProjects {
       const python = process.env.PIPCLAW_PYTHON || 'python';
       const args=[this.sheetScript];
       for (const item of sourceEvidence) args.push('--source',item.path,'--source-sha256',item.sha256);
-      args.push('--candidate',referencePath,'--output',reviewSheet,'--report',reviewReport);
+      // Explicit aligned/cropped comparisons retain their chosen reference camera.
+      // General contact sheets use the already captured whole-model overview.
+      const comparisonCandidate = !options.comparison?.aligned && !options.comparison?.regions
+        ? (detailViews.geometry_whole_perspective || referencePath) : referencePath;
+      args.push('--candidate',comparisonCandidate,'--output',reviewSheet,'--report',reviewReport);
       if(options.comparison?.aligned) args.push('--aligned');
       if(options.comparison?.regions) {
         const regionFile=path.join(evidenceDir,'comparison-regions.json');
@@ -1558,7 +1562,7 @@ class ManagedProjects {
       await execFileAsync(python,args,{windowsHide:true,timeout:120000});
       const comparison=JSON.parse(await fs.readFile(reviewReport,'utf8'));
       for(const [i,item] of (comparison.additional_images || []).entries()) {
-        if(path.dirname(path.resolve(item.path))!==path.resolve(evidenceDir)) throw this.stateError('COMPARISON_PATH_INVALID','Derived image is outside the current evidence directory.');
+        if(path.relative(await fs.realpath(evidenceDir), await fs.realpath(path.dirname(path.resolve(item.path)))) !== '') throw this.stateError('COMPARISON_PATH_INVALID','Derived image is outside the current evidence directory.');
         comparisonImages['comparison_'+i]=item.path;
       }
     }
@@ -2604,8 +2608,8 @@ class ManagedProjects {
     if (isExpert(state) && (!state.current_review || state.current_review.scene_revision !== state.scene_revision)) throw this.stateError('DELIVERY_UNREVIEWED', 'Current geometry has not been reviewed.');
     const currentBinding = await this.assertModelBinding(state, bridge);
     const plannedNames=isExpert(state) ? [] : executionPlan(state).map(p=>p.name);
-    // Preserve the current presentation view in the delivered SKP. The source
-    // view remains sealed with its evidence, not a forced delivery camera.
+    // Preserve a usable chosen view; Ruby fits an overview only for a clipped,
+    // off-screen or tiny delivery view. Checkpoint/source cameras stay unchanged.
     const outputPath = path.resolve(input.output_path || state.pending_delivery?.model?.path || state.next_output_path || path.join(state.output_directory, `${state.project_id}.skp`));
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     const pending = state.pending_delivery;
@@ -2667,7 +2671,7 @@ class ManagedProjects {
     }
     let save = pending?.save_result;
     if (!pending) {
-      const saveBridge = await this.dispatchAuxiliaryWrite(state, 'save_copy', [state.project_id, outputPath.replaceAll('\\', '/')], bridge, {purpose:'delivery',approved_audit:preflightAudit,approved_evidence_id:approvedEvidenceId});
+      const saveBridge = await this.dispatchAuxiliaryWrite(state, 'save_copy', [state.project_id, outputPath.replaceAll('\\', '/'), 'auto'], bridge, {purpose:'delivery',approved_audit:preflightAudit,approved_evidence_id:approvedEvidenceId});
       save = parseManagedResult(saveBridge);
     }
     if (!fsSync.existsSync(outputPath) || (await fs.stat(outputPath)).size <= 0) throw new Error(`SketchUp save_copy did not create a nonzero file: ${outputPath}`);
@@ -2703,7 +2707,7 @@ class ManagedProjects {
     let capturedFinal = false;
     if(['window_print','desktop_viewport'].includes(profile.capture_backend)) {
       try {
-        const captured=await this.captureViewportSet(state,'finish',path.dirname(previewPath),bridge);
+        const captured=await this.captureViewportSet(state,'finish',path.dirname(previewPath),bridge,null,save.delivery_camera);
         await fs.copyFile(captured.files.reference,previewPath);capturedFinal=true;
       } catch(error) {
         if (/restoration incomplete/.test(error.message)) throw error;
@@ -2711,7 +2715,7 @@ class ManagedProjects {
       }
     }
     if (!capturedFinal) {
-      const previewBridge = await bridge('run_ruby', {code:this.rubyCall('capture_reference',[state.project_id,previewPath.replaceAll('\\','/')]),file:this.helperPath}, suOperationTimeout());
+      const previewBridge = await bridge('run_ruby', {code:this.rubyCall('capture_reference',[state.project_id,previewPath.replaceAll('\\','/'),save.delivery_camera && !save.delivery_camera.two_point ? JSON.stringify(save.delivery_camera) : null]),file:this.helperPath}, suOperationTimeout());
       parseManagedResult(previewBridge);
     }
     const postCapture = path.join(finalDir,'post-capture-audit.json');

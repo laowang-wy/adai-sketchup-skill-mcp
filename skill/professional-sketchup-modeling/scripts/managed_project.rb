@@ -1963,11 +1963,22 @@ module PipClawManagedProject
     JSON.generate({'ok'=>true, 'path'=>output_path.to_s, 'project_id'=>project_id.to_s, 'audit_detail'=>data['audit_detail'], 'counts'=>data['root']['counts']})
   end
 
-  def save_copy(project_id, output_path)
+  def save_copy(project_id, output_path, presentation = 'current')
     root = root_for(project_id, false)
     raise "Managed project not found: #{project_id}" unless root
     FileUtils.mkdir_p(File.dirname(output_path.to_s))
     binding_before = JSON.parse(model_identity)
+    view = model.active_view
+    original_camera = nil
+    delivery_camera = nil
+    if presentation == 'auto'
+      bounds = drawable_bounds(root.entities, root.transformation)
+      if bounds.valid? && ADAIViewportCapture.overview_needed?(view, bounds)
+        original_camera = capture_camera_state
+        restore_camera(ADAIViewportCapture.fitted_state(view,bounds,[1,-1,0.65],Z_AXIS,true))
+      end
+      delivery_camera = JSON.parse(camera_state)
+    end
     ok = false
     strategy = 'save_copy'
     begin
@@ -1985,7 +1996,9 @@ module PipClawManagedProject
     end
     size = File.file?(output_path.to_s) ? File.size(output_path.to_s) : 0
     binding_after = JSON.parse(model_identity)
-    JSON.generate({'ok'=>!!ok && size > 0, 'path'=>output_path.to_s, 'bytes'=>size, 'active_model_path'=>model.path.to_s, 'strategy'=>strategy, 'model_binding_before'=>binding_before, 'model_binding_after'=>binding_after, 'path_migrated'=>binding_before['path'].to_s.empty? && !binding_after['path'].to_s.empty?})
+    JSON.generate({'ok'=>!!ok && size > 0, 'path'=>output_path.to_s, 'bytes'=>size, 'active_model_path'=>model.path.to_s, 'strategy'=>strategy, 'model_binding_before'=>binding_before, 'model_binding_after'=>binding_after, 'path_migrated'=>binding_before['path'].to_s.empty? && !binding_after['path'].to_s.empty?, 'delivery_camera'=>delivery_camera})
+  ensure
+    restore_camera(original_camera) if original_camera
   end
 
   # Exports three source-camera-aligned facade close-ups. Overall screenshots
@@ -2037,10 +2050,7 @@ module PipClawManagedProject
     raise 'Prototype has no live world path' unless transform
     bounds = drawable_bounds(entity.definition.entities, transform)
     raise 'Prototype has no drawable extent' unless bounds.valid?
-    target = bounds.center
-    direction = Geom::Vector3d.new(-0.58, -1.35, rise)
-    direction.length = [bounds.diagonal / 2.0, 1.0].max * 4.0
-    {'eye'=>(target + direction).to_a, 'target'=>target.to_a, 'up'=>[0,0,1], 'perspective'=>true, 'fov'=>43.0}
+    ADAIViewportCapture.fitted_state(model.active_view,bounds,[-0.58,-1.35,rise],Z_AXIS,true)
   end
 
   # Capture real registered prototypes at a useful review scale, then restore camera.
@@ -2083,7 +2093,13 @@ module PipClawManagedProject
     ADAIViewportCapture.write(view, path, width, height)
   end
 
-  def capture_reference(project_id, output_path)
+  def capture_reference(project_id, output_path, camera_json = nil)
+    if camera_json
+      return ADAIViewportCapture.with_saved_camera(model.active_view) do
+        restore_camera(camera_json)
+        capture_reference(project_id, output_path)
+      end
+    end
     root = root_for(project_id, false)
     raise "Managed project not found: #{project_id}" unless root
     directory = File.dirname(output_path.to_s)
@@ -2103,12 +2119,11 @@ module PipClawManagedProject
     model.selection.clear
     root = root_for(project_id, false)
     raise 'Missing managed root' unless root
-    b = root.bounds
-    c = b.center.to_a
-    span = [b.width, b.height, b.depth, 120.0].max.to_f
+    b = drawable_bounds(root.entities, root.transformation)
+    raise 'NO_DRAWABLE_GEOMETRY' unless b.valid?
     shots = [{'label'=>'reference', 'camera'=>reference_camera}]
-    [['perspective',[-1.4,-2.0,1.0],[0,0,1]],['plan',[0,0,2],[0,1,0]],['front',[0,-2,0],[0,0,1]],['side',[2,0,0],[0,0,1]],['underside',[-1,-1,-2],[0,0,1]]].each do |label,offset,up|
-      shots << {'label'=>label,'camera'=>{'eye'=>3.times.map{|i| c[i]+offset[i]*span},'target'=>c,'up'=>up,'perspective'=>false,'height'=>span*1.35}}
+    [['perspective',[1,-1,0.7],[0,0,1]],['plan',[0,0,1],[0,1,0]],['front',[0,-1,0],[0,0,1]],['side',[1,0,0],[0,0,1]],['underside',[1,-1,-0.65],[0,0,1]]].each do |label,offset,up|
+      shots << {'label'=>label,'camera'=>ADAIViewportCapture.fitted_state(model.active_view,b,offset,Geom::Vector3d.new(*up),label=='perspective')}
     end
     if phase_name == 'archetypes'
       pg = phase_group(root, 'archetypes')

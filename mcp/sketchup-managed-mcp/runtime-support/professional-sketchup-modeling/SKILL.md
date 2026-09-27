@@ -24,7 +24,7 @@ description: 根据图片、CAD、文字或已有模型，在本地 SketchUp 创
 | 图片/文字新建 | 轮廓拉伸组织主体与主要洞口；截面或共享边界网格组织曲面。按来源建立所有定义性屋盖与开敞关系，再加细部。 |
 | CAD | 先核对真实单位、基点和闭合内外轮廓；正交墙段可用同批 `wall → window_frame`。高度无来源时明确推断；复杂平面用局部轮廓 Ruby 和真实变换。 |
 | 已有模型局部修改 | 定位实际目标和宿主，区分单实例/共享定义/人工编辑；在允许作用域中用支持 update 的操作，或受管 Ruby 修复，不另建重叠副本。 |
-| 重复构件 | 在 `definition.entities` 内建立完整母型，用 `entities.add_instance(definition, transform)` 放到真实宿主；接口正确后复制，特殊端部独立做变体。 |
+| 重复构件 | 用共享尺寸推导宿主、开口与构件；完整母型放到真实宿主确认连接后，以 `entities.add_instance(definition, transform)` 复制。见[宿主与样板示例](references/examples/recipe-and-batch.md#一次放置多个已确认实例)。 |
 | 曲轮廓/承托 | `profile_prism` 拉伸截面；`section_sweep` 连接平行截面；任意旋转截面或双曲面用自定义网格。方法名不是 MCP 工具名。 |
 | 古建屋面 | 来源形态决定方法，建筑名称不决定预设。当前包返回实际可执行候选；多边形檐环曲坡可用 `ADAIPolygonEaveShell`，山面、脊线等超出范围则换方法。 |
 

@@ -38,17 +38,13 @@ module PipClawManagedProject
   ids.take(8).each_with_index{|id,i|targets<<['part_'+i.to_s,matches[id][0],id]}
   targets.each do |label,bounds,id|
    next unless bounds.valid?
-   center=bounds.center;radius=[bounds.diagonal/2,1.0].max
    shots= label=='whole' ? [['perspective',[1,-1,0.7],true],['front',[0,-1,0],false],['side',[1,0,0],false],['plan',[0,0,1],false],['underside',[1,-1,-0.65],false]] : [['end',[1,-1,0.2],false],['underside',[0,-1,-0.7],false]]
    shots=shots.select{|kind,_,_|requested.include?(kind)} if requested
    shots.each do |kind,offset,perspective|
-    dir=Geom::Vector3d.new(*offset);dir.length=radius*4;up=kind=='plan' ? Y_AXIS : Z_AXIS
-    camera=Sketchup::Camera.new(center+dir,center,up,perspective)
-    if perspective;camera.fov=40.0
-    else;camera.height=radius*2.6;end
-    view.camera=camera;view.refresh
+    up=kind=='plan' ? Y_AXIS : Z_AXIS
+    restore_camera(ADAIViewportCapture.fitted_state(view,bounds,offset,up,perspective))
     file=File.join(directory,'geometry-'+label+'-'+kind+'.png');ok=write_evidence_image(view,file,1600,1200);raise 'DIAGNOSTIC_CAPTURE_FAILED' unless ok && File.size(file)>0
-    metadata=JSON.parse(camera_state);metadata['bounds_mm']=[bounds.min,bounds.max].map{|p|p.to_a.map{|x|x.to_mm}};metadata['semantic_id']=id;metadata['extent_scope']='recursive Face vertices; excludes MCP ConstructionPoint anchor';metadata['image_pixels']=evidence_image_size(view,1600,1200);metadata['render_backend']=evidence_framebuffer? ? 'framebuffer' : 'image';metadata['clipping_check']='conservative enclosing-sphere camera fit; inspect image';metadata['projection_verified']=view.camera.perspective? == perspective;metadata['external_entities_temporarily_hidden']=visibility.length
+    metadata=JSON.parse(camera_state);metadata['bounds_mm']=[bounds.min,bounds.max].map{|p|p.to_a.map{|x|x.to_mm}};metadata['semantic_id']=id;metadata['extent_scope']='recursive Face vertices; excludes MCP ConstructionPoint anchor';metadata['image_pixels']=evidence_image_size(view,1600,1200);metadata['render_backend']=evidence_framebuffer? ? 'framebuffer' : 'image';metadata['clipping_check']='eight drawable-bound corners fitted to image aspect; inspect image';metadata['projection_verified']=view.camera.perspective? == perspective;metadata['external_entities_temporarily_hidden']=visibility.length
     records<<{'label'=>label+'_'+kind,'path'=>file,'camera'=>metadata}
    end
   end
