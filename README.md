@@ -12,7 +12,7 @@
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。
 
-本构建改进整体/构件取景、对图页与交付打开视角，并提供共享参数驱动真实宿主与代表构件的可运行示例。保留 0.5.36 的局部修改、事务、恢复与响应性修复。实际结果与范围见[0.5.37 验证记录](docs/RELEASE-0.5.37.md)。
+本构建改进整体/构件取景、对图页与交付打开视角，并提供共享参数驱动真实宿主与代表构件的可运行示例。保留 0.5.36 的局部修改、事务、恢复与响应性修复。当前适配与验证范围见[兼容性说明](mcp/sketchup-managed-mcp/docs/COMPATIBILITY.md)。
 
 ## 包内容
 
@@ -40,9 +40,9 @@ ADAI老王，开启专家模式
 
 - [下载 Skill 0.5.37](dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928-docs-r1.zip)
 - [下载 MCP 0.5.37](dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928-docs-r1.zip)
-- [安装步骤](mcp/sketchup-managed-mcp/INSTALL.md) · [版本与验证范围](docs/RELEASE-0.5.37.md) · [SHA256 校验](SHA256SUMS.txt)
+- [安装步骤](mcp/sketchup-managed-mcp/INSTALL.md) · [版本与验证范围](mcp/sketchup-managed-mcp/docs/COMPATIBILITY.md) · [SHA256 校验](SHA256SUMS.txt)
 
-产品版本为 `0.5.37`；古建工具包 `0.4.6`、独立经验集合 `0.4.2`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。`docs/RELEASE-*` 记录历史验证，旧安装包与校验表保存在 Git 历史中（[Gitee 历史安装包](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist) · [GitHub 历史安装包](https://github.com/laowang-wy/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)）；旧版本测试不自动算作本次验证。
+产品版本为 `0.5.37`；古建工具包 `0.4.6`、独立经验集合 `0.4.2`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。历史验证记录、旧安装包与校验表保存在 Git 历史中（[Gitee 历史安装包](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist) · [GitHub 历史安装包](https://github.com/laowang-wy/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)）；旧版本测试不自动算作本次验证。安装包说明中提及的历史 `docs/RELEASE-*.md` 可在对应发布标签中查阅。
 
 把 `skill/professional-sketchup-modeling` 复制到当前宿主的 Skill 目录：Codex 使用 `$CODEX_HOME/skills/`；PipClaw 使用其 `codex-home/skills/`。把 MCP 目录复制到用户本机的 MCP 目录，并让 PipClaw/Codex 的 MCP 配置指向该目录中的 `launch.cjs`。安装器应在本机生成路径；发行包不写死用户目录、SketchUp 路径、PID 或会话令牌。
 
