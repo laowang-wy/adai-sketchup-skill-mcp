@@ -1,2 +1,2 @@
-879d69eeefee05528baedfc523dc5ac42f6b6cdf8e99c2e23b320b175752dc8d  dist/professional-sketchup-modeling-0.5.37-method-card-integrity-20260929-r2.zip
-127bfdbadc9f0d758108be160952eff342f77c9ca0b56b93e84a60420f94420a  dist/sketchup-managed-mcp-0.5.37-method-card-integrity-20260929-r2.zip
+562d1ba0d5184ed6a9ad36ede5010808c29084b63b5bd3327328fba4915e810d  dist/professional-sketchup-modeling-0.5.38-current-action-guidance-20260930.zip
+5dd26a81ba3adcb927c26fb33a03a5a3862e00d08c7396cd4e1ea2f79c7942f7  dist/sketchup-managed-mcp-0.5.38-current-action-guidance-20260930.zip

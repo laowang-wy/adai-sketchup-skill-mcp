@@ -1,6 +1,6 @@
 # SketchUp Managed MCP
 
-Current product version: **0.5.37**. Read [manifest.json](../../manifest.json) and [BUILD.json](../../BUILD.json) for package identity, and [RELEASE.md](../../RELEASE.md) for changes and validation scope. Start this package through `launch.cjs` as described in [INSTALL.md](../../INSTALL.md).
+Current product version: **0.5.38**. Read [manifest.json](../../manifest.json) and [BUILD.json](../../BUILD.json) for package identity, and [RELEASE.md](../../RELEASE.md) for changes and validation scope. Start this package through `launch.cjs` as described in [INSTALL.md](../../INSTALL.md).
 
 ## Managed modeling
 

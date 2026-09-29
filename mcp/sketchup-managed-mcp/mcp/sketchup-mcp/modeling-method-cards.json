@@ -1,5 +1,5 @@
 {
-  "version": "base-0.4.2",
+  "version": "base-0.4.3",
   "scope": "current executable construction guidance; not a visual certification",
   "phases": {
     "massing": "image_primary_form",
@@ -13,7 +13,7 @@
     "variants": "variants_and_skin",
     "facade_detail": "variants_and_skin",
     "finish": "finish",
-    "work_unit": "image_primary_form",
+    "work_unit": "system_construction",
     "delivery": "delivery"
   },
   "construction_methods": {
@@ -68,20 +68,20 @@
       "goal": "只修用户指定对象与受影响的连接，不重建无关建筑。",
       "actions": [
         "在当前项目中定位目标对象/实例路径和宿主，区分单实例、共享定义及人工编辑；确认真实缺陷后选修改范围。",
-        "已有专家工作单元中的受支持对象可用 translate、set_wall_openings、material；改洞口后检查关联框，改单实例不改共享定义。",
-        "需要 Ruby 时在授权容器内修复。guided 的当前阶段是替换写入，typed operations 只引用同批对象；不能拿它当任意既有 SU 对象的通用补丁工具。"
+        "两模式均用 step(operation_intent=update, targets=[准确对象地址]) 修改既有对象；改单个洞口用 update_wall_opening，框随洞口更新，其他洞口保留；移动、旋转和材质用对应操作。",
+        "复杂形体用受管 Ruby 和 context['edit_targets'] 定向修改。guided 保留当前容器、无关构件和原进度；只有明确重做整阶段时才选阶段替换。"
       ],
       "method": {
         "tool": "sketchup_project_step",
         "reference": "references/scoped-operations.md",
         "ruby_reference": "references/managed-ruby-api.md",
-        "operation_intent": "专家受管单元明确选择 update/replace；不要把 create-only 生成器伪装成 update"
+        "operation_intent": "update + targets 定向修改；replace 明确替换选中范围。set_wall_openings 仅用于明确替换全部洞口。"
       },
       "key_parameters": [
-        "目标 entity_path / object id",
+        "targets：已有对象 ID 或实例路径",
         "受影响宿主与尺寸",
-        "translate.delta_mm 或 openings",
-        "实际操作范围与实例变换"
+        "update_wall_opening 的 opening / changes，或对应操作参数",
+        "实例变换；修改母型时显式 edit_scope=definition 并用 Ruby"
       ],
       "inspect": "同时看目标、接口及可能受影响的相邻实例；新读回与原参数回显分开。",
       "if_failed": "目标不存在、共享范围不明或人工编辑冲突时停在具体对象定位；说明当前工具不支持的编辑，不复制一份重叠模型冒充修改。"
@@ -209,6 +209,25 @@
       },
       "inspect": "文件可读、来源形态相符及可编辑性分别按实际检查说明。",
       "if_failed": "保存结果未知时查本次回执；几何仍有缺陷则按当前项目的返修入口继续修改。"
+    },
+    "system_construction": {
+      "goal": "接着完成当前建筑系统，沿用已确认的主形、来源尺度和连接关系。",
+      "actions": [
+        "根据当前要建的对象选择轮廓挤出、截面放样、实例组合或已有生成器；用真实宿主与局部坐标组织构造。",
+        "新构件追加到当前或指定工作单元；改已有对象用 update + targets，必要关联一起调整。"
+      ],
+      "method": {
+        "tool": "sketchup_project_step",
+        "reference": "references/scoped-operations.md",
+        "ruby_reference": "references/managed-ruby-api.md"
+      },
+      "key_parameters": [
+        "当前系统与宿主",
+        "来源尺寸及标高",
+        "局部坐标和连接位置"
+      ],
+      "inspect": "看当前系统与整栋的关系，再看暴露连接或形体问题的局部视图。",
+      "if_failed": "按实际错误修参数、坐标或构造方法；已提交后缺图按返回恢复动作补取证。"
     }
   }
 }

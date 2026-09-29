@@ -11,7 +11,10 @@ function positiveMatches(text,expression){
  return Array.from(value.matchAll(re)).filter(match=>{
   const before=value.slice(0,match.index).split(/[，,。;；\n]/).pop();
   const after=value.slice(match.index+match[0].length).split(/[，,。;；\n]/)[0];
-  return !/(?:不是|并非|不采用|不用|不要|排除|没有|无|不|非|\bnot|\bno|\bwithout|rather than)\s*(?:独立|明确|清晰)?\s*$/i.test(before)
+  // Carry negation across a coordinated list, but stop at an affirmative turn.
+  const clause=before.split(/但是|但|而|改用|改为|换成|(?<!不)采用|(?<!不)使用|\bbut\b|\binstead\b/i).pop();
+  const negativeList=/(?:不要|不用|不采用|不使用|不选|排除|避免|不是|并非|没有|\bnot|\bno|\bwithout|\bneither)\s*[^，,。;；\n]*(?:和|与|及|或|、|\band\b|\bor\b|\bnor\b)\s*$/i.test(clause);
+  return !negativeList && !/(?:不是|并非|不采用|不使用|不选|不用|不要|排除|没有|无|不|非|\bnot|\bno|\bwithout|\bneither|rather than)\s*(?:独立|明确|清晰)?\s*$/i.test(before)
    && !/(?:可能|疑似|不确定|也许|\bmaybe|\bpossible)\s*$/i.test(before)
    && !/^\s*(?:未定|不确定|看不清|未知|可能|不详|unknown|uncertain)/i.test(after);
  });
@@ -45,32 +48,50 @@ function selectRoof(profile,taskText,ids){
  if(has(/连续四坡|四面坡连续|continuous hip/i)&&/没有\s*独立山面|无\s*独立山面|no\s+(independent\s+)?gable/i.test(text))return ids.includes('wu_dian')?'wu_dian':null;
  return null;
 }
-function methodFor(mode,phase,taskText=''){
+function methodFor(mode,phase,taskText='',context=null){
+ if(phase==='delivery')return 'delivery';
  if(mode==='refinement')return 'local_correction';
  if(['massing','source_alignment'].includes(phase) && mode==='cad')return 'cad_primary_form';
- if(phase==='work_unit' && /曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(taskText))return 'curved_contour';
- if(phase==='work_unit' && /修改|修复|move|modify|repair|update/i.test(taskText))return 'local_correction';
- // Work-unit is an execution container, not a change from CAD to image input.
- if(mode==='cad' && phase==='work_unit')return 'cad_primary_form';
+ if(phase==='work_unit'){
+  const current=context===null?taskText:context.text||'';
+  if(context?.intent==='update'||context?.repair||/修改|修复|纠正|\b(?:move|modify|repair|update)\b/i.test(current))return 'local_correction';
+  if(/曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(current))return 'curved_contour';
+  if(/复制|阵列|批量|replicat|array/i.test(current))return 'replication';
+  if(/原型|样板|代表构件|prototype/i.test(current))return 'representative_component';
+  if(/栏杆|入口|门窗|材质|表皮|细部|railing|entrance|facade|material|detail/i.test(current))return 'variants_and_skin';
+  // CAD source units and coordinates remain relevant to later construction.
+  if(mode==='cad')return 'cad_primary_form';
+  return 'system_construction';
+ }
  return cards.phases[phase]||'image_primary_form';
 }
-function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalog=null){
- const id=methodFor(mode,phase,taskText);
+function needsRoofMethods(profile,taskText,phase,context=null){
+ if(!['massing','roof_profile','work_unit'].includes(phase))return false;
+ if(phase==='work_unit'){
+  const current=context===null?taskText:context.text||'';
+  return positiveMatches(current,/屋面|屋盖|屋顶|檐|山面|roof|eave/i).length>0 || roofNames.some(([,re])=>positiveMatches(current,re).length);
+ }
+ return ancientRoofRoute(inferProfile(profile,taskText))||positiveMatches(taskText,/曲檐|曲坡屋盖|curved roof|curved eave/i).length>0;
+}
+function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalog=null,context=null){
+ const id=methodFor(mode,phase,taskText,context);
  const result={method_id:id,...copy(cards.construction_methods[id])};
+ const currentText=phase==='work_unit'&&context!==null?context.text||'':taskText;
  const isPrimary=['massing','roof_profile','work_unit'].includes(phase);
- if(isPrimary && /曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(taskText) && id!=='curved_contour')
+ if(isPrimary && /曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(currentText) && id!=='curved_contour')
   result.related_method=copy(cards.construction_methods.curved_contour);
- const effective=inferProfile(profile,taskText);
- if(!isPrimary)return result;
- const roofNeed=ancientRoofRoute(effective)||positiveMatches(taskText,/曲檐|曲坡屋盖|curved roof|curved eave/i).length>0;
- if(!roofNeed)return result;
+ if(!needsRoofMethods(profile,taskText,phase,context))return result;
+ const currentNames=roofNames.some(([,re])=>re.test(currentText));
+ // A current roof choice supersedes the original task's method name.
+ const selectionText=phase==='work_unit'&&currentNames?currentText:taskText;
+ const effective=phase==='work_unit'&&currentNames?{}:inferProfile(profile,taskText);
  result.roof_scope='屋面方法只生成所选屋壳，不生成整栋。主体、其他定义性屋盖、标高、退台和开敞空间仍由当前建模动作组织。受管 Ruby 是正常选项，无须先让预设失败。';
  result.custom_roof={helper_file:'references/examples/ruby/polygon-eave-shell.rb',entry:'ADAIPolygonEaveShell.build(entities,name,parameters,material=nil)',
   parameters:'outer_xy_mm, inner_xy_mm: 对应的同向凸环；base_z_mm,rise_mm,thickness_mm,corner_lift_mm,span_segments,slope_segments',
   applies:'多边形同拓扑檐环到内环的曲坡壳，可按真实标高组成完整主形；不是歇山山面/任意双曲面的通用生成器。'};
  if(!catalog){result.method_notice='当前屋面包未提供可读取的方法目录；用上述自定义构造，或显式查询已安装工具包。没有据此判定屋面类型。';return result;}
  result.experience_pack=catalog.experience_pack;
- const selected=selectRoof(effective,taskText,catalog.candidates.map(c=>c.method_id));
+ const selected=selectRoof(effective,selectionText,catalog.candidates.map(c=>c.method_id));
  result.selection_state=selected?'applicable_method':'candidate_selection_required';
  result.suggested_method=selected;
  result.suggestion_basis=selected?'来自任务或已提供来源描述的适用线索；按所列差别与实际图像核对。':'来源特征尚不明确；保留候选，不按建筑名称选屋面。';
@@ -94,4 +115,4 @@ function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalo
  }
  return result;
 }
-module.exports={ancientRoofRoute,roofSuggestion,ancientRoofPresetId:roofSuggestion,inferProfile,constructionBriefFor,methodFor,selectRoof};
+module.exports={ancientRoofRoute,roofSuggestion,ancientRoofPresetId:roofSuggestion,inferProfile,constructionBriefFor,methodFor,selectRoof,needsRoofMethods};

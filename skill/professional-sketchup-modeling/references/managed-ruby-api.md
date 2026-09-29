@@ -78,7 +78,7 @@ PipClawManagedProject.instantiate_archetype(
 )
 ```
 
-Use true instances where repetition is actually required. In guided replication, reuse the reviewed prototype rather than redrawing it; expert may create a complete prototype and instances in one authorized unit. For guided projects, if an accepted prototype is wrong, call `sketchup_project_revise_from(project_id, target_phase, reason)` while the project is in an allowed state; it preserves a checkpoint and invalidates affected downstream phases. If the current operation is `evidence_pending` or `result_unknown`, finish the existing recovery chain first; do not replay the write.
+Use true instances where repetition is actually required. In guided replication, reuse the reviewed prototype rather than redrawing it; expert may create a complete prototype and instances in one authorized unit. For a local defect in either mode, use `sketchup_project_step(operation_intent=update, targets=[exact_target])`; typed operations or Ruby `context['edit_targets']` preserve unrelated geometry. To change the shared prototype within the supported container, use targeted Ruby with `edit_scope=definition`; inspect its affected instances. Use `sketchup_project_revise_from(project_id, target_phase, reason)` only when deliberately rebuilding a phase and its dependent downstream work; it preserves a checkpoint. If the current operation is `evidence_pending` or `result_unknown`, finish the existing recovery chain first; do not replay the write.
 
 ## Variants — Controlled Differences
 

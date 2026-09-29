@@ -41,7 +41,7 @@ function resolveAssistanceMode(input = {}, env = process.env) {
 
 function assistanceGuidance(mode) {
   return mode === 'autonomous'
-    ? { mode: 'autonomous', strategy: 'autonomous_work_units', summary: '专家模式：按来源自主选择工具、构造组合和审核时机；先独立完成并审核完整主形和代表构件，再连续组织相关建筑系统。', next: 'project_begin 会返回当前构造方法、关键参数和下一步动作；来源仍须实际查看；先执行返回动作，只有短卡不足时才查一份方法参考。' }
+    ? { mode: 'autonomous', strategy: 'autonomous_work_units', summary: '专家模式：按来源自主选择工具、构造组合和审核时机；先独立完成并审核完整主形和适用的代表构件（无重复系统不制造原型），再连续组织相关建筑系统。', next: 'project_begin 会返回当前构造方法、关键参数和下一步动作；来源仍须实际查看；先执行返回动作，只有短卡不足时才查一份方法参考。' }
     : { mode: 'guided', strategy: 'guided_steps', summary: '引导模式：按当前阶段给出可执行步骤、参数帮助、方法推荐和针对性纠错。', parameter_help: '先确认输入单位、来源尺度和目标阶段；缺少尺寸时保留假设。', method_help: '按来源选择适用生成器或受管 Ruby；先建包含定义性屋面、主要曲率和负空间的完整主形，再读回并与来源看图比较。', next: 'project_begin 会返回当前阶段的动作卡；执行 step、实际看图、review，再进入下一阶段。' };
 }
 
@@ -51,7 +51,7 @@ function assistanceForError(mode, error) {
   const correction = /unknown|unconfirmed|recovery|replay|结果未知/i.test(text)
     ? ['读取项目状态和 operation_id。', '查询原操作回执，再 reconcile；未确认前禁止换 ID 重放。']
     : /structure|archetype|replication|validation|原型/i.test(text)
-      ? ['检查实际 audit 中的原型、实例路径和预期放置。', '用 revise 或 revise_from 修正失败阶段，再取证和审查；视觉声明不能覆盖结构失败。']
+      ? ['检查实际 audit 中的原型、实例路径和预期放置。', '局部缺陷用 step(operation_intent=update, targets=[准确对象地址]) 修正并检查必要关联；明确重建阶段及下游时才用 revise_from。未知写入或待取证先沿原恢复入口处理。']
       : /evidence|view|capture|证据/i.test(text)
         ? ['只检查返回的真实图像，JSON 不算已看图片。', '按项目状态调用 retry_evidence；不要重建已经执行的几何。']
         : ['核对当前工具 schema、单位和项目状态。', '根据失败原因修正参数；只有构造方法不清时才读取 Skill 中对应的一份参考。'];

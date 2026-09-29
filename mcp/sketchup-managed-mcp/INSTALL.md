@@ -1,6 +1,6 @@
 # ADAI SketchUp 安装
 
-本文适用于当前 **0.5.37** 发行包。Skill 与 MCP 使用同一构建；分别打开包内 `BUILD.json` 核对 `version`、`build_id` 和 `source_digest`。改动与验证范围见各包 `RELEASE.md`。
+本文适用于当前 **0.5.38** 发行包。Skill 与 MCP 使用同一构建；分别打开包内 `BUILD.json` 核对 `version`、`build_id` 和 `source_digest`。改动与验证范围见各包 `RELEASE.md`。
 
 1. 准备 Windows、Node.js 18+、Python 3.10+；Python 依赖见 MCP 包内 `requirements.txt`。
 2. 将 MCP 解压到稳定目录。宿主以 `node` 启动该目录 `launch.cjs` 的绝对路径，传输使用 stdio。

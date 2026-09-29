@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "integration_version": "0.5.37",
+  "integration_version": "0.5.38",
   "files": {
     "bearing/managed_bearing.rb": "57fdf71b1858e4616edd949b6f8887461b43edcedda8136a7fbee6cfb6062418",
     "bearing/README.md": "89f5e78aea444e9e30307e897b8e044e39f40f6d9c73708666e8408e9cca835b",

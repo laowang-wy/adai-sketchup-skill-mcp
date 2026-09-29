@@ -1,7 +1,7 @@
 {
-  "version": "0.5.37",
-  "build_id": "0.5.37-method-card-integrity-20260929-r2",
-  "source_baseline": "9e042d363cf7bc8fc5dced9e6a130c1f7dd2f393",
-  "source_digest": "3a6f6b3dac849e3bdb2b513735c952396964a50318037c6b9177201031bbd177",
+  "version": "0.5.38",
+  "build_id": "0.5.38-current-action-guidance-20260930",
+  "source_baseline": "574268e8b88258c0512cdcc5f13d1135b8c50318",
+  "source_digest": "4ef1cbd11a4ffa3d912f6797eb58592c9649cf21112ab058a2e22538c3a63593",
   "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

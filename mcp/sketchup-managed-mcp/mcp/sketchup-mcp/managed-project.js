@@ -144,7 +144,7 @@ function validateSourceAnalysis(value) {
 }
 function ancientRoofPresetId(profile, taskText = "") { return modelingGuidance.roofSuggestion(profile, taskText); }
 function inferProfileFromTaskText(profile, taskText) { return modelingGuidance.inferProfile(profile, taskText, normalizedProfile); }
-function constructionBriefFor(profile, taskText = '', mode = '', phase = 'massing', catalog = null) { return modelingGuidance.constructionBriefFor(profile, taskText, mode, phase, catalog); }
+function constructionBriefFor(profile, taskText = '', mode = '', phase = 'massing', catalog = null, context = null) { return modelingGuidance.constructionBriefFor(profile, taskText, mode, phase, catalog, context); }
 function ancientRoofRoute(profile) { return modelingGuidance.ancientRoofRoute(profile); }
 function sourceAnalysisHint(value) {
   const images = Array.isArray(value?.images) ? value.images : [];
@@ -152,6 +152,15 @@ function sourceAnalysisHint(value) {
     ...(image.visible_facts || []), ...(image.geometry_cues || []),
     ...(image.spatial_relations || []),
   ]).map(String).filter(Boolean).slice(0, 24).join('；');
+}
+function guidanceContext(state, phase) {
+  if(phase!=='work_unit')return null;
+  const name=String(state.work_unit?.name||'');
+  const unit=/^(Whole-building massing|Representative components)$/i.test(name)?'':name;
+  const reason=String(state.revision_required?.reason||'');
+  const pending=state.pending_execution;
+  const intent=pending?.work_unit_id===state.work_unit?.id?pending?.intent:null;
+  return {text:[unit,reason].filter(Boolean).join('；'),intent,repair:!!reason};
 }
 function guidanceTaskText(state) {
   const task = String(state?.task_text || '');
@@ -458,8 +467,8 @@ function validateStructureAudit(state, phase, audit) {
   return null;
 }
 
-function phaseTaskCard(phase, mode, taskProfile = {}, taskText = '', catalog = null) {
-  const brief=constructionBriefFor(taskProfile,taskText,mode,phase.name,catalog);
+function phaseTaskCard(phase, mode, taskProfile = {}, taskText = '', catalog = null, context = null) {
+  const brief=constructionBriefFor(taskProfile,taskText,mode,phase.name,catalog,context);
   return {phase:phase.name,objective:brief.goal,construction_brief:brief,
     agent_review:'Inspect actual views against the source. Supply visual_review with observations; machine geometry, receipts and dependency records are assembled by the program.'};
 }
@@ -543,7 +552,7 @@ function abstractionRecheckNeeded(state, phaseName) {
 }
 function taskCard(state, phase, detail=false, catalog=null) {
   const current=state.status==='ready_to_finish' ? 'delivery' : (initialStage(state)||phase.name);
-  const card=phaseTaskCard({name:current},state.mode,state.task_profile,guidanceTaskText(state),catalog);
+  const card=phaseTaskCard({name:current},state.mode,state.task_profile,guidanceTaskText(state),catalog,guidanceContext(state,current));
   if(isExpert(state)) {
     card.work_unit=state.work_unit||null;
     if(initialStage(state))card.initial_step=current;
@@ -1250,7 +1259,7 @@ class ManagedProjects {
     const current=state.status==='ready_to_finish' ? 'delivery' : (initialStage(state)||phase.name);
     const methodText=guidanceTaskText(state);
     const methodProfile=inferProfileFromTaskText(state.task_profile||{},methodText);
-    if((ancientRoofRoute(methodProfile)||/曲檐|曲坡屋盖|curved roof|curved eave/i.test(methodText))&&['massing','roof_profile','work_unit'].includes(current)) {
+    if(modelingGuidance.needsRoofMethods(methodProfile,methodText,current,guidanceContext(state,current))) {
       try {
         const family=methodProfile.method_family||'ancient_roof';
         const binding=(state.toolkit_bindings||[]).find(b=>b.method_family===family||b.id==='ancient-architecture') || await resolveMethodBinding(this.appDataDir,family);

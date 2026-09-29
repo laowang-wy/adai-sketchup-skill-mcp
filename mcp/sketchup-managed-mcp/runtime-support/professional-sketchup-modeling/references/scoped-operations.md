@@ -30,7 +30,7 @@
 例如只加宽左洞并移动，不需要重发其他洞：
 
 ```json
-{"project_id":"已有项目", "operation_intent":"update",
+{"project_id":"已有项目", "operation_intent":"update", "targets":["wall"],
  "operations":[{"op":"update_wall_opening","target":"wall","opening":"left",
  "changes":{"width_mm":1800,"x_mm":900}}]}
 ```
