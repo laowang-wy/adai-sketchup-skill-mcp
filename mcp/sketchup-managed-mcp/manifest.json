@@ -3,7 +3,7 @@
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
   "version": "0.5.37",
-  "build_id": "0.5.37-framing-shared-parameters-20260928-docs-r1",
+  "build_id": "0.5.37-method-card-integrity-20260929-r2",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -43,7 +43,7 @@
       "integrationVersion": "0.5.37",
       "entry": "sketchup_ancient_tool",
       "scope": "phase-role compiler used by guided phases or version-2 expert work units; actual readback and visual review remain required",
-      "version": "0.4.6",
+      "version": "0.4.7",
       "integrationBaseline": "0.5.6"
     },
     {
@@ -52,7 +52,7 @@
       "integrationVersion": "0.5.37",
       "entry": "sketchup_toolkit",
       "scope": "bounded parametric facade-bay massing; live readback and visual review required",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "productionReady": false
     }
   ],

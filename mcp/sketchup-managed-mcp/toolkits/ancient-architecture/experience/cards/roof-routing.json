@@ -17,7 +17,7 @@
     "study/findings.md",
     "source_templates/catalog.json"
   ],
-  "entrypoint": "mcp_entry.py (sketchup_toolkit invoke; project_id + expected_fingerprint)",
+  "entrypoint": "mcp_entry.py",
   "historical_evidence_not_shipped": [
     "validation/xieshan-defect.json"
   ],
@@ -145,7 +145,7 @@
       ],
       "inspect": "比较来源的正侧轮廓、转角、檐下厚度和空隙；compile 通过只说明离线几何检查。",
       "if_failed": "先修比例与控制参数；关键轮廓超出算法表达范围时使用受管 Ruby，不套近似名称。",
-      "label": "简化四坡/悬山屋壳",
+      "label": "简化四坡屋壳",
       "selection_basis": "简化四坡候选；不是悬山算法，不用名称近似进行替代。"
     }
   },

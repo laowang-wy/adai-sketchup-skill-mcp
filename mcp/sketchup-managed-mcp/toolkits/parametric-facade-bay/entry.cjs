@@ -36,7 +36,7 @@ function ruby(p,phase='massing'){
 }
 function main(input){
   if(!input||!['list','validate','compile'].includes(input.action)) throw new Error('UNKNOWN_ACTION');
-  if(input.action==='list') return {method_family:'parametric_facade_bay',scope:'small facade-bay massing with repeated openings; no interior, structure or visual acceptance',parameters:['width_mm','height_mm','depth_mm','bay_count','opening_ratio','sill_mm'],feedback:['PIER_TOO_NARROW','SILL_LEAVES_NO_LINTEL','BAY_COUNT_OUT_OF_RANGE'],next_tool:'sketchup_project_step',requires_review:true};
+  if(input.action==='list') return {ok:true,method_family:'parametric_facade_bay',scope:'small facade-bay massing with repeated openings; no interior, structure or visual acceptance',parameters:['width_mm','height_mm','depth_mm','bay_count','opening_ratio','sill_mm'],feedback:['PIER_TOO_NARROW','SILL_LEAVES_NO_LINTEL','BAY_COUNT_OUT_OF_RANGE'],next_tool:'sketchup_project_step',requires_review:true};
   const p=parameters(input);
   if(input.action==='validate') return {ok:true,parameters:p,feedback:{expected_bays:p.bay_count,expected_opening_width_mm:p.opening_width_mm,expected_pier_width_mm:p.pier_width_mm},scope:'parameter contract only; no SketchUp execution'};
   if(typeof input.output_directory!=='string'||!path.isAbsolute(input.output_directory)) throw new Error('ABSOLUTE_OUTPUT_REQUIRED');

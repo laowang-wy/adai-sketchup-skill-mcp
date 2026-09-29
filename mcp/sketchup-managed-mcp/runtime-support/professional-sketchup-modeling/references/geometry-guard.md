@@ -1,6 +1,6 @@
 # 公共几何契约
 
-主包构建见 BUILD.json；当前古建工具为 0.4.6、公共几何核心为 0.1.1，各自独立版本。以下合同与历史样板记录分开使用；本轮验证范围见 RELEASE.md。
+主包构建见 BUILD.json；当前古建工具为 0.4.7、公共几何核心为 0.1.1，各自独立版本。以下合同与历史样板记录分开使用；本轮验证范围见 RELEASE.md。
 
 入口分两类：已有屋面配方使用 `sketchup_ancient_tool(action=preset,family=roof,preset_id=...)`，随后以返回参数调用 `validate/compile(family=recipe)`；来源部件或显式 semantic parts 才使用 `action=compile,family=geometry`。parameters包含project_id、phase、source_evidence、task_contract及parts（1..100个唯一semantic_id）。正式编译阶段为massing、roof_profile、archetypes、primary_corrections、facade_detail；refinement是项目mode，不是phase。projection_subjects、archetypes、visible_detail_system、correction_targets 都是可选的追踪信息；适配器会生成受管登记调用，但登记、阶段名和数量不证明形态相符，也不应迫使自定义构造补写调用。真机执行、读回和视觉验收仍未由离线编译证明；须匹配真实当前context。roof_profile可返回roof_control_contract作为构造线索和诊断，缺少该字段不单独判定几何失败，最终以真实读回和视觉审核为准。旧roof/source/bearing/eave/measured只作test/massing诊断入口，不替代实际构造和视觉判断。
 每个part提供role、vertices、faces、topology。closed预期闭合；open_sheet须提供expected_boundary、thickness_mm、offset_direction。host_id、offset_mm、offset_semantics明确宿主与偏移。dependencies声明producer/consumer；contacts声明pair、points_mm、direction、expected_gap_mm、tolerance_mm。详细输入见geometry_tool.py；来源与尺寸不能猜填。

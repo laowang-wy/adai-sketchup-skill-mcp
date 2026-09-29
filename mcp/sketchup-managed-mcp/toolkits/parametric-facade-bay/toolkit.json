@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parametric-facade-bay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "ADAI 老王",
   "license": "CPAL-1.0",
   "runtime": "node",

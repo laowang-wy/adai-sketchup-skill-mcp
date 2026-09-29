@@ -1,7 +1,7 @@
 {
   "version": "0.5.37",
-  "build_id": "0.5.37-framing-shared-parameters-20260928-docs-r1",
-  "source_baseline": "470ba28d24e401d599f5ae722eaecc7d1aaa6994",
-  "source_digest": "89855348cd0daceeef015b7c71c24757bb696529f03af1311c605428ca44d62a",
+  "build_id": "0.5.37-method-card-integrity-20260929-r2",
+  "source_baseline": "9e042d363cf7bc8fc5dced9e6a130c1f7dd2f393",
+  "source_digest": "3a6f6b3dac849e3bdb2b513735c952396964a50318037c6b9177201031bbd177",
   "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

@@ -1,2 +1,2 @@
-8d7a584339b941161da12459280d0c449954bdcd8290ae6cfaca2cb7a7ffd963  dist/professional-sketchup-modeling-0.5.37-framing-shared-parameters-20260928-docs-r1.zip
-6b5041a3c87e974e71eca12c49f869ce769b5fb79d560df265c8267054c41275  dist/sketchup-managed-mcp-0.5.37-framing-shared-parameters-20260928-docs-r1.zip
+879d69eeefee05528baedfc523dc5ac42f6b6cdf8e99c2e23b320b175752dc8d  dist/professional-sketchup-modeling-0.5.37-method-card-integrity-20260929-r2.zip
+127bfdbadc9f0d758108be160952eff342f77c9ca0b56b93e84a60420f94420a  dist/sketchup-managed-mcp-0.5.37-method-card-integrity-20260929-r2.zip
