@@ -48,40 +48,38 @@ def crop_box(box, size):
     return pixels
 
 
-def compose(source, candidate, width=800, height=900):
-    scale = min(width/source.width, height/source.height, width/candidate.width, height/candidate.height, 1.0)
-    header, gap = 44, 12
-    sheet = Image.new('RGB', (width*2+gap, height+header), '#202328')
-    draw = ImageDraw.Draw(sheet)
-    maps = []
-    for i, (image, label) in enumerate(((source, 'SOURCE REFERENCE'), (candidate, 'CURRENT MODEL'))):
-        size = (max(1, round(image.width*scale)), max(1, round(image.height*scale)))
-        offset = (i*(width+gap)+(width-size[0])//2, header+(height-size[1])//2)
+def compose_cells(cells, width, height):
+    # Source pixels and viewport pixels are unrelated scales. Fit each full
+    # frame without distortion; record the mapping, never infer registration.
+    gap, header, padding, columns = 12, 32, 12, 2
+    sizes = []
+    for image, _ in cells:
+        scale = min(width / image.width, height / image.height, 1.0)
+        sizes.append((max(1, round(image.width * scale)), max(1, round(image.height * scale))))
+    row_heights = [max(size[1] for size in sizes[i:i+columns]) for i in range(0, len(cells), columns)]
+    total_height = sum(row_heights) + len(row_heights)*(header+padding) + max(0,len(row_heights)-1)*gap
+    sheet = Image.new('RGB', (width*columns+gap, total_height), '#202328')
+    draw, maps = ImageDraw.Draw(sheet), []
+    y = 0
+    for i, ((image, label), size) in enumerate(zip(cells, sizes)):
+        row, col = divmod(i, columns)
+        if col == 0 and row: y += row_heights[row-1]+header+padding+gap
+        offset = (col*(width+gap)+(width-size[0])//2, y+header+(row_heights[row]-size[1])//2)
         sheet.paste(image.resize(size, Image.Resampling.LANCZOS), offset)
-        draw.text((i*(width+gap)+12, 14), label, fill='white')
-        maps.append({'original_size': list(image.size), 'display_size': list(size),
-                     'scale_xy': [size[0]/image.width, size[1]/image.height], 'offset_xy': list(offset), 'cropped': False})
+        draw.text((col*(width+gap)+12, y+10), label, fill='white')
+        maps.append({'label':label,'original_size':list(image.size),'display_size':list(size),
+                     'scale_xy':[size[0]/image.width,size[1]/image.height],
+                     'offset_xy':list(offset),'cropped':False})
     return sheet, maps
+
+
+def compose(source, candidate, width=800, height=900):
+    return compose_cells([(source,'SOURCE REFERENCE'),(candidate,'CURRENT MODEL')],width,height)
 
 
 def compose_multi(sources, candidate, width=800, height=900):
-    """Keep every source visible in one bounded contact sheet plus the model."""
-    gap, header, columns = 12, 44, 2
-    cells = [(image, f'SOURCE REFERENCE {i + 1}') for i, image in enumerate(sources)]
-    cells.append((candidate, 'CURRENT MODEL'))
-    rows = math.ceil(len(cells) / columns)
-    sheet = Image.new('RGB', (width * columns + gap * (columns - 1), (height + header) * rows + gap * (rows - 1)), '#202328')
-    draw = ImageDraw.Draw(sheet)
-    maps = []
-    for i, (image, label) in enumerate(cells):
-        row, col = divmod(i, columns)
-        scale = min(width / image.width, height / image.height, 1.0)
-        size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-        offset = (col * (width + gap) + (width - size[0]) // 2, row * (height + header + gap) + header + (height - size[1]) // 2)
-        sheet.paste(image.resize(size, Image.Resampling.LANCZOS), offset)
-        draw.text((col * (width + gap) + 12, row * (height + header + gap) + 14), label, fill='white')
-        maps.append({'label': label, 'original_size': list(image.size), 'display_size': list(size), 'scale_xy': [size[0] / image.width, size[1] / image.height], 'offset_xy': list(offset), 'cropped': False})
-    return sheet, maps
+    cells = [(image, f'SOURCE REFERENCE {i+1}') for i,image in enumerate(sources)]
+    return compose_cells(cells+[(candidate,'CURRENT MODEL')],width,height)
 
 
 def save_image(file, image):
@@ -92,53 +90,77 @@ def save_image(file, image):
 
 
 def make_sheet(source_file: Path | list[Path], candidate_file: Path, output: Path, report_file: Path,
-               width=800, height=900, regions=None, aligned=False, expected_source=None):
+               width=800, height=900, regions=None, aligned=False, expected_source=None, candidate_views=None):
     if type(width) is not int or type(height) is not int or not (320 <= width <= 2048 and 320 <= height <= 2048):
         raise ValueError('PANEL_DIMENSIONS_INVALID')
     source_files = source_file if isinstance(source_file, list) else [source_file]
     expected_sources = expected_source if isinstance(expected_source, list) else ([] if expected_source is None else [expected_source])
-    if not source_files or len(source_files) > 32 or len(expected_sources) not in (0, len(source_files)):
+    if len(source_files) > 32 or len(expected_sources) not in (0, len(source_files)):
         raise ValueError('SOURCE_LIST_INVALID')
     loaded = [read_image(file, expected_sources[i] if expected_sources else None) for i, file in enumerate(source_files)]
     sources = [item[0] for item in loaded]
     source_meta = [item[1] for item in loaded]
     candidate, cm = read_image(candidate_file)
+    candidate_views = [] if candidate_views is None else candidate_views
+    if not isinstance(candidate_views, list) or len(candidate_views) > 6:
+        raise ValueError('CANDIDATE_VIEWS_INVALID')
+    views, view_meta, view_paths, view_labels = [], [], set(), set()
+    for item in candidate_views:
+        if not isinstance(item, dict) or set(item) != {'label','path'} or item['label'] not in {'reference','perspective','front','side','plan','underside'}:
+            raise ValueError('CANDIDATE_VIEW_INVALID')
+        file = Path(item['path'])
+        if item['label'] in view_labels or file.resolve() in view_paths or file.resolve() == candidate_file.resolve():
+            raise ValueError('CANDIDATE_VIEW_DUPLICATE')
+        image, meta = read_image(file)
+        views.append((image,'MODEL / '+item['label'].upper()))
+        view_meta.append({'label':item['label'], **meta})
+        view_paths.add(file.resolve()); view_labels.add(item['label'])
     inputs = {file.resolve() for file in source_files} | {candidate_file.resolve()}
     if len(inputs) != len(source_files) + 1 or output.resolve() in inputs or report_file.resolve() in inputs or output.resolve() == report_file.resolve():
         raise ValueError('OUTPUT_COLLIDES_WITH_INPUT')
-    if type(aligned) is not bool or aligned and any(source.size != candidate.size for source in sources):
+    if view_paths & inputs or output.resolve() in view_paths or report_file.resolve() in view_paths:
+        raise ValueError('OUTPUT_COLLIDES_WITH_INPUT')
+    if type(aligned) is not bool or aligned and (not sources or any(source.size != candidate.size for source in sources)):
         raise ValueError('ALIGNED_COMPARISON_REQUIRES_EQUAL_PIXEL_FRAMES')
     regions = [] if regions is None else regions
     if not isinstance(regions, list) or len(regions) > 16:
         raise ValueError('REGION_LIMIT')
     prepared, names = [], set()
-    if len(sources) > 1 and regions:
-        raise ValueError('REGIONS_REQUIRE_SINGLE_SOURCE')
-    source = sources[0]
+    source = sources[0] if sources else None
     for region in regions:
-        if not isinstance(region, dict) or set(region) != {'name','source_box','candidate_box'}:
+        if not isinstance(region, dict) or not {'name','source_box','candidate_box'} <= set(region) or set(region) - {'name','source_index','source_box','candidate_box'}:
             raise ValueError('REGION_FIELDS_INVALID')
+        source_index = region.get('source_index', 0)
+        if type(source_index) is not int or not 0 <= source_index < len(sources):
+            raise ValueError('REGION_SOURCE_INDEX_INVALID')
         name = region['name']
         if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,48}', name) or name.lower() in names:
             raise ValueError('REGION_NAME_INVALID')
         names.add(name.lower())
-        prepared.append((name, crop_box(region['source_box'], source.size), crop_box(region['candidate_box'], candidate.size)))
-    paths = [output, report_file] + [output.with_name(output.stem+'-region-'+name+'.png') for name,_,_ in prepared]
+        prepared.append((name, source_index, crop_box(region['source_box'], sources[source_index].size), crop_box(region['candidate_box'], candidate.size)))
+    paths = [output, report_file] + [output.with_name(output.stem+'-region-'+name+'.png') for name,_,_,_ in prepared]
     if aligned:
         paths += [output.with_name(output.stem+'-'+suffix+'.png') for suffix in ('overlay','difference')]
     if any(p.exists() or p.is_symlink() for p in paths):
         raise ValueError('OUTPUT_EXISTS')
     output.parent.mkdir(parents=True, exist_ok=True)
     report_file.parent.mkdir(parents=True, exist_ok=True)
-    sheet, maps = (compose_multi(sources, candidate, width, height) if len(sources) > 1 else compose(source, candidate, width, height))
-    result = {'ok':True,'source':source_meta[0],'sources':source_meta,'candidate':cm,'full_frame_maps':maps,
+    if views or not sources:
+        cells=[(image, f'SOURCE REFERENCE {i+1}') for i,image in enumerate(sources)]
+        sheet,maps=compose_cells(cells+[(candidate,'CURRENT COMPARISON')]+views,width,height)
+    else:
+        sheet, maps = (compose_multi(sources, candidate, width, height) if len(sources) > 1 else compose(source, candidate, width, height))
+    result = {'ok':True,'source':source_meta[0] if source_meta else None,'sources':source_meta,'candidate':cm,'full_frame_maps':maps,
               'review_sheet':save_image(output,sheet),'regions':[], 'additional_images':[],
               'registration':'caller_declared_same_pixel_frame' if aligned else 'not_registered',
-              'architectural_verdict':'not_evaluated', 'warning':'No automatic crop, camera adjustment, similarity score or architectural approval.'}
-    for name, a, b in prepared:
-        image, mapping = compose(source.crop(a),candidate.crop(b),width,height)
+              'architectural_verdict':'not_evaluated', 'display_policy':'independent_full_frame_fit',
+              'warning':'Frames are independently fitted, not the same physical scale or camera. No automatic crop, similarity score or architectural approval.'}
+    if view_meta:
+        result['candidate_views']=view_meta
+    for name, index, a, b in prepared:
+        image, mapping = compose_cells([(sources[index].crop(a),f'SOURCE {index+1} / {name}'),(candidate.crop(b),'CURRENT MODEL / '+name)],width,height)
         item = save_image(output.with_name(output.stem+'-region-'+name+'.png'),image)
-        result['regions'].append({'name':name,'source_box_px':a,'candidate_box_px':b,'maps':mapping,'image':item})
+        result['regions'].append({'name':name,'source_index':index,'source_sha256':source_meta[index]['sha256'],'source_box_px':a,'candidate_box_px':b,'maps':mapping,'image':item})
         result['additional_images'].append(item)
     if aligned:
         for suffix, image in [('overlay',Image.blend(source,candidate,0.5)),('difference',ImageChops.difference(source,candidate))]:
@@ -150,13 +172,14 @@ def make_sheet(source_file: Path | list[Path], candidate_file: Path, output: Pat
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, action='append', required=True)
+    parser.add_argument('--source', type=Path, action='append', default=[])
     for field in ('candidate','output'):
         parser.add_argument('--'+field,type=Path,required=True)
     parser.add_argument('--report',type=Path)
     parser.add_argument('--panel-width',type=int,default=800)
     parser.add_argument('--panel-height',type=int,default=900)
     parser.add_argument('--regions-file',type=Path)
+    parser.add_argument('--views-file',type=Path)
     parser.add_argument('--aligned',action='store_true')
     parser.add_argument('--source-sha256', action='append')
     args=parser.parse_args()
@@ -165,7 +188,11 @@ def main():
         if args.regions_file:
             if args.regions_file.stat().st_size>100_000:raise ValueError('REGION_FILE_LIMIT')
             regions=json.loads(args.regions_file.read_text(encoding='utf-8-sig'))
-        make_sheet(args.source,args.candidate,args.output,args.report or args.output.with_suffix('.json'),args.panel_width,args.panel_height,regions,args.aligned,args.source_sha256 or [])
+        candidate_views=None
+        if args.views_file:
+            if args.views_file.stat().st_size>100_000:raise ValueError('CANDIDATE_VIEW_FILE_LIMIT')
+            candidate_views=json.loads(args.views_file.read_text(encoding='utf-8-sig'))
+        make_sheet(args.source,args.candidate,args.output,args.report or args.output.with_suffix('.json'),args.panel_width,args.panel_height,regions,args.aligned,args.source_sha256 or [],candidate_views)
         print(json.dumps({'ok':True,'output':str(args.output),'report':str(args.report or args.output.with_suffix('.json'))}))
         return 0
     except (ValueError,OSError) as error:

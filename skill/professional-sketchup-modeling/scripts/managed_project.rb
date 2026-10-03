@@ -3,6 +3,7 @@
 require 'sketchup.rb'
 require 'json'
 require_relative 'geometry_guard'
+require_relative 'construction_geometry'
 require 'digest'
 require 'fileutils'
 require_relative 'managed_unit_scope'
@@ -1484,6 +1485,7 @@ module PipClawManagedProject
         # SketchUp's internal lengths are inches. Supplying both conversions here
         # prevents build files from inventing/reversing a metres conversion.
         'working_units'=>'mm',
+        'geometry'=>Object.new.extend(ADAIConstructionGeometry),
         'meters_to_inches'=>39.37007874015748,
         'mm_to_inches'=>0.03937007874015748,
         'projection_brief'=>projection_brief,
@@ -2053,7 +2055,22 @@ module PipClawManagedProject
     ADAIViewportCapture.fitted_state(model.active_view,bounds,[-0.58,-1.35,rise],Z_AXIS,true)
   end
 
-  # Capture real registered prototypes at a useful review scale, then restore camera.
+  # Registration narrows the view; an unregistered phase still has real geometry.
+  # Both native image export and OS viewport capture use this same target selection.
+  def archetype_view_targets(phase)
+    return [] unless phase && phase.valid?
+    items = phase_registry(phase, 'archetypes_json')
+    if items.empty?
+      return drawable_bounds(phase.entities, world_transform_for(phase)).valid? ? [[phase, 'archetype_phase']] : []
+    end
+    items.each_with_index.map do |item, index|
+      entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i)
+      raise 'Missing registered prototype geometry' unless entity && entity.valid?
+      [entity, "prototype_#{index+1}"]
+    end
+  end
+
+  # Capture real prototypes or the unregistered phase at a useful review scale.
   def capture_archetype_views(project_id, output_directory)
     root = root_for(project_id, false)
     raise "Managed project not found: #{project_id}" unless root
@@ -2064,17 +2081,14 @@ module PipClawManagedProject
     original_state = capture_camera_state
     original = view.camera
     paths = []; labels = []
-    phase_registry(phase, 'archetypes_json').each_with_index do |item, index|
-      entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i)
-      raise 'Missing registered prototype geometry' unless entity && entity.valid?
+    archetype_view_targets(phase).each do |entity, prefix|
       [['above', 0.48], ['underside', -0.20]].each do |label, rise|
         restore_camera(JSON.generate(prototype_camera_state(entity, rise)))
-        path = File.join(output_directory.to_s, "prototype-#{index+1}-#{label}.png")
+        path = File.join(output_directory.to_s, "#{prefix.tr('_','-')}-#{label}.png")
         raise 'Prototype image export failed' unless write_evidence_image(view, path, 1600, 1200)
-        paths << path; labels << "prototype_#{index+1}_#{label}"
+        paths << path; labels << "#{prefix}_#{label}"
       end
     end
-    raise 'No prototypes exported' if paths.empty?
     JSON.generate({'ok'=>true, 'paths'=>paths, 'labels'=>labels})
   ensure
     if defined?(view) && defined?(original) && view && original
@@ -2108,7 +2122,7 @@ module PipClawManagedProject
     ratio=view.camera.aspect_ratio.to_f rescue 0.0
     ratio=view.vpwidth.to_f / [view.vpheight,1].max if ratio<=0
     width=1600; height=[[ (width/ratio).round, 128].max, 4096].min
-    ok = write_evidence_image(view, output_path.to_s, width, height)
+    ok = with_project_visibility(root) { write_evidence_image(view, output_path.to_s, width, height) }
     width,height=evidence_image_size(view,width,height)
     JSON.generate({'ok'=>!!ok, 'path'=>output_path.to_s, 'width'=>width, 'height'=>height, 'viewport_width'=>view.vpwidth, 'viewport_height'=>view.vpheight, 'camera'=>JSON.parse(camera_state)})
   end
@@ -2127,11 +2141,9 @@ module PipClawManagedProject
     end
     if phase_name == 'archetypes'
       pg = phase_group(root, 'archetypes')
-      phase_registry(pg, 'archetypes_json').each_with_index do |item,index|
-        entity = model.find_entity_by_persistent_id(item['persistent_id'].to_i)
-        raise 'Missing prototype' unless entity && entity.valid?
+      archetype_view_targets(pg).each do |entity,prefix|
         [['above',0.48],['underside',-0.20]].each do |label,rise|
-          shots << {'label'=>"prototype_#{index+1}_#{label}",'camera'=>prototype_camera_state(entity,rise)}
+          shots << {'label'=>"#{prefix}_#{label}",'camera'=>prototype_camera_state(entity,rise)}
         end
       end
     end

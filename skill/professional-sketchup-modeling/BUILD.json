@@ -1,7 +1,7 @@
 {
-  "version": "0.5.38",
-  "build_id": "0.5.38-current-action-guidance-20260930",
-  "source_baseline": "574268e8b88258c0512cdcc5f13d1135b8c50318",
-  "source_digest": "4ef1cbd11a4ffa3d912f6797eb58592c9649cf21112ab058a2e22538c3a63593",
+  "version": "0.5.39",
+  "build_id": "0.5.39-construction-inspection-20261003-r1",
+  "source_baseline": "1c55ed976f781723885f5be08e3b7b875f81a735",
+  "source_digest": "da3cf72b52dbc11387216e6dcc2fb208a30d2485b63e8cf63f16e15c6694aebc",
   "real_sketchup_acceptance": "scope_recorded_separately_for_this_build"
 }

@@ -21,6 +21,25 @@ module ADAIViewportCapture
       view.write_image(path, width, height, true, 0.9)
     end
   end
+  # Surface comparison removes display edges only. Face geometry, materials and
+  # smoothing are untouched; structural shots use the user's current settings.
+  def with_display(model, style)
+    return yield if style == 'current'
+    raise 'INVALID_EVIDENCE_DISPLAY' unless style == 'surfaces'
+    options=model.rendering_options
+    changes={'EdgeDisplayMode'=>0,'DrawSilhouettes'=>false,'DrawHidden'=>false}
+    saved={}
+    begin
+      changes.each do |key,value|
+        next unless options.keys.include?(key)
+        saved[key]=options[key]; options[key]=value
+      end
+      yield
+    ensure
+      saved.each{|key,value|options[key]=value}
+      model.active_view.refresh
+    end
+  end
   def snapshot(view)
     c = view.camera
     {'eye'=>c.eye.to_a, 'target'=>c.target.to_a, 'up'=>c.up.to_a,

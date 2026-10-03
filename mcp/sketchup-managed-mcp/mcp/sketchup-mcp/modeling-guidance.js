@@ -4,6 +4,9 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 // Text routing supplies candidates, never a claim of image recognition. Bare
 // 'tower' and the building name alone do not specify a roof algorithm.
 const roofNames=[['si_shan',/歇山|\b(?:si_shan|xieshan|xie[_ -]shan)\b/i],['wu_dian',/庑殿|\b(?:wudian|wu[_ -]dian)\b/i],['juan_peng',/卷棚|\bjuan[_ -]peng\b/i],['zan_jian',/攒尖|\bzan[_ -]jian\b/i],['helmet',/盔顶|\bhelmet\b/i],['xie_ding',/简化四坡|\bxie_ding\b/i]];
+// Ordinary source descriptions should reach the same optional construction help.
+// This is method discovery, not a geometric interpretation or preset selection.
+const curvedCues=/曲面|曲线|弧形|流线[型形]|曲壳|曲坡|弯曲|复杂轮廓|放样|curv|loft|sweep/i;
 
 function positiveMatches(text,expression){
  const value=String(text||'');
@@ -55,7 +58,7 @@ function methodFor(mode,phase,taskText='',context=null){
  if(phase==='work_unit'){
   const current=context===null?taskText:context.text||'';
   if(context?.intent==='update'||context?.repair||/修改|修复|纠正|\b(?:move|modify|repair|update)\b/i.test(current))return 'local_correction';
-  if(/曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(current))return 'curved_contour';
+  if(positiveMatches(current,curvedCues).length)return 'curved_contour';
   if(/复制|阵列|批量|replicat|array/i.test(current))return 'replication';
   if(/原型|样板|代表构件|prototype/i.test(current))return 'representative_component';
   if(/栏杆|入口|门窗|材质|表皮|细部|railing|entrance|facade|material|detail/i.test(current))return 'variants_and_skin';
@@ -76,10 +79,29 @@ function needsRoofMethods(profile,taskText,phase,context=null){
 function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalog=null,context=null){
  const id=methodFor(mode,phase,taskText,context);
  const result={method_id:id,...copy(cards.construction_methods[id])};
- const currentText=phase==='work_unit'&&context!==null?context.text||'':taskText;
+ result.ruby_construction={entry:"g = context['geometry']",units:'所有输入用毫米数值；helper 内转换一次。直接调用 SketchUp API 时用 .mm，因为原生数值是英寸。',
+  profile:"g.profile(entities, name, outline_mm, depth_mm, plane='xz', offset_mm=0, material=nil)：等截面沿直线挤出；xy 向 +Z，xz 向 +Y，yz 向 +X。offset 是起始平面而非中心，结束=offset+depth；轮廓随深度变化时用截面/网格。",
+  profile_with_holes:"g.profile_with_holes(entities,name,outer_mm,holes_mm,depth_mm,plane='xy',offset_mm=0,material=nil)：外环和内孔沿直线挤出；holes_mm 为二维点环数组，无孔 []、单孔 [hole]。孔在外环内且互不接触；贴边缺口直接放入外轮廓。各构件采用自身轮廓，边框则生成内外环间的带体。",
+  box:'g.box(entities, name, origin_mm, size_mm, material=nil)：矩形构件；自动隔离组、处理面方向与正向挤出。返回组，可放入组件定义。',
+  loft_sections:"g.loft_sections(entities,name,sections_mm,axis='x',material=nil)：沿直轴连接不同闭合截面并封两端。每站 {'offset_mm'=>轴向位置,'profile_mm'=>二维轮廓}；x截面为YZ，y为XZ，z为XY。位置递增、对应点同序同向；可变宽高/侧移，无孔、非旋转截面，逐段直连而非自动拟合光滑曲线。",
+  shell_grid:"g.shell_grid(entities,name,top_grid_mm,thickness_mm,material=nil)：二维XYZ毫米网格生成封闭曲面薄壳，厚度沿-Z。每行同点数≥2；端点XY/Z表达收分和起伏，首末整行/列可重复同一XYZ点收成端点；适用XY上单值、无孔高度面。",
+  closed_band:"g.closed_band(entities,name,outer_bottom_mm,outer_top_mm,inner_bottom_mm,inner_top_mm,material=nil)：四条对应XYZ毫米点环生成竖向围合带，中央留空；上下沿可起伏。环点数、绕向一致，内环XY在外环内，各顶点高于对应底点；不自动偏移。",
+  sample_profile:cards.construction_methods.curved_contour.method.sample_profile,
+  transform:'g.translation_mm([x,y,z])；g.point_mm([x,y,z])。任意曲面仍可用现有网格/放样或自定义 Ruby。',
+  material:"material=nil 使用默认显示；需颜色时传 Sketchup::Color.new(r,g,b)。命名材质在 build 内创建：mat=Sketchup.active_model.materials.add('本项目材质名'); mat.color=Sketchup::Color.new(r,g,b)，再将 mat 传给构造方法。仅传自定义名称不会创建材质。",
+  reference:'references/managed-ruby-api.md'};
+ // Reuse the source features already supplied to begin. Current expert work
+ // still uses its own context so a later material/edit task gets no stale roof help.
+ const currentText=phase==='work_unit'&&context!==null?context.text||'':textOf(profile,taskText);
  const isPrimary=['massing','roof_profile','work_unit'].includes(phase);
- if(isPrimary && /曲面|曲线|复杂轮廓|放样|curv|loft|sweep/i.test(currentText) && id!=='curved_contour')
+ if(isPrimary && positiveMatches(currentText,curvedCues).length && id!=='curved_contour')
   result.related_method=copy(cards.construction_methods.curved_contour);
+ // A plain photo request carries no visual classification. Keep the small core
+ // construction palette discoverable; richer matched cards carry their own inputs.
+ const showCoreSurfaces=isPrimary&&!['local_correction','variants_and_skin'].includes(id);
+ if(!showCoreSurfaces || result.method?.shell_grid || result.related_method?.method?.shell_grid)delete result.ruby_construction.shell_grid;
+ if(!showCoreSurfaces || result.method?.closed_band || result.related_method?.method?.closed_band)delete result.ruby_construction.closed_band;
+ if(!showCoreSurfaces || result.method?.sample_profile || result.related_method?.method?.sample_profile)delete result.ruby_construction.sample_profile;
  if(!needsRoofMethods(profile,taskText,phase,context))return result;
  const currentNames=roofNames.some(([,re])=>re.test(currentText));
  // A current roof choice supersedes the original task's method name.
@@ -115,4 +137,18 @@ function constructionBriefFor(profile,taskText='',mode='',phase='massing',catalo
  }
  return result;
 }
-module.exports={ancientRoofRoute,roofSuggestion,ancientRoofPresetId:roofSuggestion,inferProfile,constructionBriefFor,methodFor,selectRoof,needsRoofMethods};
+// Target discovery provides addresses, not recovered design parameters. Reuse
+// the callable construction signatures rather than create another method list.
+function localEditHelp(objects){
+ if(!Array.isArray(objects)||!objects.some(o=>o.target&&!o.locked&&o.direct_instance_edit!==false))return null;
+ const api=constructionBriefFor({},'', 'refinement','refinement').ruby_construction;
+ return {
+  choose:'位置或朝向不对：平移/旋转原对象。边界、退台或开口不对：改相应轮廓；截面沿进深变化：给出不同截面再连接。保留正确部分，修改导致偏差的几何参数；名称和包围盒不是原设计参数。',
+  call:{tool:'sketchup_project_step',operation_intent:'update',targets:'所选 objects[].target',ruby_file:'构造修改脚本的绝对路径'},
+  build:"在 build 内用 context['edit_targets'] 取得原对象；组用 target.entities，组件用 target.definition.entities。只修改所选范围中的相关内容；需要重建目标内部时保留外层对象及其变换，用 g=context['geometry'] 在内部构造替代几何。",
+  coordinates:'helper 输入为目标局部毫米坐标；已有 bounds_inches 和变换平移量为原生英寸。世界点先经 world_transform 的逆变换转入目标局部，再换算为毫米；不重复施加外层变换。',
+  methods:{profile:api.profile,profile_with_holes:api.profile_with_holes,loft_sections:api.loft_sections},
+  more:'曲面/围合带或任意形体继续用已有 shell_grid、closed_band 或受管 Ruby；精确输入见 references/managed-ruby-api.md。这不是限定可用方法。'
+ };
+}
+module.exports={localEditHelp,ancientRoofRoute,roofSuggestion,ancientRoofPresetId:roofSuggestion,inferProfile,constructionBriefFor,methodFor,selectRoof,needsRoofMethods};

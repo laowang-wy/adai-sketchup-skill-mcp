@@ -1,2 +1,2 @@
-562d1ba0d5184ed6a9ad36ede5010808c29084b63b5bd3327328fba4915e810d  dist/professional-sketchup-modeling-0.5.38-current-action-guidance-20260930.zip
-5dd26a81ba3adcb927c26fb33a03a5a3862e00d08c7396cd4e1ea2f79c7942f7  dist/sketchup-managed-mcp-0.5.38-current-action-guidance-20260930.zip
+8e1295724b0b28e4e2045cb80365350ff1f5c51a6bc0d4c0337df45c16e42d7c  dist/professional-sketchup-modeling-0.5.39-construction-inspection-20261003-r1.zip
+f76de1ab85a3edf2705eb8ebc67112c42367b0c57ccd9f7956a9d9ed0a1fc0d5  dist/sketchup-managed-mcp-0.5.39-construction-inspection-20261003-r1.zip

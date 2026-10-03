@@ -168,18 +168,12 @@ function guidanceTaskText(state) {
   return hint ? `${task} 来源可见特征：${hint}` : task;
 }
 function phasePlanFor(mode, profile) {
-  const standard=PHASE_PLANS[mode] || PHASES;
-  const base=profile?.repetition==='none' && ['single_image','freeform','cad'].includes(mode) ? standard.filter(p=>!['archetypes','replication'].includes(p.name)) : standard;
-  // The phase list is a teaching route.  It must not manufacture prototype or
-  // replication work merely because a profile says a repeated system exists;
-  // the model may choose a direct construction or merge relevant work.  The
-  // transaction, evidence and readback contracts remain enforced elsewhere.
-  const omitted = new Set(profile?.omit_phases || []);
-  let selected = base.filter((phase)=>!omitted.has(phase.name));
-  // A named ancient roof is part of the complete primary form. Keep the
-  // internal phase field for compatibility, but do not add a separate roof
-  // phase that teaches the agent to postpone the defining roof geometry.
-  return selected;
+  // Used only to create a new guided policy. Profile hints describe the
+  // building; they do not remove its guided construction/review steps.
+  // Existing projects continue their signed phase_plan in planForState;
+  // expert work units and targeted local edits do not use this planner.
+  // Methods remain unrestricted, and no object/count quota is introduced.
+  return (PHASE_PLANS[mode] || PHASES).map(phase => ({...phase}));
 }
 
 function resolveExecutionPolicy({ mode, assistanceMode, profile }) {
@@ -470,7 +464,7 @@ function validateStructureAudit(state, phase, audit) {
 function phaseTaskCard(phase, mode, taskProfile = {}, taskText = '', catalog = null, context = null) {
   const brief=constructionBriefFor(taskProfile,taskText,mode,phase.name,catalog,context);
   return {phase:phase.name,objective:brief.goal,construction_brief:brief,
-    agent_review:'Inspect actual views against the source. Supply visual_review with observations; machine geometry, receipts and dependency records are assembled by the program.'};
+    agent_review:'Compare the complete source silhouette, relative body sizes and connections, then the changed detail. Use construction_brief.inspect to locate a difference in layout, section or level parameters; submit observations for views actually inspected. Machine attachments are assembled by the program.'};
 }
 
 function stripRubyComments(source) {
@@ -559,6 +553,17 @@ function taskCard(state, phase, detail=false, catalog=null) {
     card.building_guidance='Use the same construction methods in an expert unit; combine related writes and choose useful observations. New projects retain separate complete-primary-form and applicable representative-component milestones; no-repetition tasks do not invent prototypes.';
   } else {
     card.building_guidance='Follow the current construction actions, inspect the result, correct the form, then advance. Methods are available in any applicable phase.';
+  }
+  if(state.status==='review_required' && !detail) {
+    const brief=card.construction_brief;
+    card.construction_brief={method_id:brief.method_id,goal:brief.goal,
+      actions:brief.method_id==='image_primary_form' ? ['仅按原图与当前图判断：当前主形能否作为后续精细建模的基础？指出具体位置与可见依据，分清应先修正的主形/空间，以及可后补的细部；视角不同而不能确认的部分单独说明。', '影响体量、轮廓、连接或空间的偏差先修到对应几何，再看同一处；分格、接缝和小截面随后深化。粗略体量可辨认只是起点，修正范围由实际差异决定。'] : ['先分别看原图与当前模型的实际边界：主体宽高、高低与前后关系，屋盖轮廓、主要空隙，再看本次细部；用图中位置描述看到的形状。',
+        '找出最影响来源一致性的一处可见差异，回到对应轮廓、标高或连接参数修正并复看；未发现重大差异才沿当前计划继续。视角不足时先补能辨认该处的观察图。'],
+      inspect:brief.inspect,if_failed:brief.if_failed,
+      method:{tool:'sketchup_project_review',inputs:'project_id, evidence_id, verdict, visual_review'},
+      construction_help:'需要原构造参数或方法时可读 status(detail=true)；定向修改沿现有 step(update)，整体返修沿 review(revise)。'};
+    card.agent_review='依据当前图像中的边界和空间判断，不用先前的来源描述或脚本计划代替观察；实际相同、偏差与看不清的部分分别说明。';
+    card.building_guidance='当前动作是看图决定修正或继续；构造方法与受管修改能力保持可用。';
   }
   if(validationIssues(state).length)card.open_findings=validationIssues(state);
   if(state.revision_required)card.revision_required=state.revision_required;
@@ -659,7 +664,31 @@ function validateUniqueDetailAudit(state, audit) {
   return details.length ? details : { status: 'not_checked', issues: ['No registered one-off detail was found; this is diagnostic only.'], details: [] };
 }
 
-function validateInspectedViews(qualityReview, evidenceRecord) {
+function validateCaptureOptions(input, state) {
+  if (input.views !== undefined && (!Array.isArray(input.views) || !input.views.length || input.views.length > 6 || new Set(input.views).size !== input.views.length || input.views.some(v=>!['reference','perspective','front','side','plan','underside'].includes(v)))) throw Object.assign(Error('Choose supported evidence views.'),{code:'EVIDENCE_VIEWS_INVALID'});
+  const regions=input.comparison?.regions;
+  if (regions !== undefined) {
+    const fail=message=>{throw Object.assign(Error(message),{code:'EVIDENCE_REGION_INVALID'});};
+    if (!Array.isArray(regions) || regions.length>16) fail('comparison.regions must be an array of at most 16 crop pairs.');
+    const names=new Set(),count=state ? (state.sources || (state.source ? [state.source] : [])).length : null;
+    for (const region of regions) {
+      if (!region || typeof region!=='object' || Array.isArray(region) || Object.keys(region).some(k=>!['name','source_index','source_box','candidate_box'].includes(k))) fail('Use name, source_box, candidate_box and optional source_index.');
+      if (typeof region.name!=='string' || !/^[A-Za-z0-9_-]{1,48}$/.test(region.name) || names.has(region.name.toLowerCase())) fail('Crop names must be distinct letters, digits, hyphens or underscores.');
+      names.add(region.name.toLowerCase());
+      const index=region.source_index===undefined ? 0 : region.source_index;
+      if (!Number.isInteger(index) || index<0 || (count!==null && index>=count)) fail('source_index selects a bound source, starting at 0.');
+      for (const key of ['source_box','candidate_box']) {
+        const box=region[key];
+        if (!Array.isArray(box) || box.length!==4 || !box.every(Number.isFinite) || !(0<=box[0] && box[0]<box[2] && box[2]<=1 && 0<=box[1] && box[1]<box[3] && box[3]<=1)) fail(key+' needs normalized [left,top,right,bottom] within 0..1.');
+      }
+    }
+  }
+  const view=input.comparison?.view;
+  if (view !== undefined && view !== null && (!view || typeof view!=='object' || Array.isArray(view) || Object.keys(view).some(k=>!['azimuth_deg','elevation_deg','perspective','display'].includes(k)) || !Number.isFinite(view.azimuth_deg) || Math.abs(view.azimuth_deg)>360 || !Number.isFinite(view.elevation_deg) || Math.abs(view.elevation_deg)>=89 || (view.perspective!==undefined && typeof view.perspective!=='boolean') || (view.display!==undefined && !['current','surfaces'].includes(view.display)))) throw Object.assign(Error('comparison.view needs azimuth_deg (-360..360), elevation_deg (-89..89 exclusive) and optional perspective boolean / display current|surfaces.'),{code:'EVIDENCE_VIEW_INVALID'});
+  if (view && input.comparison.aligned) throw Object.assign(Error('A fitted comparison view is not a registered pixel frame; omit aligned.'),{code:'EVIDENCE_VIEW_INVALID'});
+}
+
+function validateInspectedViews(qualityReview, evidenceRecord, outputDirectory = null) {
   const views = qualityReview?.visual?.inspected_views;
   if (!Array.isArray(views) || views.length === 0) throw new Error('EVIDENCE_VIEW_REQUIRED: inspected_views must name delivered evidence files');
   const delivered = new Set(Object.entries(evidenceRecord?.files || {}).filter(([key, file]) => {
@@ -668,10 +697,47 @@ function validateInspectedViews(qualityReview, evidenceRecord) {
     if (/\.(?:json|rb|skp|skb|txt|py|js|cjs|mjs)$/i.test(name)) return false;
     return /\.(?:png|jpe?g|webp|gif|bmp|tiff?)$/i.test(name) || /^(?:view|reference|preview|image|shot)/i.test(key) || !path.extname(name);
   }).map(([, file]) => path.resolve(file.path).toLowerCase()));
+  const sources = new Set((evidenceRecord.sources || (evidenceRecord.source ? [evidenceRecord.source] : [])).filter(f=>f?.path).map(f=>path.resolve(f.path).toLowerCase()));
+  // Attachment clients may save the delivered image under a new filename.
+  // Recognize an exact copy in this project's output; the signed image hash,
+  // not the client filename, establishes which current evidence it represents.
+  const copiedImage = label => {
+    if (!outputDirectory || !/\.(?:png|jpe?g|webp|gif|bmp|tiff?)$/i.test(label)) return null;
+    try {
+      const base = fsSync.realpathSync(outputDirectory);
+      const candidate = fsSync.realpathSync(path.resolve(outputDirectory, label));
+      const relative = path.relative(base, candidate);
+      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) return null;
+      const stat = fsSync.statSync(candidate);
+      if (!stat.isFile()) return null;
+      const matches = Object.values(evidenceRecord.files || {}).filter(file =>
+        file?.path && delivered.has(path.resolve(file.path).toLowerCase()) &&
+        file.bytes === stat.size && /^[a-f0-9]{64}$/i.test(file.sha256 || ''));
+      if (!matches.length) return null;
+      const bytes = fsSync.readFileSync(candidate);
+      if (bytes.length !== stat.size) return null;
+      const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+      const match = matches.find(file => file.sha256.toLowerCase() === digest);
+      return match ? path.resolve(match.path).toLowerCase() : null;
+    } catch { return null; }
+  };
+  let modelSeen = false;
   for (const view of views) {
-    const resolved = path.resolve(String(evidenceRecord.files?.[view]?.path || view || '')).toLowerCase();
-    if (!delivered.has(resolved)) throw new Error(`EVIDENCE_VIEW_NOT_DELIVERED: inspected view is not one of the sealed evidence files: ${view}`);
+    const label = String(view || '');
+    const canonicalView = ['perspective','front','side','plan','underside'].includes(label)
+      ? evidenceRecord.files?.['geometry_whole_' + label] : null;
+    let resolved = path.resolve(String(evidenceRecord.files?.[label]?.path || canonicalView?.path || label)).toLowerCase();
+    // Clients often show the actual image filename/stem instead of its JSON key.
+    // Resolve only unique aliases within this sealed record, never a foreign path.
+    if (!delivered.has(resolved) && !/[\\/:]/.test(label)) {
+      const matches = [...delivered].filter(file => path.basename(file) === label.toLowerCase() || path.parse(file).name === label.toLowerCase());
+      if (matches.length === 1) resolved = matches[0];
+    }
+    if (!delivered.has(resolved) && !sources.has(resolved)) resolved = copiedImage(label) || resolved;
+    if (delivered.has(resolved)) modelSeen = true;
+    else if (!sources.has(resolved)) throw Object.assign(new Error(`EVIDENCE_VIEW_NOT_DELIVERED: use a current evidence image key/path or the bound source path: ${view}`), {code:'EVIDENCE_VIEW_NOT_DELIVERED'});
   }
+  if (!modelSeen) throw Object.assign(Error('EVIDENCE_VIEW_REQUIRED: include a current model evidence image as well as any source images.'),{code:'EVIDENCE_VIEW_REQUIRED'});
 }
 
 function validateAuditReadback(value) {
@@ -1422,7 +1488,90 @@ class ManagedProjects {
     return {ok:true,status_preserved:state.status,directory:dir,...result};
   }
 
+  async comparisonSheet(state, directory, detailViews, referencePath, options = {}) {
+    const sourceEvidence = state.sources || (state.source ? [state.source] : []);
+    let reviewSheet = '';
+    let reviewReport = '';
+    const comparisonImages = {};
+    if (sourceEvidence.length || options.display_views?.length) {
+      await verifyEvidenceFiles({sources:sourceEvidence});
+      reviewSheet = path.join(directory, 'review-sheet.png');
+      reviewReport = path.join(directory, 'review-evidence.json');
+      const python = process.env.PIPCLAW_PYTHON || 'python';
+      const args=[this.sheetScript];
+      for (const item of sourceEvidence) args.push('--source',item.path,'--source-sha256',item.sha256);
+      // Crops refer to the same fitted candidate as the whole comparison. A crop
+      // alone must not switch to the unrelated live viewport camera.
+      const comparisonCandidate = detailViews.geometry_whole_comparison || (!options.comparison?.aligned
+        ? (detailViews.geometry_whole_perspective || referencePath) : referencePath);
+      args.push('--candidate',comparisonCandidate,'--output',reviewSheet,'--report',reviewReport);
+      // Reuse the already captured shape views for early guided construction.
+      // Explicit view choices (including []) retain precedence; no extra capture.
+      const overview = state.assistance_mode === 'guided' && sourceEvidence.length &&
+        ['massing', 'archetypes'].includes(state.phase);
+      const displayedViews = options.display_views === undefined
+        ? (overview ? ['front', 'plan'] : []) : options.display_views;
+      const requested = [...new Set(displayedViews || [])].map(name => ({
+        label:name, path:name==='reference' ? referencePath : detailViews['geometry_whole_' + name],
+      })).filter(item => item.path && path.resolve(item.path)!==path.resolve(comparisonCandidate));
+      if (requested.length) {
+        const viewFile=path.join(directory,'comparison-views.json');
+        await fs.writeFile(viewFile,JSON.stringify(requested));
+        args.push('--views-file',viewFile);
+      }
+      if(options.comparison?.aligned) args.push('--aligned');
+      if(options.comparison?.regions) {
+        const regionFile=path.join(directory,'comparison-regions.json');
+        await fs.writeFile(regionFile,JSON.stringify(options.comparison.regions));
+        args.push('--regions-file',regionFile);
+      }
+      await execFileAsync(python,args,{windowsHide:true,timeout:120000});
+      const comparison=JSON.parse(await fs.readFile(reviewReport,'utf8'));
+      for(const [i,item] of (comparison.additional_images || []).entries()) {
+        if(path.relative(await fs.realpath(directory), await fs.realpath(path.dirname(path.resolve(item.path)))) !== '') throw this.stateError('COMPARISON_PATH_INVALID','Derived image is outside the current evidence directory.');
+        comparisonImages['comparison_'+i]=item.path;
+      }
+    }
+
+    return {reviewSheet, reviewReport, comparisonImages, sourceEvidence};
+  }
+
+  async inspectCurrentViews(state, input, bridge) {
+    if (pendingOperation(state).pending_operation || state.pending_delivery || state.pending_evidence || state.recovery_recapture_required) throw this.stateError('EVIDENCE_NOT_READY', 'Resolve the recorded operation using the current next_call before inspection.');
+    const binding = await this.assertModelBinding(state, bridge);
+    const sealed = await this.verifyEvidenceIdentity(state, state.last_evidence_id, {verifyFiles:false});
+    const phase = sealed.record.phase;
+    if (!phase || !isModelEvidence(sealed.record)) throw this.stateError('INSPECTION_UNAVAILABLE', 'No modeled phase is available for current views.');
+    const directory = path.join(state.output_directory, 'inspection', `${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`);
+    await fs.mkdir(directory, {recursive:true});
+    const options = {...input, display_views:input.views, comparison:{...input.comparison}};
+    if (!Object.hasOwn(options.comparison,'view') && !options.comparison.aligned && state.inspection_view) options.comparison.view=state.inspection_view;
+    const requested=input.views || ['perspective'];
+    let referencePath='';
+    if (requested.includes('reference') || options.comparison.aligned) {
+      referencePath=path.join(directory,'reference.png');
+      parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_reference',[state.project_id,referencePath.replaceAll('\\','/')]),file:this.helperPath},suOperationTimeout()));
+    }
+    const views=requested.filter(v=>v!=='reference');
+    const captured=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('capture_geometry_views',[state.project_id,phase,directory.replaceAll('\\','/'),JSON.stringify(views),options.comparison.view ? JSON.stringify(options.comparison.view) : null,state.mode==='single_image'?'surfaces':'current']),file:this.helperPath},suOperationTimeout()));
+    const detailViews=Object.fromEntries((captured.views || []).map(v=>['geometry_'+v.label,v.path]));
+    referencePath=referencePath || detailViews.geometry_whole_comparison || detailViews.geometry_whole_perspective || Object.values(detailViews)[0];
+    if (!referencePath) throw this.stateError('INSPECTION_UNAVAILABLE','No inspection image was returned.');
+    const {reviewSheet,reviewReport,comparisonImages}=await this.comparisonSheet(state,directory,detailViews,referencePath,options);
+    const current=await this.modelIdentity(bridge);
+    if (!sameModelBinding(binding,current)) throw this.stateError('MODEL_BINDING_MISMATCH','Active document changed while inspecting.');
+    const files={};
+    for(const [key,file] of Object.entries({reference:referencePath,review_sheet:reviewSheet,review_report:reviewReport,...detailViews,...comparisonImages})) if(file) files[key]=await fileEvidence(file);
+    return {ok:true,project_id:state.project_id,status:state.status,inspection_only:true,evidence_id:null,review_input:null,files,
+      inspection_scope:'Current visible project geometry; no new measurement, approval or saved checkpoint.',
+      inspection_action:'Inspect these views, then correct existing targets or continue the saved task. Review follows a managed edit; this view request does not reopen an earlier review.'};
+  }
+
   async automaticEvidence(state, phase, scriptPath, scriptHash, bridge, buildResult, options = {}) {
+    // Keep a chosen inspection direction across stages; crop/alignment requests
+    // retain their explicit frame and never inherit old crop coordinates.
+    const explicitView = options.comparison && Object.hasOwn(options.comparison, 'view');
+    if (!explicitView && state.inspection_view && !options.comparison?.aligned) options = {...options, comparison:{...options.comparison, view:state.inspection_view}};
     const expert = isExpert(state);
     // Guided replication already has a reviewed archetype.  Keep a compact
     // source/evidence set for this intermediate write so SketchUp 2019 is not
@@ -1462,7 +1611,7 @@ class ManagedProjects {
     state.last_checkpoint = { path: checkpointPath, phase, evidence_id: evidenceId, review_status: 'not_yet_reviewed' };
     const beforeAuditPath=path.join(evidenceDir,'pre-capture-audit.json');
     parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('export_project_audit',[state.project_id,beforeAuditPath.replaceAll('\\','/'),'compact']),file:this.helperPath}, suOperationTimeout()));
-    state.pending_evidence={phase,script_path:scriptPath,script_hash:scriptHash,build_result:evidenceBuildResult,checkpoint:await fileEvidence(checkpointPath),audit:await fileEvidence(beforeAuditPath)};
+    state.pending_evidence={phase,script_path:scriptPath,script_hash:scriptHash,build_result:evidenceBuildResult,checkpoint:await fileEvidence(checkpointPath),audit:await fileEvidence(beforeAuditPath),capture_options:options};
     delete state.recovered_checkpoint;
     // Persist the frozen-capture state before any viewport or OS work. If the
     // caller disappears while screenshots are being collected, recovery must
@@ -1513,8 +1662,8 @@ class ManagedProjects {
     }
     const geometryViewStart=Date.now();
     const geometrySelection = requestedViews ? requestedViews.filter(name => name !== 'reference') : null;
-    const geometryViews = geometrySelection && !geometrySelection.length ? {ok:true, views:[]} : parseManagedResult(await bridge('run_ruby', {
-      code: this.rubyCall('capture_geometry_views', [state.project_id, phase, evidenceDir.replaceAll('\\','/'), geometrySelection ? JSON.stringify(geometrySelection) : null]), file: this.helperPath
+    const geometryViews = geometrySelection && !geometrySelection.length && !options.comparison?.view ? {ok:true, views:[]} : parseManagedResult(await bridge('run_ruby', {
+      code: this.rubyCall('capture_geometry_views', [state.project_id, phase, evidenceDir.replaceAll('\\','/'), geometrySelection ? JSON.stringify(geometrySelection) : null, options.comparison?.view ? JSON.stringify(options.comparison.view) : null, state.mode==='single_image'?'surfaces':'current']), file: this.helperPath
     }, suOperationTimeout()));
     const geometryCameraPath=path.join(evidenceDir,'geometry-cameras.json');
     await fs.writeFile(geometryCameraPath,JSON.stringify(geometryViews,null,2));
@@ -1546,35 +1695,7 @@ class ManagedProjects {
     state.model_binding = evidenceModelBinding;
     await fs.copyFile(referencePath, auditPreview);
 
-    let reviewSheet = '';
-    let reviewReport = '';
-    const comparisonImages = {};
-    const sourceEvidence = state.sources || (state.source ? [state.source] : []);
-    if (sourceEvidence.length) {
-      await verifyEvidenceFiles({sources:sourceEvidence});
-      reviewSheet = path.join(evidenceDir, 'review-sheet.png');
-      reviewReport = path.join(evidenceDir, 'review-evidence.json');
-      const python = process.env.PIPCLAW_PYTHON || 'python';
-      const args=[this.sheetScript];
-      for (const item of sourceEvidence) args.push('--source',item.path,'--source-sha256',item.sha256);
-      // Explicit aligned/cropped comparisons retain their chosen reference camera.
-      // General contact sheets use the already captured whole-model overview.
-      const comparisonCandidate = !options.comparison?.aligned && !options.comparison?.regions
-        ? (detailViews.geometry_whole_perspective || referencePath) : referencePath;
-      args.push('--candidate',comparisonCandidate,'--output',reviewSheet,'--report',reviewReport);
-      if(options.comparison?.aligned) args.push('--aligned');
-      if(options.comparison?.regions) {
-        const regionFile=path.join(evidenceDir,'comparison-regions.json');
-        await fs.writeFile(regionFile,JSON.stringify(options.comparison.regions));
-        args.push('--regions-file',regionFile);
-      }
-      await execFileAsync(python,args,{windowsHide:true,timeout:120000});
-      const comparison=JSON.parse(await fs.readFile(reviewReport,'utf8'));
-      for(const [i,item] of (comparison.additional_images || []).entries()) {
-        if(path.relative(await fs.realpath(evidenceDir), await fs.realpath(path.dirname(path.resolve(item.path)))) !== '') throw this.stateError('COMPARISON_PATH_INVALID','Derived image is outside the current evidence directory.');
-        comparisonImages['comparison_'+i]=item.path;
-      }
-    }
+    const {reviewSheet, reviewReport, comparisonImages, sourceEvidence} = await this.comparisonSheet(state, evidenceDir, detailViews, referencePath, options);
 
     const geometryArtifacts={};
     const evidenceWarnings=[];
@@ -1613,8 +1734,9 @@ class ManagedProjects {
       ...(consistencyRetry ? {geometry_readback_status:'not_measured_after_scene_change',missing_machine_inputs:['geometry_readback','geometry_measurements','geometry_dependencies'],note:'Fresh audit and views only; the prior build readback was not relabelled after the scene changed.'} : {}),
     };
     const saved = await this.writeEvidence(state, record);
+    if (options.comparison && Object.hasOwn(options.comparison,'view')) state.inspection_view = options.comparison.view ? {...options.comparison.view} : null;
     state.dimension_results = dimensionResults;
-    return { dimension_results:dimensionResults, evidence_id: evidenceId, evidence_path: saved.path, files, camera_state: cameraState, review_input:reviewAvailability(files) };
+    return { dimension_results:dimensionResults, model_extent: {scope:'project_world_aabb',units:'mm',span_xyz:afterAudit.scale_diagnostics?.span_mm || null}, evidence_id: evidenceId, evidence_path: saved.path, files, camera_state: cameraState, review_input:reviewAvailability(files) };
   }
 
   async withActions(result, projectId) {
@@ -1648,6 +1770,7 @@ class ManagedProjects {
 
   async _stepUnlocked(input, bridge) {
     const state = await this.loadState(safeId(input.project_id));
+    validateCaptureOptions(input, state);
     const policy = policyFor(state);
     const expert = isExpert(state);
     const local = localRequest(input,expert);
@@ -1662,7 +1785,7 @@ class ManagedProjects {
       if (target <= state.step_index) throw this.stateError('WORK_UNIT_PHASE_ORDER', 'Legacy next_phase must be later in the saved plan');
       continuationTarget = target;
     } else if (!expert && input.next_phase !== undefined) throw this.stateError('LEGACY_PHASE_PARAMETER', 'next_phase applies only to legacy expert continuation.');
-    if (!expert && input.work_unit_name !== undefined) throw this.stateError('WORK_UNIT_AUTONOMOUS_ONLY', 'Named systems require a new expert project.');
+    if (!expert && input.work_unit_name !== undefined) throw this.stateError('WORK_UNIT_AUTONOMOUS_ONLY', 'Guided builds use the saved current phase. Omit work_unit_name and submit ruby_file or operations into the supplied entities; names for architectural systems belong to new expert projects.');
     if (!expert && state.work_unit && input.work_unit_id && input.work_unit_id !== state.work_unit.id) throw this.stateError('WORK_UNIT_MISMATCH', 'Work unit does not match this legacy project.');
     let unit = expert ? resolveUnit(state, input, () => `unit_${crypto.randomBytes(8).toString('hex')}`) : state.work_unit;
     if (local && state.status==='finished') await this.assertFollowupBinding(state,bridge);
@@ -1690,13 +1813,14 @@ class ManagedProjects {
     }
     const scriptPath = await this.prepareBuildFile(state, input, expert);
     if (!fsSync.existsSync(scriptPath)) throw new Error(`Ruby build file not found: ${scriptPath}`);
-    const scriptSource = await fs.readFile(scriptPath, 'utf8');
+    const scriptBytes = await fs.readFile(scriptPath);
+    const scriptSource = scriptBytes.toString('utf8');
     if(state.mode==='attribution') {
       const manifest=JSON.parse(await fs.readFile(path.join(path.dirname(scriptPath),'attribution-manifest.json'),'utf8'));
       if(state.attribution_command!=='显源' || manifest.command!=='显源' || manifest.user_requested!==true || path.resolve(manifest.ruby_file)!==path.resolve(scriptPath) || manifest.build_sha256!==crypto.createHash('sha256').update(scriptSource).digest('hex'))throw new Error('ATTRIBUTION_BUILD_MISMATCH');
     }
     validateBuildScript(scriptSource, phase.name, state.mode, state.task_profile, expert);
-    const scriptHash = await hashFile(scriptPath);
+    const scriptHash = crypto.createHash('sha256').update(scriptBytes).digest('hex');
     const requestedIntent = input.operation_intent == null ? 'append' : String(input.operation_intent).trim();
     if (!['append','update','replace'].includes(requestedIntent)) throw this.stateError('OPERATION_INTENT_INVALID', 'operation_intent must be append, update, or replace');
     const expertStrategy = policy.strategy === 'autonomous_work_unit';
@@ -1714,7 +1838,12 @@ class ManagedProjects {
       operation.followup={output_path:state.output_path,final_evidence_id:state.final_evidence_id,final_evidence_path:state.final_evidence_path,model:prior.record.model,
         next_output_path:path.join(state.output_directory,`${state.project_id}-edit-${String((state.delivery_history||[]).length+1).padStart(3,'0')}.skp`)};
     }
-    operation.script_path = scriptPath;
+    // Execute at the original path so __dir__/relative imports retain their
+    // meaning; evidence and recovery use the exact prepared bytes, archived
+    // under the document lock before dispatch and checked by Ruby's hash guard.
+    const archivedScriptPath = path.join(this.projectDir(state.project_id), 'submitted-builds', operation.operation_id + '.rb');
+    operation.input_script_path = scriptPath;
+    operation.script_path = archivedScriptPath;
     operation.script_hash = scriptHash;
     operation.model_binding = state.model_binding;
     const typedOperations = input.operations !== undefined;
@@ -1756,6 +1885,9 @@ class ManagedProjects {
           if (fresh.fingerprint!==localPrepared.fingerprint || fresh.container_pid!==localPrepared.container_pid || JSON.stringify(fresh.targets)!==JSON.stringify(localPrepared.targets)) throw this.stateError('LOCAL_TARGET_CHANGED','Target changed before dispatch; inspect the current object.');
         }
         operation.model_binding = currentBinding;
+        await fs.mkdir(path.dirname(archivedScriptPath), {recursive:true});
+        const submitted = await fs.open(archivedScriptPath, 'wx', 0o600);
+        try { await submitted.writeFile(scriptBytes); await submitted.sync(); } finally { await submitted.close(); }
         operation.request.model_binding = currentBinding;
         operationContext.expected_model_binding = currentBinding;
         operation.operation_context = operationContext;
@@ -1801,6 +1933,7 @@ class ManagedProjects {
       buildResult = parseManagedResult(response);
     } catch (error) {
       const managed = error.managedResult;
+      error.operation_id = operation.operation_id;
       if (managed && !managed.rollback_unconfirmed && !managed.commit_unconfirmed && (managed.transaction_started===false || managed.rollback_confirmed===true)) {
         operation.status = 'failed_confirmed';
         operation.result = managed;
@@ -1823,7 +1956,8 @@ class ManagedProjects {
         state.transaction_result = managed;
         state.updated_at = new Date().toISOString();
         await this.saveState(state);
-        throw new Error(`Managed transaction requires reconciliation (${error.code}): ${error.message}`);
+        error.next_action = 'Managed transaction outcome needs reconciliation; inspect the original operation receipt before another write.';
+        throw error;
       }
       operation.status = 'result_unknown';
       operation.completed_at = new Date().toISOString();
@@ -1863,7 +1997,8 @@ class ManagedProjects {
         const evidenceOptions = ['replication', 'variants', 'facade_detail'].includes(phase.name)
           ? { views: ['reference', 'perspective', 'front', 'side'] }
           : {};
-        evidence = await this.automaticEvidence(state, phase.name, scriptPath, scriptHash, bridge, buildResult, evidenceOptions);
+        evidenceOptions.comparison = input.comparison;
+        evidence = await this.automaticEvidence(state, phase.name, archivedScriptPath, scriptHash, bridge, buildResult, evidenceOptions);
       }
       catch (e) { e.capturePending = !!state.pending_evidence; throw e; }
       evidenceStage = 'validation';
@@ -1919,12 +2054,15 @@ class ManagedProjects {
     if (state.status==='finished') await this.assertFollowupBinding(state,bridge);
     else await this.assertModelBinding(state,bridge);
     if (input.query!==undefined || input.targets!==undefined) {
-      return parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('discover_targets',[state.project_id,JSON.stringify({query:input.query,targets:input.targets,offset:input.offset||0})]),file:this.helperPath},60000));
+      const result=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('discover_targets',[state.project_id,JSON.stringify({query:input.query,targets:input.targets,offset:input.offset||0})]),file:this.helperPath},60000));
+      const help=result.ok===false?null:modelingGuidance.localEditHelp(result.objects);
+      return help?{...result,edit_help:help}:result;
     }
-    const result=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('geometry_diagnose',[state.project_id]),file:this.helperPath},60000));
+    const result=parseManagedResult(await bridge('run_ruby',{code:this.rubyCall('geometry_diagnose',[state.project_id,JSON.stringify({offset:input.offset||0})]),file:this.helperPath},60000));
     const file=path.join(this.projectDir(state.project_id),'geometry-diagnostic-'+Date.now()+'.json');
     await fs.writeFile(file,JSON.stringify(result,null,2));
-    return {ok:true,project_id:state.project_id,root_exists:result.root_exists,diagnostic_path:file,phase_count:result.phases?.length||0,scope:result.scope};
+    const help=modelingGuidance.localEditHelp(result.objects);
+    return {ok:true,project_id:state.project_id,root_exists:result.root_exists,diagnostic_path:file,phase_count:result.phase_count??result.phases?.length??0,mapped_phase_count:result.mapped_phase_count??result.phases?.length??0,objects:result.objects||[],total:result.total||0,next_offset:result.next_offset??null,scope:result.scope,...(help?{edit_help:help}:{})};
   }
 
   async captureExpertEvidence(state, input, bridge) {
@@ -1938,10 +2076,13 @@ class ManagedProjects {
     // expert checkpoint: the source/reference frame plus five whole-model
     // views. The agent may request a smaller question-focused set; geometry
     // writes themselves still do not capture anything automatically.
-    const views = input.views === undefined ? ['reference','perspective','front','side','plan','underside'] : input.views;
+    const pendingOptions = state.pending_evidence?.capture_options || {};
+    const views = input.views ?? pendingOptions.views ?? ['reference','perspective','front','side','plan','underside'];
+    const displayViews = input.views ?? pendingOptions.display_views;
+    const comparison = input.comparison === undefined ? pendingOptions.comparison : input.comparison;
     if (!Array.isArray(views) || !views.length || views.some(x => !supported.has(x)) || new Set(views).size !== views.length) throw this.stateError('EVIDENCE_VIEWS_INVALID', 'Choose distinct supported view names.');
     try {
-      const evidence = await this.automaticEvidence(state, UNIT_PHASE, execution.script_path, execution.script_hash, bridge, null, { views, comparison:input.comparison });
+      const evidence = await this.automaticEvidence(state, UNIT_PHASE, execution.script_path, execution.script_hash, bridge, null, { views, display_views:displayViews, comparison });
       const audit = JSON.parse(await fs.readFile(evidence.files.audit.path, 'utf8'));
       try { validateExpertAudit(state, audit); applyValidationResult(state, UNIT_PHASE, 'project_audit', null, evidence.evidence_id, { work_unit_id: null }); }
       catch (error) { applyValidationResult(state, UNIT_PHASE, 'project_audit', error, evidence.evidence_id, { work_unit_id: null }); }
@@ -1973,6 +2114,7 @@ class ManagedProjects {
 
   async _retryEvidenceUnlocked(input, bridge) {
     const state=await this.loadState(safeId(input.project_id));
+    validateCaptureOptions(input, state);
     // Older interrupted expert captures could have the pending record saved
     // while the status write was still in flight. Normalize that durable
     // combination before checking the bridge; this never approves evidence or
@@ -1982,6 +2124,23 @@ class ManagedProjects {
       await this.saveState(state);
     }
     if (isExpert(state)) return this.captureExpertEvidence(state, input, bridge);
+    if (['ready_for_step','ready_to_finish','finished'].includes(state.status) && state.last_evidence_id) return this.inspectCurrentViews(state,input,bridge);
+    // A closer/different view is normal visual work, not a geometry retry.
+    // Reuse the verified current snapshot and the same committed build. No
+    // phase deletion, state-file editing or dummy write is required.
+    if (state.status==='review_required' && !state.pending_evidence && !state.recovery_recapture_required && !state.patch_review) {
+      if (pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('EVIDENCE_NOT_READY','Resolve the original write before changing views.');
+      const current=await this.assertModelBinding(state,bridge);
+      const sealed=await this.verifyEvidence(state,state.last_evidence_id,current);
+      const phase=executionPlan(state)[state.step_index];
+      if (sealed.record.record_type!=='model_snapshot' || sealed.record.phase!==phase?.name) throw this.stateError('EVIDENCE_PHASE_MISMATCH','Use the recovery route for this evidence type.');
+      await this.assertEvidenceCurrent(state,sealed,bridge);
+      const record=sealed.record;
+      state.pending_evidence={phase:phase.name,script_path:record.script.path,script_hash:record.script.sha256,build_result:record.build_result,checkpoint:record.files.checkpoint,audit:record.files.audit,capture_options:{views:input.views || ['reference','perspective','front','side','plan','underside'],display_views:input.views,comparison:input.comparison}};
+      state.status='evidence_pending';
+      await this.saveState(state);
+    }
+
     if (state.status === 'evidence_pending' && !state.pending_evidence && state.pending_execution) {
       await this.assertModelBinding(state, bridge);
       const execution = state.pending_execution;
@@ -2118,7 +2277,7 @@ class ManagedProjects {
       await this.saveState(state);
       return { ok: true, project_id: state.project_id, status: state.status, evidence_id: evidence.record.evidence_id, evidence_path: evidence.path, files, missing_machine_inputs:evidence.record.missing_machine_inputs, next_action: 'Inspect fresh views and review this evidence_id. No geometry was rebuilt; missing measurements remain unverified.' };
     }
-    if((state.status!=='evidence_pending' && !(state.status==='review_required' && state.recovery_recapture_required)) || !state.pending_evidence) throw new Error('No pending evidence; geometry cannot be replayed by this tool');
+    if((state.status!=='evidence_pending' && !(state.status==='review_required' && state.recovery_recapture_required)) || !state.pending_evidence) throw this.stateError('INSPECTION_UNAVAILABLE','There is no modeled result awaiting inspection; follow the current project next_call.');
     if (state.recovery_recapture_required) state.status = 'evidence_pending';
     await this.assertModelBinding(state,bridge);
     const pending=state.pending_evidence;
@@ -2156,6 +2315,9 @@ class ManagedProjects {
       const evidenceOptions = ['replication', 'variants', 'facade_detail'].includes(phase.name)
         ? { views: ['reference', 'perspective', 'front', 'side'] }
         : {};
+      Object.assign(evidenceOptions,pending.capture_options || {});
+      if(input.views!==undefined) { evidenceOptions.views=input.views; evidenceOptions.display_views=input.views; }
+      if(input.comparison!==undefined)evidenceOptions.comparison=input.comparison;
       evidence=await this.automaticEvidence(state,phase.name,pending.script_path,pending.script_hash,bridge,pending.build_result,evidenceOptions);
     }
     catch(error) { if(state.status==='recovery_required') throw error; state.status='evidence_pending';state.evidence_error=error.message;await this.saveState(state);throw new Error(`取证仍未完成：${error.message}。下一步只能调 sketchup_project_retry_evidence；禁止重放建模。`); }
@@ -2248,7 +2410,7 @@ class ManagedProjects {
     }
     const prepared = input.visual_review!==undefined ? await assembleVisualReview(input,state,phase.name,sealedEvidence.record) : input;
     const qualityReview = await validateQualityReview(prepared, state, phase.name, this.skillRoot, sealedEvidence.record.files);
-    if (verdict === 'continue') validateInspectedViews(qualityReview, sealedEvidence.record);
+    if (verdict === 'continue') validateInspectedViews(qualityReview, sealedEvidence.record, state.output_directory);
     if (verdict==='continue' && revisionMatches(state,phase.name) && !isExpert(state)) delete state.revision_required;
     await this.writeEvidence(state, {
       schema_version: 1,
@@ -3119,7 +3281,8 @@ class ManagedProjects {
     if (isExpert(state)) return this.restoreExpertCheckpoint(state, bridge);
     const checkpoint = state.last_checkpoint;
     if (!checkpoint?.path || !checkpoint.evidence_id) throw new Error('No managed checkpoint is recorded');
-    if (!['ready_for_step', 'review_required'].includes(state.status)) throw new Error('Recovery requires a fully recorded phase; do not infer incomplete evidence approval');
+    if (!['ready_for_step', 'review_required', 'ready_to_finish'].includes(state.status)) throw new Error('Recovery requires a fully recorded phase; do not infer incomplete evidence approval');
+    if (pendingOperation(state).pending_operation || state.pending_delivery) throw this.stateError('RECOVERY_WRITE_UNRESOLVED', 'Resolve the original operation or delivery receipt before restoring a checkpoint.');
     // A checkpoint predates a previous restore's session binding. Its sealed bytes,
     // exact open path and full scene content are independently verified below.
     const sealed = await this.verifyEvidence(state, checkpoint.evidence_id, null, {restoringCheckpoint:true});
@@ -3128,7 +3291,7 @@ class ManagedProjects {
     if (await hashFile(checkpoint.path) !== file.sha256) throw new Error('Checkpoint hash mismatch');
     const plan = executionPlan(state);
     const index = plan.findIndex(p => p.name === checkpoint.phase);
-    if (index < 0 || (state.status === 'ready_for_step' && state.step_index !== index + 1) || (state.status === 'review_required' && state.step_index !== index)) throw new Error('Checkpoint phase does not match current review/continuation state');
+    if (index < 0 || (state.status === 'ready_for_step' && state.step_index !== index + 1) || (state.status === 'review_required' && state.step_index !== index) || (state.status === 'ready_to_finish' && (index !== plan.length - 1 || state.step_index !== plan.length))) throw new Error('Checkpoint phase does not match current review/continuation state');
     const current = await this.modelIdentity(bridge);
     if (path.resolve(current.path || '').toLowerCase() !== path.resolve(checkpoint.path).toLowerCase()) throw new Error('Open the exact recorded checkpoint before recovery');
     // The exact checkpoint bytes were verified above. If SketchUp confirms
@@ -3169,7 +3332,7 @@ class ManagedProjects {
     state.last_evidence_id = priorEvidenceId;
     state.updated_at = new Date().toISOString();
     await this.saveState(state);
-    return { ok: true, project_id: state.project_id, status: state.status, phase: state.phase, recovered_checkpoint: checkpoint.path, model_binding: current, verification: cleanCheckpoint ? 'sealed_file_hash_and_clean_open_document' : 'full_live_audit', next_action: cleanCheckpoint ? (returnStatus === 'review_required' ? 'Inspect and review the existing sealed evidence for this exact unchanged checkpoint; no geometry or image was relabelled.' : 'Continue at the recorded next phase; the sealed checkpoint and accepted evidence were retained.') : 'Call sketchup_project_retry_evidence and review the new evidence_id; the continuation index is preserved.' };
+    return { ok: true, project_id: state.project_id, status: state.status, phase: state.phase, recovered_checkpoint: checkpoint.path, model_binding: current, verification: cleanCheckpoint ? 'sealed_file_hash_and_clean_open_document' : 'full_live_audit', next_action: cleanCheckpoint ? (returnStatus === 'review_required' ? 'Inspect and review the existing sealed evidence for this exact unchanged checkpoint; no geometry or image was relabelled.' : (returnStatus === 'ready_to_finish' ? 'Save the reviewed result with finish; the restored final checkpoint and accepted evidence were retained.' : 'Continue at the recorded next phase; the sealed checkpoint and accepted evidence were retained.')) : 'Call sketchup_project_retry_evidence and review the new evidence_id; the continuation index is preserved.' };
   }
 
   async readDimensionEvidence(state, record) {
@@ -3292,6 +3455,14 @@ class ManagedProjects {
       const sealed = await this.verifyEvidenceIdentity(state, state.last_evidence_id, {verifyFiles:false});
       if (!isModelEvidence(sealed.record)) throw this.stateError('EVIDENCE_KIND_INVALID', 'Current inspection pointer is not a model snapshot.');
       evidence = {evidence_id:state.last_evidence_id, evidence_path:sealed.path, files:sealed.record.files, review_input:reviewAvailability(sealed.record.files)};
+    } else if (!isExpert(state) && state.status === 'ready_for_step' && state.last_evidence_id && !pendingOperation(state).pending_operation && !state.recovery_recapture_required) {
+      const sealed = await this.verifyEvidenceIdentity(state, state.last_evidence_id, {verifyFiles:false});
+      if (isModelEvidence(sealed.record)) {
+        // A continuation should not require a dummy construction just to find
+        // the last picture. This is a historical snapshot, not a new review.
+        const files = Object.fromEntries(['review_sheet','geometry_whole_comparison'].filter(key=>sealed.record.files?.[key]).map(key=>[key,sealed.record.files[key]]));
+        evidence = {evidence_id:state.last_evidence_id, evidence_path:sealed.path, phase:sealed.record.phase, scope:'last_captured_result_not_live_remeasurement', files, review_input:null};
+      }
     }
     const workUnits = Object.values(state.work_units || {}).map(u => ({id:u.id,name:u.name,revision:u.revision,persistent_id:u.persistent_id || null}));
     return {...base, mode:state.mode, assistance:assistanceSummary(state), execution_policy:policyFor(state),

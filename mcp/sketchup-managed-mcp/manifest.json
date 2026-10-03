@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "sketchup-managed",
   "name": "ADAI SketchUp Managed MCP",
-  "version": "0.5.38",
-  "build_id": "0.5.38-current-action-guidance-20260930",
+  "version": "0.5.39",
+  "build_id": "0.5.39-construction-inspection-20261003-r1",
   "publisher": "ADAI",
   "license": "CPAL-1.0",
   "transport": "stdio",
@@ -40,7 +40,7 @@
     {
       "id": "ancient-architecture",
       "sourceVersion": "0.4",
-      "integrationVersion": "0.5.38",
+      "integrationVersion": "0.5.39",
       "entry": "sketchup_ancient_tool",
       "scope": "phase-role compiler used by guided phases or version-2 expert work units; actual readback and visual review remain required",
       "version": "0.4.7",
@@ -49,7 +49,7 @@
     {
       "id": "parametric-facade-bay",
       "sourceVersion": "0.1",
-      "integrationVersion": "0.5.38",
+      "integrationVersion": "0.5.39",
       "entry": "sketchup_toolkit",
       "scope": "bounded parametric facade-bay massing; live readback and visual review required",
       "version": "0.1.1",
@@ -65,6 +65,6 @@
   "runtime": "node",
   "entrypoint": "launch.cjs",
   "codeBaseline": "0.5.35-real-su-recovery-20260926",
-  "engineeringVersion": "0.5.38",
+  "engineeringVersion": "0.5.39",
   "sourceBaseline": "3a38143a54b1882ff0ac18aee3ff7aabf26e57e8"
 }

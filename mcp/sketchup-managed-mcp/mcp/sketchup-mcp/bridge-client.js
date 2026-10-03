@@ -63,6 +63,13 @@ function bridgeError(message, code, details = {}) {
   const error = new Error(message);
   if (code) error.code = code;
   Object.assign(error, details);
+  if (['INSTANCE_CHANGED','INSTANCE_NOT_RUNNING','INSTANCE_NOT_BOUND','AMBIGUOUS_INSTANCES'].includes(code) && details.request_published === false) {
+    error.next_call = {tool:'sketchup_runtime',arguments:{action:'instances'}};
+    error.next_action = 'Select the intended live SketchUp instance before continuing. If it restarted, reopen the recorded checkpoint and use project_recover(restore); this request was not published.';
+  } else if (code === 'BRIDGE_NOT_RUNNING' && details.request_published === false) {
+    error.next_call = {tool:'sketchup_runtime',arguments:{action:'status'}};
+    error.next_action = 'Inspect the bound executable and bridge status, then start that target if needed. Preserve other documents; this request was not published.';
+  }
   return error;
 }
 class BridgeClient {
@@ -98,7 +105,7 @@ class BridgeClient {
   async select(processId) {
     const candidates = await this.candidates();
     const record = candidates.find(item => item.process_id === processId);
-    if (!record) throw Error('INSTANCE_NOT_BOUND: PID must belong to the bound executable and protocol v3');
+    if (!record) throw bridgeError('INSTANCE_NOT_BOUND: PID must belong to the bound executable and protocol v3','INSTANCE_NOT_BOUND',{delivery_state:'not_published',request_published:false});
     const tmp = `${this.selectionFile}.${crypto.randomUUID()}.tmp`;
     try {
       await fs.writeFile(tmp, JSON.stringify(record), {flag:'wx'});
@@ -133,7 +140,7 @@ class BridgeClient {
     let selected = this.pinned;
     if (!selected && this.env.SKETCHUP_TARGET_PID) {
       selected = candidates.find(item => item.process_id === Number(this.env.SKETCHUP_TARGET_PID));
-      if (!selected) throw Error('INSTANCE_NOT_RUNNING: explicit PID is unavailable');
+      if (!selected) throw bridgeError('INSTANCE_NOT_RUNNING: explicit PID is unavailable','INSTANCE_NOT_RUNNING',{delivery_state:'not_published',request_published:false});
     }
     if (!selected) {
       try { selected = await readJson(this.selectionFile); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -144,7 +151,7 @@ class BridgeClient {
       this.pinned = match;
       return match;
     }
-    if (candidates.length !== 1) throw Error(candidates.length ? 'AMBIGUOUS_INSTANCES: select_instance with the intended PID' : 'BRIDGE_NOT_RUNNING: launch the bound executable with the v3 extension; do not guess another installation');
+    if (candidates.length !== 1) throw bridgeError(candidates.length ? 'AMBIGUOUS_INSTANCES: select_instance with the intended PID' : 'BRIDGE_NOT_RUNNING: launch the bound executable with the v3 extension; do not guess another installation', candidates.length ? 'AMBIGUOUS_INSTANCES' : 'BRIDGE_NOT_RUNNING', {delivery_state:'not_published',request_published:false});
     this.pinned = candidates[0];
     return this.pinned;
   }

@@ -55,7 +55,18 @@ function redact(value) {
   return value
 }
 function errorResult(error, meta = {}) {
-  const envelope = { ...classifyError(error), request_id: meta.request_id || requestId(), phase: meta.phase || 'execute', duration_ms: Number.isFinite(meta.duration_ms) ? meta.duration_ms : undefined, details: redact(meta.details || {}), evidence: Array.isArray(meta.evidence) ? redact(meta.evidence) : [] }
+  // Expose the bounded Ruby failure already recorded by the managed executor,
+  // rather than requiring the caller to retrieve its private operation journal.
+  const managed = error?.managedResult
+  const execution = managed && typeof managed === 'object' ? {
+    ...(managed.exception && typeof managed.exception === 'object' ? { exception: Object.fromEntries(
+      ['class','message','line'].filter(key => typeof managed.exception[key] === 'string')
+        .map(key => [key, managed.exception[key].slice(0, 1200)])) } : {}),
+    ...Object.fromEntries(['transaction_started','rollback_confirmed','rollback_unconfirmed','commit_unconfirmed']
+      .filter(key => typeof managed[key] === 'boolean').map(key => [key, managed[key]]))
+  } : null
+  const details = { ...(meta.details || {}), ...(execution ? { execution } : {}) }
+  const envelope = { ...classifyError(error), request_id: meta.request_id || requestId(), phase: meta.phase || 'execute', duration_ms: Number.isFinite(meta.duration_ms) ? meta.duration_ms : undefined, details: redact(details), evidence: Array.isArray(meta.evidence) ? redact(meta.evidence) : [] }
   if (envelope.duration_ms === undefined) delete envelope.duration_ms
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(envelope, null, 2) }] }
 }

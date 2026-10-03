@@ -1,6 +1,6 @@
 # ADAI SketchUp Managed MCP
 
-当前产品版本：**0.5.38**。准确构建标识见 [BUILD.json](BUILD.json)，改动与验证边界见 [RELEASE.md](RELEASE.md)。这是面向 PipClaw 与 Codex 的本地 stdio MCP，由 ADAI 开发。
+当前产品版本：**0.5.39**。准确构建标识见 [BUILD.json](BUILD.json)，改动与验证边界见 [RELEASE.md](RELEASE.md)。这是面向 PipClaw 与 Codex 的本地 stdio MCP，由 ADAI 开发。
 
 ## 安装与启动
 

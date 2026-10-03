@@ -1,75 +1,42 @@
-# Curved Architecture Modeling Rules
+# 曲面选法与真实入口
 
-Read for curved towers, rounded corners, arched facades, curved curtain walls, shells, canopies, and freeform roofs. This is the production protocol. Use the current source and managed readback as evidence; historical regression archives are not part of the distributable runtime.
+用于曲墙、拱、曲面表皮、屋壳和曲线构件。先从来源判断边界、截面怎样变化及洞口/厚度需求，再选当前可用的构造；同一建筑可以组合方法。
 
-## 1. Classify Before Geometry
+## 按形态选择
 
-Choose the actual construction type: circular arc, ellipse, spline, ruled surface, or doubly curved shell. Record its governing parameters before generating geometry:
-
-- arc/ellipse: center, inner/outer radius, start/end angle, floor datum, segment tolerance;
-- freeform shell: outer boundary, crown/ridge, support/eave line, inner opening boundary, underside offset, thickness, and guide-station correspondence;
-- image-only source: mark this as an **inferred topology candidate**, not learned source geometry, even after visual review; passing views does not turn inferred geometry into measured source geometry.
-
-Do not trace a perspective silhouette into a box or use a world-axis AABB as a curve parameter.
-
-## 2. Select the Geometry Construction Pattern
-
-Historical raw primitive names below describe algorithms, not permitted production calls. Adapt geometry inside managed build entities; raw-write tools remain locked.
-
-| Need | Historical tool / construction |
+| 当前条件 | 可调用方法与边界 |
 |---|---|
-| One continuous curved wall, cap, gutter, frame or constant profile | `sketchup_sweep_profile_path` along a measured guide |
-| Changing profile across corresponding sections | `sketchup_loft_sections`; equal point count and intentional caps only |
-| Guide surface / early membrane without thickness | `sketchup_surface_grid` |
-| Physical roof/facade shell with soffit and closed perimeter | `sketchup_shell_grid` |
-| Repeated facade/mullion/rafter members | One validated local component, then `sketchup_array_on_path` or a measured tangent transform |
+| 已知沿一个方向排列的光滑边缘控制点 | `context['geometry'].sample_profile`：从递增位置/高度（或宽度）站点得到切向连续且段内不过冲的点数组，再用于截面或网格。它不识图；真实尖角分段保留，折返轮廓拆成多支。 |
+| 闭合截面沿直线保持不变 | `context['geometry'].profile`；截面可含采样曲线，挤出不会产生沿深度变化的轮廓。参数见[受管 Ruby API](managed-ruby-api.md)。 |
+| 同一截面在两个位置间平移连接 | `ADAIAncientConstructionPatterns.section_sweep`；只连接同一截面的两个平移副本。`curved_corner`按路径分段调用它，截面方向不自动随路径旋转。 |
+| 闭合截面的宽高或横向位置沿直轴变化 | `context['geometry'].loft_sections`；提供各站位置及对应轮廓，程序连接并封闭两端。可做变化实体或直接给出厚度的闭合壳截面，站间直连；孔洞、转动截面和分叉另选方法。参数见[受管 Ruby API](managed-ruby-api.md)。 |
+| 局部 XY 上单值高度、无孔，厚度可沿局部 Z | `context['geometry'].shell_grid`，传二维XYZ毫米网格与竖向厚度；内部三角化并封闭底面和周边。不能表示垂直折返、孔洞或法向等厚壳。 |
+| 竖向围合带的上下沿均可起伏，中央留空 | `context['geometry'].closed_band`；传外侧底/顶、内侧底/顶四条对应 XYZ 点环，自动连接封闭带体。各环同点数、同绕向、同起点位置关系，内环 XY 位于外环内；不是自动轮廓偏移或扭转管道。详细参数见[受管 Ruby API](managed-ruby-api.md)。 |
+| 截面方向转动、带孔或其他曲面 | 受管 Ruby 生成对应截面和三角网格，或选择满足条件的已安装算法。`step(operations=[{op:'mesh',…}])`接收顶点/三角面；精确参数见[构造操作](scoped-operations.md)。 |
+| 沿曲线重复的窗框、肋或其他构件 | 在真实宿主做完整母型，用`entities.add_instance(definition, transform)`按路径切向/径向摆放。弯曲部件本体与平直部件沿曲线排列是不同形态，依据来源选择。 |
 
-A shell system is never one surface: keep shell, slabs/floor edges, parapet/cap, mullions, glazing/infill, sill/head, gutters/seams, and termination modules as separate named groups.
+`section_sweep`与`curved_corner`的真实 Ruby 文件是[ancient-construction-patterns.rb](examples/ruby/ancient-construction-patterns.rb)，读取所需函数并在构造脚本中从当前包绝对路径加载。它们的几何能力也可用于现代构件；名称不决定建筑分类。不把历史`sketchup_loft_sections`等名字当作当前 MCP 工具。
 
-## 3. Curved Facades and Repetition
+## 构造时让参数对应来源
 
-1. Build one representative bay at the real radius: host wall contact, sill/head, frame depth, glazing/infill, vertical frame, horizontal transom, and floor-edge/spandrel closure.
-2. In plan, derive instance position from curve center/guide and rotate it to its local tangent or radial direction. Apply the parent transform once; do not rotate a world-space bounding box again.
-3. Validate top, middle, and termination bays separately. Corners/end conditions are independent definitions when their geometry differs.
-4. Only then convert the bay to a reusable definition and distribute it. A curved shell with planar floating windows is a failed envelope, regardless of entity or instance count.
+从可辨的边缘、高低转折和截面确定控制点；不确定的背面保留推断。等截面工具表达不了已看见的变化时，换表示方法。先修控制点与截面关系，再在曲率变化处增加采样；采样数没有通用最低配额。
 
-For developed tower quality, include continuous shell/glazing curvature, frame depth, vertical/horizontal grid, sill/head, floor edge or spandrel, roof/parapet cap, and termination modules. Component reuse is required for fidelity but no target entity count is a quality gate.
+项目坐标直接构造与局部构造后装配均可。计算函数接收局部坐标时，从项目点减去局部原点并转换轴向后再求值；父级变换应用一次。`profile`的offset是起始平面，不能把中心位置直接当起点。
 
-## 4. Freeform Shells, Openings, and Pavilions
+真正共边的网格片共用采样点和索引；屋檐出挑、幕墙退进、结构分离和伸缩缝使用各自边界及来源中的偏移/接触关系。壳体厚度、建筑高度和承托位置是不同参数，不能拿厚壳代替楼身，也不把所有屋盖和围护强制做成同一轮廓。
 
-Decompose a freeform reference into independent systems: perimeter/curtain wall, closed thick roof shell, skylight/infill shell, edge/seam bands, and connectors/supports. Skin and support topology are separate: a shell may overhang, but its bearing interval must be explicit.
+曲面与包边确实相接时，可直接用[共边构造示例](examples/shared-boundary-shell.md)：从曲面网格提取实际周边，生成边带外侧顶沿。这样修改端部或高低时不必维护第二套边界；独立、退进或悬挑部位仍按其实际关系分别构造。
 
-- Use a shared control topology that encodes taper and vertical rise together. Raising only the center row creates a tent, not a leaf/petal shell.
-- Build top patches, underside offset, perimeter closure, and opening reveals as a watertight patch network. A glass panel over an unbroken roof does not create a skylight.
-- Every roof, reveal, cap/frame, and glazing part around an opening uses the same explicit inner boundary and point correspondence.
-- Triangulate non-planar shell cells, glazing, perimeter closures, and reveals. SketchUp 2019 does not make a twisted quad reliable.
-- Curved connector necks are lofted/shelled transitions derived from host width and tangent; rectangular connector boxes are only layout diagnostics.
-- For a presentation leaf/petal roof, use enough stations to make continuous silhouette: 5×7 is diagnostic only; start around 7–9 longitudinal and 11–15 transverse stations, then add stations only where curvature changes.
-- Smooth/hide tangent internal triangulation for normal-shaded review; preserve intentional seams, frames, and perimeter edges.
+有洞曲面保留内边界及洞壁，周边框和填充按其安装偏移组织；整面铺玻璃不能代替开洞。扭曲四边形分成三角形并保留原控制点；切向连续处可柔化内部边，真实折线和接缝保留。原生 SketchUp 点/变换使用毫米转换，helper接收毫米裸数值。
 
-## 5. SketchUp 2019 Gates
+## 看图与修正
 
-- Use `definition.entities.length == 0`, not newer collection assumptions. For a triangulated shell inside an uninstantiated definition, prefer `Geom::PolygonMesh` + `add_faces_from_mesh`; repeated `add_face` may yield an empty definition.
-- Reject an array with `added_face_count == 0` even if it returns instance IDs. Require nonzero definition faces and visible normal-shaded shell area before propagation.
-- Ruby camera numbers are internal inches unless written with `.mm`; missing conversion makes a screenshot roughly 25.4× too distant and invalid.
-- Build and inspect one sample before a floor/radial array. If a local frame tangent is degenerate, fix it before repetition; do not conceal a broken tangent with material or smoothing.
-- For radial shell propagation, create and validate the shell in a named reversible Ruby workflow, convert to component in that same operation, and inspect face count before adding rotated instances.
+先看来源与模型的完整轮廓、主体关系和负空间，再选能看清接触/洞口/边缘的视角。边面数量和闭合只能说明几何事实，不能证明形态相符。
 
-## 6. Acceptance and Recovery
+- 位置错：核对原点、轴向和父级变换；保留原正确形体。
+- 形体沿深度变化却做成等截面：换成对应截面或曲面表示。
+- 屋盖/围护脱开：先对照来源确认是接触、出挑还是留缝，再修相应边界与标高，不自动把所有边吸附到一起。
+- 曲面粗糙：先区分控制曲线有尖折，还是直线采样太疏。前者用连续切向连接来源控制点（可选 `sample_profile`），后者才增加采样；清楚可见的平滑/折角关系不依赖实测绝对尺寸。
+- 定义或阵列不可见：先检查真实定义几何与摆放变换，修好当前样板后再复用。
 
-For a complex shell select sufficient normal-shaded perspective, orthogonal, plan and underside views to check the relationships below. Use [change-focused review](change-focused-review.md) to reuse adequate evidence; a simple curved member does not require five redundant captures:
-
-- continuous curvature at shell, opening line, sill/head, and cap/parapet edge;
-- wall-to-roof/support bearing, shell thickness, perimeter closure, opening reveal and skylight embedment;
-- no planar panes, floating frames, self-intersections, roof penetrations, or faceted/stepped opening boundary;
-- true plan taper and shared station correspondence;
-- building-scale and relevant local views exist; add site-scale evidence only when site relationships are in scope.
-
-If a shell looks valid in plan but fails close views, repair the topology/guide relationship—not the camera, material, or seam overlay. If a component array is empty, rebuild the definition in the named Ruby workflow. If the result is visually too coarse, increase station density and redistribute curvature before adding more decoration.
-
-## Corpus Calibration
-
-The 13 ancient and 7 curved readable samples support a layered construction grammar: parameterized curve → validated facade bay → tangent-aligned component array → floor-edge/spandrel → cap/termination → site. Use [targeted-ancient-curved-study.md](targeted-ancient-curved-study.md) for the evidence-backed bay sequence. The historical curved-tower regression demonstrates that many definitions without actual reuse is still a fidelity gap: convert a validated bay, mullion, transom, sill/head, slab edge, and terminations into reused definitions before claiming corpus-level fidelity.
-
-
-2026-09-07 补充：按任务需要复用已确认的组件结构、宿主变换和建筑/环境边界；样本尺寸、功能和形态不是通用标准。
+当前项目继续沿保存的 guided/expert 策略、受管执行和恢复入口；本参考不另设阶段、审核次数或构件配额。

@@ -63,7 +63,10 @@ module PipClawManagedProject
     selected = if request['targets']
       request['targets'].map { |s| resolve_target(rows,s) }
     else
-      query = request.fetch('query','').downcase
+      # Display-name separators are not object identity. Search remains read-only;
+      # writes still resolve only exact IDs or instance paths.
+      normalize = lambda { |text| text.to_s.downcase.gsub(/[\s_-]+/, '') }
+      query = normalize.call(request.fetch('query',''))
       labels = {}
       rows.each do |r|
         e=r['entity']
@@ -72,7 +75,7 @@ module PipClawManagedProject
       rows.select do |r|
         e=r['entity']; names=[e.name,e.get_attribute('ADAI_SCOPED_OBJECT','id'),e.get_attribute('ADAI_GEOMETRY','semantic_id')]
         names += [e.definition.name,*(labels[e.definition.object_id] || [])] if e.respond_to?(:definition)
-        names.compact.join(' ').downcase.include?(query)
+        names.compact.any? { |name| normalize.call(name).include?(query) }
       end
     end
     offset = [request.fetch('offset',0).to_i,0].max

@@ -6,13 +6,13 @@
 
 ## 当前版本
 
-- 版本：`0.5.38`
-- 构建：`0.5.38-current-action-guidance-20260930`
+- 版本：`0.5.39`
+- 构建：`0.5.39-construction-inspection-20261003-r1`
 - 许可：CPAL-1.0（见 `LICENSE`）
 - 运行入口：MCP 的 `launch.cjs`
 - 适配基线：Windows、Node.js 18+、Python 3.10+、SketchUp 2018/2019；更高版本需按宿主实际 Ruby/API 复核。
 
-本修订让方法提示跟随当前建筑系统与修改问题，修正局部编辑示例、并列否定选型、交付路由及无重复系统的说明。保留前版方法卡自检修复、构造工具、局部修改、事务、恢复与响应性修复。当前适配与验证范围见[兼容性说明](mcp/sketchup-managed-mcp/docs/COMPATIBILITY.md)。
+本修订补充可调用的通用 Ruby 构造方法、真实图像直接交付、可选视角与局部修改帮助。guided 图片/文字新建六阶段逐个执行审核；专家保持连续工作单元策略。当前范围见[构建说明](mcp/sketchup-managed-mcp/RELEASE.md)与[兼容性说明](mcp/sketchup-managed-mcp/docs/COMPATIBILITY.md)。
 
 ## 包内容
 
@@ -38,11 +38,11 @@ ADAI老王，开启专家模式
 
 ## 安装
 
-- [下载 Skill 0.5.38](dist/professional-sketchup-modeling-0.5.38-current-action-guidance-20260930.zip)
-- [下载 MCP 0.5.38](dist/sketchup-managed-mcp-0.5.38-current-action-guidance-20260930.zip)
+- [下载 Skill 0.5.39](dist/professional-sketchup-modeling-0.5.39-construction-inspection-20261003-r1.zip)
+- [下载 MCP 0.5.39](dist/sketchup-managed-mcp-0.5.39-construction-inspection-20261003-r1.zip)
 - [安装步骤](mcp/sketchup-managed-mcp/INSTALL.md) · [版本与验证范围](mcp/sketchup-managed-mcp/docs/COMPATIBILITY.md) · [SHA256 校验](SHA256SUMS.txt)
 
-产品版本为 `0.5.38`；古建工具包 `0.4.7`、独立经验集合 `0.4.3`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。历史验证记录、旧安装包与校验表保存在 Git 历史中（[Gitee 历史安装包](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist) · [GitHub 历史安装包](https://github.com/laowang-wy/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)）；旧版本测试不自动算作本次验证。安装包说明中提及的历史 `docs/RELEASE-*.md` 可在对应发布标签中查阅。
+产品版本为 `0.5.39`；古建工具包 `0.4.7`、独立经验集合 `0.4.3`、默认古建 REF `1.4.0` 各自维护版本，不随主包改号。历史验证记录、旧安装包与校验表保存在 Git 历史中（[Gitee 历史安装包](https://gitee.com/laowang2026/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist) · [GitHub 历史安装包](https://github.com/laowang-wy/adai-sketchup-skill-mcp/tree/4add79e345ffe6983e6cdbd73ba205f90ac61e35/dist)）；旧版本测试不自动算作本次验证。安装包说明中提及的历史 `docs/RELEASE-*.md` 可在对应发布标签中查阅。
 
 把 `skill/professional-sketchup-modeling` 复制到当前宿主的 Skill 目录：Codex 使用 `$CODEX_HOME/skills/`；PipClaw 使用其 `codex-home/skills/`。把 MCP 目录复制到用户本机的 MCP 目录，并让 PipClaw/Codex 的 MCP 配置指向该目录中的 `launch.cjs`。安装器应在本机生成路径；发行包不写死用户目录、SketchUp 路径、PID 或会话令牌。
 
@@ -56,7 +56,7 @@ ADAI老王，开启专家模式
 
 后续版本继续推送到本仓库：更新 Skill/MCP 源码和版本号，生成新的干净 ZIP，更新构建标识与 `SHA256SUMS.txt`，然后提交并推送到 `main`。每次发行使用新的构建标识和校验值，`dist/` 与校验表只保留当前两包，历史版本通过提交或标签查阅；不覆盖用户自建 REF 包、旧 MCP 槽位或现有项目；发布前重新运行发布器自带的安装冒烟检查。
 
-本构建为工程候选。此前 0.5.37 功能构建的 SU2019 定向验证保留原范围；本修订验证当前源码、真实公开 MCP 和最终解压包中的方法选择、局部修改及交付路由；协议建模测试的 SU 边界使用显式替身。未重跑 SU 实体与视觉验收，整栋来源还原、强弱模型效果、token 收益及第二台机器验收本轮为 `not_run`。
+本构建已通过当前源码 301 项回归、136 份源码语法检查及运行包解压验证。同源功能完成部分 SU2019 定向验证；最终安装包的整栋来源还原、跨机器与实际 token/费用收益未在本轮完整验证。具体范围见[构建说明](mcp/sketchup-managed-mcp/RELEASE.md)。
 
 本仓库当前是可分发的工程回归候选；官方签名服务尚未配置，不能把“能安装”表述为官方签名。
 

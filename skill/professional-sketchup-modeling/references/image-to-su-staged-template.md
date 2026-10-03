@@ -1,58 +1,28 @@
-# Image-To-SU Staged Template (Compatibility Summary)
+# 从图到几何
 
-Use for one reference image. The canonical protocol is `progressive-image-reconstruction.md`; this file is only a short execution reminder.
+用于图片新建或来源主形返修。guided与expert共用建筑方法，推进顺序沿当前项目；下面的参数直接用于脚本，不另填证明表。
 
-## Core Rule
+## 先组织主体，再组织算法
 
-The agent performs every normal checkpoint itself:
+沿轮廓连续性、遮挡边和屋面转折区分主体；用“左前低体、后方长体”等位置说明帮助对应原图。确定各自主轴与局部原点，分清相连、相交和前后遮挡。名称只帮助寻址，实际布置来自来源。
 
-`inspect source → build one scale → export → open source and export → compare → revise or pass → continue`
+选一个可信宽度或开间作尺度基准，从同一平面或可比方向估计其他长度、高点、低点和转折位置。用这些关系推脚本尺寸；看不见的深度、背面和支承可合理补全，已显示的不等宽、错位和非对称则保留。
 
-Do not wait for routine user approval. Do not call a phase approved because a script, manifest, save, hash, or reopen succeeded.
+坐标组织服务于当前构造：独立或重复部件可先局部建好再摆放，跨主体和场地关系也可直接沿项目基准构造。函数在局部计算时，先把输入换到该局部基准，输出再变换；已是项目坐标的几何不再重复摆放。连接、穿插、出挑和空隙按来源表达。
 
-## Stage 0 — Image Contract
+## 让控制参数对应能看见的变化
 
-Before geometry, record:
+- 等截面：若轮廓沿某方向不变，可将该闭合截面沿该方向挤出；`profile`的XZ轮廓向Y挤出、YZ轮廓向X挤出。正面有起伏本身不能证明背后是相同截面；进深也变化时改用对应截面/网格。
+- 变化曲面：沿长轴设站点，每站从两侧边缘、峰谷和局部宽度推截面；连接对应点成共享边界网格。先让控制点表达轮廓转折，再增加采样密度。不同主体分别控制边界、轴向和高度；镜像或缩放适用于来源确实相同的部分。
+- 立面节奏：从可见洞口边界求宽度、间距及上口，先构造洞口与宿主；规律部分复用母型，端头、高低变化和特殊跨度保留各自参数。
+- 接触与空隙：先判断共边、搭接、悬挑、退进或分离。实际相接的边共用接点/标高；屋檐与墙、幕墙与结构等可有不同边界，用来源中的偏移、支承和缝隙联系它们。
 
-- source image identity/path/hash when available;
-- visible storey count;
-- subject image-space bounding box and width:height;
-- camera side, horizon and perspective tendency;
-- left/center/right mass shares;
-- primary solids, voids, roof and ground profile;
-- 3–7 must-keep identity cues.
+## 构造后沿同一条线核对
 
-## Stage 1 — Massing Only
+选择与来源可对应的视角，先沿整体剪影看高点—低点—转折，再看主体占比、遮挡次序、连接与空隙；从来源里的具体一段边或接点，在模型中找到对应位置。缺乏可靠对应时先选能显示相同可见面和遮挡次序的模型视图；全图太小则打开当前部位的原图局部。沿连续可见的层线、檐线或开间逐个对应，遮挡处保留未知，并据此纠正此前的文字解析。
 
-Build only plinth, 3–8 major solids/voids, main recesses, largest setbacks/cantilevers, and the source-matched camera.
+偏差归到真正控制它的参数：坡向是局部轴，错位是布置，过高是标高链，曲面失真是截面和边界。调整后复查这段及完整组合。颜色、组件数量和局部缺陷修好，都不能代替整体关系符合来源。
 
-No facade grids, windows, railings, planting, lighting, furniture, fine materials, or decorative site.
+主形清楚后，在真实宿主上做完整代表构件，再复制、变体、表皮；回到前面修改时保留无关成果，按现有局部更新或阶段返修入口执行。交付仍区分真实保存、实际看图、来源符合性和未验证部分。
 
-Export reference/front/side views. The agent opens the source and reference export and checks subject identity, storey count, image ratio, occupancy, distribution, silhouette, major voids, roof/ground, and camera. If any blocker fails, rebuild Stage 1. Continue only after an evidence-backed agent visual pass.
-
-## Stage 2 — Level System
-
-Create the smallest justified family of reusable floor archetypes. Complete each representative definition with its repeatable source-visible openings, frames, balconies, railings, recesses and shadow lines. Validate it before any broad instancing.
-
-## Stage 3 — Replication And Variants
-
-Propagate only accepted complete archetypes as true instances. Verify count, rhythm, first/middle/last and terminations. Make only source-visible exceptions unique and record the reason.
-
-## Stage 4 — One-Off Detail
-
-Add source-visible entrance, canopy, crown, corner closure, podium interface, bridge, connection or other non-repeating detail. Do not rebuild repeated facade systems here.
-
-## Stage 5 — Finish And Delivery
-
-Add restrained materials and separately owned site/vegetation/lighting only after geometry passes. Save, reopen/audit, and perform one final source-vs-export comparison.
-
-## Immediate Rejection
-
-Return to the earliest responsible stage when:
-
-- the model reads as another building type;
-- visible storey count or width:height is wrong;
-- the center/major void becomes planar or moves;
-- one side loses its source-visible setbacks/terraces;
-- detail, trees, materials, or camera framing are used to camouflage wrong massing;
-- pre-existing active-model content is adopted without provenance and a fresh visual comparison.
+局部对照可复用 `retry_evidence(comparison={regions:[{name:"joint", source_box:[0.2,0.2,0.6,0.7], candidate_box:[0.1,0.3,0.5,0.8]}]})`。方框是各自原始图片的归一化 `[左,上,右,下]`，按实际观察取值；多图时用 `source_index` 选来源（从 0 开始，省略为第一张）。`candidate_box` 对应 `review_report` 中 candidate 指向的模型图片，不是整张拼图；沿用已选观察方向，模型发生变化后重新选框。回复直接显示第一个请求的放大对照，其余局部和全部原图保留在证据路径。程序裁切和排版，不判定部位是否对应。

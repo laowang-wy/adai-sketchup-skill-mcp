@@ -42,6 +42,9 @@ function describeActions(state) {
       'Inspect recovery state before any new write.');
   }
   const capture = call('sketchup_project_retry_evidence');
+  const reviewAction = state.mode === 'single_image'
+    ? 'Compare source and model outlines and spaces in corresponding views. sketchup_project_retry_evidence changes images only: comparison.view={azimuth_deg,elevation_deg} chooses direction; if the building is small in the picture, comparison.regions=[{name,source_box,candidate_box}] enlarges corresponding regions. Boxes are 0-1 [left,top,right,bottom] within the source/candidate originals in review_report, not the sheet. Inspect, then correct the visible differences or review.'
+    : 'Inspect current views against the task and review the result, or correct the observed differences.';
   if (state.recovery_recapture_required || state.status === 'evidence_pending') {
     return result(capture, 'Capture or repair current evidence without replaying geometry.');
   }
@@ -65,7 +68,7 @@ function describeActions(state) {
     }
     if (state.status === 'review_required' && state.last_evidence_id && !needsRepair) {
       return result(call('sketchup_project_review', { evidence_id: state.last_evidence_id }, ['verdict', 'visual_review']),
-        'Inspect current views and review the result, or continue authorized construction.', [write, capture]);
+        reviewAction, [write, capture]);
     }
     if (needsRepair) {
       return result(write,
@@ -88,13 +91,17 @@ function describeActions(state) {
   if (state.status==='ready_for_step' && state.revision_required) return result(localEdit,'Correct the affected existing objects; typed targets infer scope, Ruby uses targets and context.edit_targets. The current stage is retained. Full replacement remains available.',[call('sketchup_project_step',{operation_intent:'replace'},['ruby_file_or_operations'])]);
   if (state.status === 'review_required' && state.last_evidence_id) {
     return result(call('sketchup_project_review', { evidence_id: state.last_evidence_id }, ['verdict', 'visual_review']),
-      'Inspect current evidence and review the current phase, or correct identified objects using a local update.',[localEdit]);
+      reviewAction,[localEdit,capture]);
   }
   if (state.status === 'ready_to_finish') {
     return result(call('sketchup_project_finish'), 'Save and verify the reviewed result.',[localEdit]);
   }
   if (state.status === 'ready_for_step') {
-    return result(call('sketchup_project_step', {}, ['ruby_file_or_operations']), 'Construct the current task_card goal using its method and parameters, then submit the managed step.');
+    const write = call('sketchup_project_step', {}, ['ruby_file_or_operations']);
+    if (state.step_index > 0 && state.last_evidence_id) return result(write,
+      'For further new construction, use the current task_card. For requested corrections, inspect the last captured result, find existing targets with geometry_diagnose, then step(operation_intent=update, targets=...) using the relevant construction method. The saved stage resumes after that edit; previous acceptance records the earlier review, not the new request.',
+      [call('sketchup_project_geometry_diagnose'), localEdit]);
+    return result(write, 'Construct the current task_card goal using its method and parameters, then submit the managed step.');
   }
   return result(null, 'Inspect the project state; no safe automatic action is available.');
 }

@@ -48,6 +48,17 @@ function assistanceGuidance(mode) {
 function assistanceForError(mode, error) {
   const guidance = assistanceGuidance(mode);
   const text = String(error?.message || error || '');
+  if (/^(?:ArgumentError:\s*)?Points are not planar\.?$/i.test(text.trim())) {
+    return {...guidance, correction_steps:[
+      '保留原轮廓和站点，把非共面四边单元拆成三角面；成面失败不需要把变化截面改成等截面。',
+      "无孔XY高度曲面可直接用 context['geometry'].shell_grid(entities,name,top_grid_mm,thickness_mm,material)，自动三角化、竖向厚度及封口；其它曲面用显式三角网格。确认本次已回滚后修脚本重提，结果未知仍先查回执。"
+    ]};
+  }
+  if (error?.code === 'EVIDENCE_VIEW_NOT_DELIVERED' || text.startsWith('EVIDENCE_VIEW_NOT_DELIVERED:')) {
+    return {...guidance, correction_steps:['使用当前 files 中实际看过的图片键、路径或唯一文件名重新提交 review；已有取证可复用，无需重建或重新截图。']};
+  }
+  if (error?.code === 'INSPECTION_UNAVAILABLE') return {...guidance,correction_steps:['当前尚无可查看的建模结果，沿项目 next_call 构造；已有来源图仍可直接查看。']};
+  if (error?.code === 'RECOVERY_NOT_REQUIRED') return {...guidance,correction_steps:['当前没有待恢复操作，沿本回复的 next_call 继续构造或定向修改；需要观察当前成果时使用现有取证入口。']};
   const correction = /unknown|unconfirmed|recovery|replay|结果未知/i.test(text)
     ? ['读取项目状态和 operation_id。', '查询原操作回执，再 reconcile；未确认前禁止换 ID 重放。']
     : /structure|archetype|replication|validation|原型/i.test(text)
